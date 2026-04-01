@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+    font-size: 13px;
+    background: #f7f8fa;
+    color: #1a1a2e;
+    padding: 20px;
+  }
+
+  .header { margin-bottom: 18px; }
+  .header-title { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+  .header-sub { font-size: 11px; color: #888; margin-top: 2px; }
+
+  .divider { height: 1px; background: #e5e7eb; margin: 14px 0; }
+
+  /* Tab strip */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: #eef0f4;
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 16px;
+  }
+  .tab {
+    flex: 1;
+    padding: 7px 4px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .tab:hover { color: #333; background: rgba(255,255,255,0.6); }
+  .tab.active { background: white; color: #1a1a2e; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+  /* Panels */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .file-area {
+    border: 1.5px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: white;
+  }
+  .file-area:hover, .file-area.has-file { border-color: var(--accent); border-style: solid; background: var(--accent-bg); }
+  .file-icon { font-size: 20px; margin-bottom: 4px; }
+  .file-hint { font-size: 10px; color: #aaa; margin-top: 4px; }
+  .file-name-text { font-size: 11px; font-weight: 600; color: var(--accent); }
+
+  input[type="file"] { display: none; }
+
+  .btn {
+    width: 100%;
+    padding: 11px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-top: 12px;
+  }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .status {
+    margin-top: 10px;
+    font-size: 11px;
+    min-height: 16px;
+    text-align: center;
+  }
+  .status.loading { color: #888; }
+  .status.success { color: var(--accent); font-weight: 600; }
+  .status.error   { color: #e07b54; }
+
+  /* Per-tab accent colors */
+  .panel[data-tab="moodboard"] { --accent: #9B6DD0; --accent-bg: #f5f0fb; }
+  .panel[data-tab="sitemap"]   { --accent: #2BA8A4; --accent-bg: #f0fafa; }
+  .panel[data-tab="brand"]     { --accent: #C9A96E; --accent-bg: #fef9ee; }
+
+  .btn-moodboard { background: #9B6DD0; color: white; }
+  .btn-moodboard:hover:not(:disabled) { background: #8658BC; }
+  .btn-sitemap   { background: #2BA8A4; color: white; }
+  .btn-sitemap:hover:not(:disabled)   { background: #239490; }
+  .btn-brand     { background: #C9A96E; color: white; }
+  .btn-brand:hover:not(:disabled)     { background: #B8955A; }
+
+  .page-name-note {
+    font-size: 10px;
+    color: #999;
+    margin-top: 8px;
+    text-align: center;
+  }
+  .page-name-note span {
+    font-weight: 600;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">Agency Deliverables</div>
+  <div class="header-sub">AI-Powered Agency Workflow · RxMedia</div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-for="moodboard">🎨 Mood Boards</button>
+  <button class="tab"        data-for="sitemap">🗺 Sitemap</button>
+  <button class="tab"        data-for="brand">🎯 Brand Guide</button>
+</div>
+
+<!-- Mood Board Panel -->
+<div class="panel active" id="panel-moodboard" data-tab="moodboard">
+  <div class="label">Load Mood Board JSON</div>
+  <label for="file-moodboard">
+    <div class="file-area" id="area-moodboard">
+      <div class="file-icon">📂</div>
+      <div id="text-moodboard" style="font-size:12px;font-weight:500;color:#777">Click to select mood_board_data.json</div>
+      <div class="file-hint">From: scripts/generate_mood_board_visuals.py</div>
+    </div>
+  </label>
+  <input type="file" id="file-moodboard" accept=".json">
+  <button class="btn btn-moodboard" id="btn-moodboard" disabled>Generate 🎨 Mood Boards Page</button>
+  <div class="page-name-note">Creates page: <span>🎨 Mood Boards</span></div>
+  <div class="status" id="status-moodboard"></div>
+</div>
+
+<!-- Sitemap Panel -->
+<div class="panel" id="panel-sitemap" data-tab="sitemap">
+  <div class="label">Load Sitemap JSON</div>
+  <label for="file-sitemap">
+    <div class="file-area" id="area-sitemap">
+      <div class="file-icon">📂</div>
+      <div id="text-sitemap" style="font-size:12px;font-weight:500;color:#777">Click to select sitemap_data.json</div>
+      <div class="file-hint">From: scripts/generate_sitemap_visual.py</div>
+    </div>
+  </label>
+  <input type="file" id="file-sitemap" accept=".json">
+  <button class="btn btn-sitemap" id="btn-sitemap" disabled>Generate 🗺 Sitemap Page</button>
+  <div class="page-name-note">Creates page: <span>🗺 Sitemap</span></div>
+  <div class="status" id="status-sitemap"></div>
+</div>
+
+<!-- Brand Guidelines Panel -->
+<div class="panel" id="panel-brand" data-tab="brand">
+  <div class="label">Load Brand Guidelines JSON</div>
+  <label for="file-brand">
+    <div class="file-area" id="area-brand">
+      <div class="file-icon">📂</div>
+      <div id="text-brand" style="font-size:12px;font-weight:500;color:#777">Click to select brand_guidelines_data.json</div>
+      <div class="file-hint">From: scripts/export_brand_guidelines.py</div>
+    </div>
+  </label>
+  <input type="file" id="file-brand" accept=".json">
+  <button class="btn btn-brand" id="btn-brand" disabled>Generate 🎯 Brand Guide Page</button>
+  <div class="page-name-note">Creates page: <span>🎯 Brand Guidelines</span></div>
+  <div class="status" id="status-brand"></div>
+</div>
+
+<script>
+  var parsedData = { moodboard: null, sitemap: null, brand: null };
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.for).classList.add('active');
+    });
+  });
+
+  // Wire up each panel's file input
+  ['moodboard', 'sitemap', 'brand'].forEach(function(key) {
+    var input = document.getElementById('file-' + key);
+    var area  = document.getElementById('area-' + key);
+    var text  = document.getElementById('text-' + key);
+    var btn   = document.getElementById('btn-' + key);
+    var status = document.getElementById('status-' + key);
+
+    input.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          parsedData[key] = JSON.parse(ev.target.result);
+          area.classList.add('has-file');
+          text.textContent = file.name;
+          btn.disabled = false;
+          status.textContent = '';
+          status.className = 'status';
+        } catch(err) {
+          setStatus(key, 'Invalid JSON file.', 'error');
+          parsedData[key] = null;
+          btn.disabled = true;
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    btn.addEventListener('click', function() {
+      if (!parsedData[key]) return;
+      btn.disabled = true;
+      setStatus(key, 'Generating…', 'loading');
+      parent.postMessage({ pluginMessage: { type: 'generate-' + key, data: parsedData[key] } }, '*');
+    });
+  });
+
+  // Handle messages from plugin
+  window.addEventListener('message', function(e) {
+    var msg = e.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === 'done') {
+      var key = msg.key;
+      setStatus(key, '✓ Page created — ' + msg.detail, 'success');
+      document.getElementById('btn-' + key).disabled = false;
+    } else if (msg.type === 'error') {
+      var ekey = msg.key || 'moodboard';
+      setStatus(ekey, 'Error: ' + msg.message, 'error');
+      document.getElementById('btn-' + ekey).disabled = false;
+    }
+  });
+
+  function setStatus(key, msg, type) {
+    var el = document.getElementById('status-' + key);
+    el.textContent = msg;
+    el.className = 'status ' + (type || '');
+  }
+</script>
+</body>
+</html>

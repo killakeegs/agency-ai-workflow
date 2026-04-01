@@ -1,0 +1,48 @@
+ACME Plumbing — Kickoff Meeting Transcript
+Date: March 1, 2025
+Attendees: Jane Smith (Client), Alex (Account Manager), Sarah (Designer)
+
+---
+
+Alex: Thanks for joining us today Jane. We've reviewed your onboarding form and wanted to walk through it with you to make sure we're completely aligned before we start.
+
+Jane: Great, thanks for setting this up. I'm really excited to finally get this done. Our current website is from like 2012 and it's embarrassing.
+
+Alex: Totally understandable. So looking at your form, you mentioned you want to generate more online leads and build trust. Can you tell us a bit more about what "trust" looks like for your customers?
+
+Jane: Yeah, for us it's really about showing that we're local, we're reliable, and we've been around a long time. A lot of people are nervous letting a stranger into their home. So reviews are huge for us — Google reviews, photos of our team, that kind of thing. Our guys have all been background checked, we want to make that clear.
+
+Sarah: That's really helpful context. For the design direction, you mentioned clean and trustworthy but not too corporate. Are there any websites — not necessarily plumbing — that have a look and feel you really like?
+
+Jane: I love how [HVAC company] does it. Their homepage has this clean hero with a big photo of their team and then it goes into their services really simply. I also like how [law firm website] is professional but still warm. Navy and white is kind of what I'm thinking.
+
+Sarah: Perfect. We're going to put together a few different mood board options for you — probably 4 or 5 variations with different takes on that. One might be more bold and modern, another more friendly and traditional. You just pick the one that feels right.
+
+Jane: Sounds great. Will I be able to see what the actual website will look like before you build it?
+
+Alex: Yes, absolutely. We'll show you the wireframe first — that's the layout structure — and then we'll do a high-fidelity mockup of the homepage so you can see exactly what it'll look like before we build a single page.
+
+Jane: Oh good. Last time we did a website they just kind of built it and we hated it. We want to be involved.
+
+Alex: That's exactly our process. You'll have a chance to review and approve everything before we move forward at each stage. Okay, any services you want to make sure are front and center?
+
+Jane: Emergency plumbing for sure — that's our bread and butter. Water heaters are huge right now, everyone's switching to tankless. And honestly, the quote request — I want that really easy to find. Like on every page if possible.
+
+Alex: Got it. Emergency, water heaters, easy quote request throughout. What about the blog — do you want a blog section?
+
+Jane: If it helps with SEO, sure, but I don't want to write stuff. Can you handle that?
+
+Alex: We can generate initial blog content for you as part of the project. We'll set up the blog section and give you a few starter posts.
+
+Jane: Perfect.
+
+Sarah: One more thing — do you have a logo you're happy with, or is that something we need to look at too?
+
+Jane: Yeah we have a logo. I'll send it over. It's not amazing but it works. We're not looking to rebrand, just update the website.
+
+Alex: Perfect. Okay, action items from today: Jane will send over the logo and any existing photos of the team. We'll get started on the mood board options this week and should have those to you by end of next week.
+
+Jane: Sounds great. Thanks everyone.
+
+---
+[End of transcript]

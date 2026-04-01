@@ -1,0 +1,373 @@
+"""
+SitemapAgent — Stage 4: SITEMAP_DRAFT (approval gate)
+
+Reads client context and the approved creative direction, then generates a
+complete sitemap: every page with its type (Static/CMS), content mode
+(AI Generated/Client Provided), purpose, key sections, URL slug, and order.
+
+Also produces an SEO strategy note and CMS collection schema recommendations
+for Webflow.
+
+Input kwargs:
+  - client_info_db_id (str)
+  - meeting_notes_db_id (str)
+  - brand_guidelines_db_id (str)
+  - sitemap_db_id (str): Notion DB where pages will be created
+  - mood_board_db_id (str): optional, reads approved direction if available
+
+Output:
+  - One entry per page in Sitemap DB (Page Title, Slug, Page Type, Content Mode,
+    Status, Purpose, Key Sections, Order)
+  - Returns dict with status, page count, and Notion entry IDs
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any
+
+from ..models.pipeline import PipelineStage
+from .base_agent import AgentError, BaseAgent
+from .tools import SITEMAP_TOOLS
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """\
+You are a senior information architect and SEO strategist at a digital marketing
+agency specializing in telehealth and medical practice websites.
+
+Your task: generate a complete sitemap for a telehealth website.
+
+For each page you must decide:
+- Page Type: "Static" (fixed content) or "CMS" (Webflow CMS collection — for
+  blog posts, conditions, location pages, team members)
+- Content Mode: "AI Generated" (Claude will write the copy) or
+  "Client Provided" (client must supply the content — use sparingly, only for
+  content only the client can write: founder story, pricing, team bios)
+- SEO considerations: which pages need location sub-pages for local SEO
+
+Return a single JSON object with this exact structure:
+
+{
+  "pages": [
+    {
+      "title": "Exact page title as it will appear in navigation",
+      "slug": "/url-slug",
+      "page_type": "Static" or "CMS",
+      "content_mode": "AI Generated" or "Client Provided",
+      "order": 1,
+      "purpose": "One sentence: what is the primary goal of this page?",
+      "key_sections": [
+        "Section name — brief description of content",
+        "Section name — brief description"
+      ],
+      "seo_notes": "Any SEO-specific notes for this page (target keywords, schema markup, etc.)",
+      "webflow_notes": "Any Webflow-specific build notes (CMS collection name, dynamic vs static, etc.)"
+    }
+  ],
+  "cms_collections": [
+    {
+      "collection_name": "Blog Posts",
+      "fields": ["Title", "Slug", "Body", "Category", "Published Date", "Author", "Featured Image"],
+      "notes": "Used for patient education articles and recipes"
+    }
+  ],
+  "seo_strategy": {
+    "primary_keywords": ["keyword 1", "keyword 2"],
+    "location_seo_approach": "Describe the approach for local/regional SEO with sub-pages",
+    "content_pillar_strategy": "How blog/conditions content will build domain authority",
+    "schema_markup_recommendations": ["LocalBusiness schema", "MedicalOrganization schema", "FAQPage schema"]
+  },
+  "total_pages": 42,
+  "notes": "Any important build notes or decisions the developer needs to know"
+}
+
+Rules:
+- Every page must have a clear purpose and at least 3 key sections
+- CMS pages are things that will have multiple instances (blog posts,
+  conditions treated, location service pages)
+- "Client Provided" should only be used for content truly unique to the client
+  (founder story, specific pricing, team photos/bios)
+- Include ALL pages: main nav, legal pages, CMS collection templates
+- Location SEO sub-pages should be listed as CMS type with parent noted
+- Order numbers should reflect nav priority (1 = homepage, highest = legal/utility)
+- For location SEO pages, list ONE representative CMS template entry (e.g.
+  "Teledermatology — [City], [State]") with a note that it will be replicated
+  for 15-20 cities. Do NOT list every city individually.
+- Keep the total page list to the core navigation pages + one CMS template
+  entry per repeating pattern (conditions, blog posts, location pages)
+- Only return the JSON object — no markdown, no commentary
+"""
+
+
+def _blocks_to_text(blocks: list[dict]) -> str:
+    lines = []
+    for block in blocks:
+        block_type = block.get("type", "")
+        content = block.get(block_type, {})
+        rich_text = content.get("rich_text", [])
+        text = "".join(seg.get("text", {}).get("content", "") for seg in rich_text)
+        if text:
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def _get_rich_text(prop: dict) -> str:
+    return "".join(p.get("text", {}).get("content", "") for p in prop.get("rich_text", []))
+
+
+def _get_select(prop: dict) -> str:
+    sel = prop.get("select")
+    return sel.get("name", "") if sel else ""
+
+
+def _summary_blocks(seo: dict, cms: list[dict], notes: str) -> list[dict]:
+    """Build summary blocks appended to the first Sitemap entry."""
+
+    def h(text: str, level: int = 2) -> dict:
+        ht = f"heading_{level}"
+        return {"object": "block", "type": ht, ht: {
+            "rich_text": [{"type": "text", "text": {"content": text}}]
+        }}
+
+    def p(text: str) -> dict:
+        return {"object": "block", "type": "paragraph", "paragraph": {
+            "rich_text": [{"type": "text", "text": {"content": text[:1900]}}]
+        }}
+
+    def bullet(text: str) -> dict:
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {
+            "rich_text": [{"type": "text", "text": {"content": text[:1900]}}]
+        }}
+
+    blocks: list[dict] = [
+        h("── SEO Strategy ──", 2),
+        h("Primary Keywords", 3),
+        *[bullet(kw) for kw in seo.get("primary_keywords", [])],
+        h("Location SEO Approach", 3),
+        p(seo.get("location_seo_approach", "")),
+        h("Content Pillar Strategy", 3),
+        p(seo.get("content_pillar_strategy", "")),
+        h("Schema Markup", 3),
+        *[bullet(s) for s in seo.get("schema_markup_recommendations", [])],
+        h("── Webflow CMS Collections ──", 2),
+    ]
+
+    for col in cms:
+        blocks += [
+            h(col.get("collection_name", "Collection"), 3),
+            bullet(f"Fields: {', '.join(col.get('fields', []))}"),
+            p(col.get("notes", "")),
+        ]
+
+    if notes:
+        blocks += [
+            h("── Build Notes ──", 2),
+            p(notes),
+        ]
+
+    return blocks
+
+
+class SitemapAgent(BaseAgent):
+    """Generates full sitemap with SEO strategy and CMS collection schemas."""
+
+    name = "sitemap"
+    tools = SITEMAP_TOOLS
+
+    async def run(self, client_id: str, **kwargs: Any) -> dict:
+        """
+        Generate sitemap pages for a client.
+
+        Required kwargs:
+          - client_info_db_id
+          - meeting_notes_db_id
+          - brand_guidelines_db_id
+          - sitemap_db_id
+
+        Optional kwargs:
+          - mood_board_db_id: reads approved direction if available
+          - revision_notes (str): feedback from previous run to guide regeneration
+        """
+        client_info_db_id = kwargs["client_info_db_id"]
+        meeting_notes_db_id = kwargs["meeting_notes_db_id"]
+        brand_guidelines_db_id = kwargs["brand_guidelines_db_id"]
+        sitemap_db_id = kwargs["sitemap_db_id"]
+        mood_board_db_id = kwargs.get("mood_board_db_id")
+        revision_notes = kwargs.get("revision_notes", "")
+
+        self.log.info(f"SitemapAgent starting | client={client_id}")
+
+        # ── Step 1: Gather context ────────────────────────────────────────────
+
+        # Client info
+        client_entries = await self.notion.query_database(client_info_db_id)
+        client_props = client_entries[0]["properties"] if client_entries else {}
+        company = _get_rich_text(client_props.get("Company", {})) or client_id
+        business_type = _get_select(client_props.get("Business Type", {}))
+        client_notes = _get_rich_text(client_props.get("Notes", {}))
+
+        # Brand guidelines
+        brand_context = ""
+        brand_entries = await self.notion.query_database(brand_guidelines_db_id)
+        if brand_entries:
+            bp = brand_entries[0]["properties"]
+            tone = _get_rich_text(bp.get("Tone Descriptors", {}))
+            raw = _get_rich_text(bp.get("Raw Guidelines", {}))
+            brand_context = f"Tone: {tone}\n{raw[:2000]}"
+
+        # Meeting notes — find parsed entry
+        meeting_entries = await self.notion.query_database(meeting_notes_db_id)
+        meeting_context = ""
+        if meeting_entries:
+            parsed_entries = [
+                e for e in meeting_entries
+                if e["properties"].get("Parsed", {}).get("checkbox", False)
+            ]
+            target = parsed_entries[0] if parsed_entries else meeting_entries[0]
+            mp = target["properties"]
+            meeting_page_id = target["id"]
+
+            key_decisions = _get_rich_text(mp.get("Key Decisions", {}))
+            meeting_context = f"KEY DECISIONS:\n{key_decisions}"
+
+            meeting_blocks = await self.notion.get_block_children(meeting_page_id)
+            meeting_body = _blocks_to_text(meeting_blocks)
+            analysis_start = meeting_body.find("AI-Parsed Meeting Analysis")
+            if analysis_start != -1:
+                meeting_context += f"\n\nFULL ANALYSIS:\n{meeting_body[analysis_start:analysis_start+5000]}"
+
+        # Mood board direction (if available)
+        mood_context = ""
+        if mood_board_db_id:
+            mood_entries = await self.notion.query_database(mood_board_db_id)
+            if mood_entries:
+                approved = next(
+                    (e for e in mood_entries
+                     if _get_select(e["properties"].get("Status", {})) in ("Approved", "Pending Review")),
+                    mood_entries[0]
+                )
+                mp2 = approved["properties"]
+                style = _get_rich_text(mp2.get("Style Keywords", {}))
+                palette = _get_rich_text(mp2.get("Color Palette Description", {}))
+                mood_context = f"Creative direction: {style}\nColor palette: {palette}"
+
+        self.log.info("All context loaded, calling Claude for sitemap generation...")
+
+        # ── Step 2: Call Claude ───────────────────────────────────────────────
+        user_message = f"""CLIENT: {company}
+BUSINESS TYPE: {business_type}
+
+ONBOARDING NOTES:
+{client_notes}
+
+BRAND/TONE:
+{brand_context[:2000]}
+
+{meeting_context[:5000]}
+
+CREATIVE DIRECTION:
+{mood_context}
+
+Generate the complete sitemap based entirely on the client context above —
+their services, business type, goals, meeting decisions, and brand guidelines.
+Include all core pages, CMS collections, SEO sub-pages, and legal pages
+appropriate for this client's business model and scale.
+{f'''
+REVISION REQUEST — This is a regeneration based on feedback from the previous run.
+Apply this feedback when generating the new sitemap:
+
+{revision_notes}
+
+Do NOT simply reproduce the previous sitemap. Use the feedback above to meaningfully
+revise the page structure, types, or scope.
+''' if revision_notes else ''}"""
+
+        response = await self.anthropic.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+        raw_output = response.content[0].text if response.content else ""
+        self.log.info(f"Claude response: {response.usage.output_tokens} output tokens")
+
+        # ── Step 3: Parse JSON ────────────────────────────────────────────────
+        try:
+            clean = re.sub(r"```(?:json)?\n?", "", raw_output).strip()
+            data: dict = json.loads(clean)
+        except json.JSONDecodeError as e:
+            self.log.error(f"JSON parse failed: {e}\n{raw_output[:500]}")
+            raise AgentError(f"SitemapAgent: JSON parse failed — {e}") from e
+
+        pages = data.get("pages", [])
+        self.log.info(f"Generated {len(pages)} pages")
+
+        # ── Step 4: Write each page to Sitemap DB ─────────────────────────────
+        created_ids: list[str] = []
+        first_entry_id: str | None = None
+
+        for page in pages:
+            title = page.get("title", "Untitled")
+            slug = page.get("slug", "/")
+            page_type = page.get("page_type", "Static")
+            content_mode = page.get("content_mode", "AI Generated")
+            order = page.get("order", 99)
+            purpose = page.get("purpose", "")
+            key_sections = page.get("key_sections", [])
+            seo_notes = page.get("seo_notes", "")
+            webflow_notes = page.get("webflow_notes", "")
+
+            if page_type not in ("Static", "CMS"):
+                page_type = "Static"
+            if content_mode not in ("AI Generated", "Client Provided"):
+                content_mode = "AI Generated"
+
+            key_sections_text = "\n".join(f"• {s}" for s in key_sections)
+            purpose_full = purpose
+            if seo_notes:
+                purpose_full += f"\n\nSEO: {seo_notes}"
+            if webflow_notes:
+                purpose_full += f"\n\nWebflow: {webflow_notes}"
+
+            entry_id = await self.notion.create_database_entry(sitemap_db_id, {
+                "Name": self.notion.title_property(title),
+                "Slug": self.notion.text_property(slug),
+                "Page Type": self.notion.select_property(page_type),
+                "Content Mode": self.notion.select_property(content_mode),
+                "Status": self.notion.select_property("Draft"),
+                "Purpose": self.notion.text_property(purpose_full[:2000]),
+                "Key Sections": self.notion.text_property(key_sections_text[:2000]),
+                "Order": {"number": order},
+            })
+
+            if first_entry_id is None:
+                first_entry_id = entry_id
+
+            created_ids.append(entry_id)
+            self.log.info(f"  ✓ [{page_type}/{content_mode[:2]}] {title} ({slug})")
+
+        # ── Step 5: Append SEO strategy + CMS collections to first entry ──────
+        if first_entry_id:
+            seo = data.get("seo_strategy", {})
+            cms = data.get("cms_collections", [])
+            notes = data.get("notes", "")
+            summary_blocks = _summary_blocks(seo, cms, notes)
+            for i in range(0, len(summary_blocks), 90):
+                await self.notion.append_blocks(first_entry_id, summary_blocks[i:i + 90])
+            self.log.info("Appended SEO strategy + CMS schemas to sitemap")
+
+        return {
+            "status": "success",
+            "stage": PipelineStage.SITEMAP_DRAFT.value,
+            "pages_created": len(created_ids),
+            "notion_entry_ids": created_ids,
+            "cms_collections": len(data.get("cms_collections", [])),
+        }
+
+    async def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
+        raise NotImplementedError(
+            f"SitemapAgent uses direct API calls. Tool {tool_name} not dispatched."
+        )

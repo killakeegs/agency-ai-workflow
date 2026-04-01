@@ -1,0 +1,28 @@
+WellWell is a boutique telehealth medical practice. Services: Teledermatology (virtual, nationwide), Medical Dermatology (in-person, Savannah GA), GLP-1 Weight Loss Management (virtual), Neurotoxin Therapy/Botox (in-person, Savannah GA + mobile). Founder: board-certified PA-C. Target: professional women 25-55. Tone: warm, clinically credible, boutique, elevated. Fonts: Quicksand (rounded, bubbly, lowercase) headings, DM Sans body. Colors: teal primary, blush accent, warm ivory background, brass detail. Feel: Curology meets Hims & Hers feminine — not corporate, not spa.
+
+Build a website for this telehealth practice. Pages:
+
+Home: "Expert Skin & Weight Care — On Your Schedule, Wherever You Are" [Hero, Trust Bar, Services Overview, Why WellWell, Conditions Snapshot]
+About: "Built by a Clinician Who Knows That Skin Doesn't Wait" [Mission Statement Header, Founder Story, Meet the Team, Our Philosophy, Virtual vs. In-Person Model Explainer]
+Services: "Two Ways to Access Expert Care — Virtually Anywhere or Right Here in Savannah" [Services Hub Header, Virtual Care Track, In-Person Care Track, How It Works, Insurance & Payment Note]
+Teledermatology: "See a Real Dermatology Expert Without Leaving Your Home" [Service Hero, What Is Teledermatology, Conditions We Treat, The Process, Who Is This For]
+Weight Loss Management: "Medically Supervised Weight Loss. On Your Terms." [Service Hero, What We Offer, How GLP-1 Works, Who Is a Good Candidate, The Program Process]
+Neurotoxin Therapy: "Expert Neurotoxin Therapy. In-Office or Delivered to Your Door." [Service Hero, What We Treat, In-Office vs. Mobile, The Experience, Why Board-Certified Matters]
+Medical Dermatology — Savannah: "Savannah's Boutique Medical Dermatology Studio" [Service Hero, What We Treat In Person, Our Studio, Virtual vs. In-Person, Pricing & Cash-Pay Note]
+Conditions We Treat: "Skin, Hair, and Metabolic Conditions We Treat — Virtually and In Person" [Hub Header, Skin Conditions Grid, Hair & Scalp Grid, Sweat & Odor Section, Anti-Aging & Skin Renewal Section]
+Condition Detail — [Condition Name] [CMS] [Condition Hero, What Is [Condition], Symptoms & Signs, How WellWell Treats [Condition], Why Virtual Care Works for [Condition]]
+Pricing [Pricing Hero, Virtual Services Pricing, In-Person Services Pricing, What's Included, Cash-Pay Explainer]
+Book an Appointment: "Book Your Visit — Virtual or In-Person, We're Ready When You Are" [Page Header, Appointment Type Selector, Tebra EMR Embed, What to Expect, Cash-Pay Reminder]
+Blog: "The WellWell Journal: Skin, Health, and Everything In Between" [Blog Hub Header, Featured Post, Category Filter Tabs, Blog Post Grid, Email List Signup]
+Blog Post — [Post Title] [CMS] [Post Header, Post Body, Author Bio Block, Related Posts, Inline CTA Block]
+FAQ: "Your Questions, Answered — Honestly and Without the Wait" [FAQ Header, General / Getting Started, Teledermatology FAQs, Weight Loss / GLP-1 FAQs, Neurotoxin & In-Person FAQs]
+Contact: "Let's Connect — We're Here Before, During, and After Your Visit" [Contact Header, Contact Form, Direct Contact Info, Savannah Studio Info, Not Ready to Book?]
+Teledermatology — [City], [State] [CMS] [Location Hero, Why Virtual Derm in [City], Conditions Treated, How It Works, Service Area Note]
+Weight Loss Management — [City], [State] [CMS] [Location Hero, Why WellWell in [City], The GLP-1 Program, Who Qualifies, Service Area Note]
+Privacy Policy [Introduction, Information We Collect, How We Use Your Information, HIPAA Notice of Privacy Practices, Third-Party Services]
+Terms & Conditions [Acceptance of Terms, Services Description, Payment Terms, Telehealth Consent, Intellectual Property]
+Medical Disclaimer: "Medical Disclaimer & Important Health Information" [General Medical Disclaimer, Telehealth Limitations Disclaimer, Results Disclaimer, GLP-1 / Medication Disclaimer, External Links Disclaimer]
+Telehealth Consent [What Is Telehealth, How WellWell Delivers Telehealth, Patient Rights & Responsibilities, Risks of Telehealth, State-Specific Consent Language]
+Coming Soon: "Expert Skin & Wellness Care Is Almost Here" [Brand Mark & Tagline, One-Line Value Prop, Email Capture Form, Service Teasers, Social Links]
+
+Requirements: mobile-first, Webflow-native (no custom code), Blog and Conditions Treated and Location SEO pages as Webflow CMS collections, booking CTAs link to external TEBRA EMR system.

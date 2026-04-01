@@ -1,0 +1,44 @@
+{
+  "id": "test-client-001",
+  "contact": {
+    "name": "Jane Smith",
+    "email": "jane@acmeplumbing.com",
+    "phone": "555-123-4567",
+    "company_name": "ACME Plumbing",
+    "website_url": "https://acmeplumbing.com"
+  },
+  "onboarding": {
+    "business_description": "Local residential and commercial plumbing company serving the greater Seattle area. Family-owned, 15 years in business.",
+    "target_audience": "Homeowners and property managers in Seattle, Bellevue, and surrounding suburbs. Ages 30-60, concerned about quality and reliability.",
+    "project_goals": [
+      "Generate more online leads through SEO",
+      "Build trust and credibility with a professional website",
+      "Showcase our team and reviews",
+      "Make it easy to request a quote"
+    ],
+    "design_style_preferences": "Clean, trustworthy, professional. Not too corporate. Friendly and approachable.",
+    "website_inspiration_urls": [
+      "https://example-plumber-site.com",
+      "https://another-trades-site.com"
+    ],
+    "colors_they_like": ["navy blue", "white", "light gray"],
+    "colors_they_dislike": ["neon colors", "dark backgrounds"],
+    "services": [
+      "Emergency plumbing repairs",
+      "Water heater installation and repair",
+      "Drain cleaning",
+      "Bathroom and kitchen remodeling",
+      "Commercial plumbing"
+    ],
+    "target_keywords": ["Seattle plumber", "emergency plumber Seattle", "water heater repair Seattle"],
+    "business_type": "local",
+    "competitors": ["Roto-Rooter Seattle", "ABC Plumbing"],
+    "budget_range": "$3,000 - $5,000",
+    "timeline_weeks": 8,
+    "has_existing_content": false,
+    "has_existing_branding": true,
+    "raw_form_data": {}
+  },
+  "created_at": "2025-03-01T10:00:00Z",
+  "updated_at": "2025-03-01T10:00:00Z"
+}
