@@ -234,6 +234,40 @@ All commands default to `CLIENT=wellwell`. Override with `CLIENT=client_key`.
 
 ---
 
+## Stock Photography Pipeline
+
+Stock images are sourced via Pexels API (free, CC0 — no attribution required on client deliverables). Runs after content approval, before Relume wireframe build.
+
+**Script:** `scripts/fetch_stock_images.py`
+**Make commands:**
+```bash
+make stock-images CLIENT=x OPEN=1               # Discovery → HTML report (click Keep/Skip)
+make stock-images CLIENT=x NOTES="warmer tones" # Re-run with style notes
+make stock-images CLIENT=x PHOTOGRAPHER="Name"  # Lean into one photographer's portfolio
+make stock-images CLIENT=x FILL=1 OPEN=1        # Keep approved, fill gaps with new images
+make stock-images CLIENT=x COMMIT=1             # Download approved + save to Notion Images DB
+```
+
+**Curation loop:**
+1. Run discovery → HTML report opens in browser
+2. Click images to toggle Keep (green) / Skip (faded)
+3. Click "Save selections.json" → move file to `output/{client}/`
+4. Run with `FILL=1` to keep approved and fill gaps
+5. Repeat until happy, then `COMMIT=1`
+
+**Image categories (10 per category):**
+- Hero Lifestyle, People — Candid, Clinic / Environment, Detail Close-Up, Abstract / Texture
+
+**Self-healing:** Every run auto-patches Brand Guidelines DB (`Photography Style` field) and Images DB (`Source` field) for any client that's missing them.
+
+**Photography Style field** lives in the client's Brand Guidelines DB in Notion. Fill it in before running — drives Claude's Pexels search queries. Example: *"Warm, natural light. Real children and families in therapy settings. Candid over posed. Avoid sterile hospital imagery."*
+
+**Photographer series:** When one photographer appears 3+ times in results, the report flags them as a series candidate. Re-run with `--photographer "Name"` to pull more from their portfolio. Visual consistency from one photographer makes websites look more polished.
+
+**Preferred photographers for therapy clients:** Kaboompics.com (warm lifestyle), Ksenia Chernaya, RDNE Stock project. Avoid: Los Muertos Crew (too clinical).
+
+---
+
 ## Relume Workflow
 
 `make relume-sitemap CLIENT=x` exports a compact indented tree to `output/{client}/relume_sitemap_export.txt`. Target: under 5,000 chars (Relume AI limit). Max 5 sections per page.
