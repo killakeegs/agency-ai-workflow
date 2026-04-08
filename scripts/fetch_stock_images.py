@@ -269,6 +269,7 @@ def _build_html_report(
     results: dict[str, list[dict]],
     photographer_counts: Counter,
     notes: str,
+    kept_ids: set | None = None,
 ) -> str:
     series_candidates = [
         (name, count)
@@ -290,19 +291,24 @@ def _build_html_report(
           <p class="hint">Re-run with <code>--photographer "Name"</code> to pull more from their portfolio.</p>
         </div>"""
 
+    # Build all photo data as JSON for the save button
+    all_photos = []
     category_html = ""
     for cat_key, photos in results.items():
         label = next((c["label"] for c in DEFAULT_CATEGORIES if c["key"] == cat_key), cat_key)
-        grid_items = "".join(
-            f'''<div class="photo-card">
-                  <img src="{p["url"]}" alt="{p["alt"]}" loading="lazy">
+        grid_items = ""
+        for p in photos:
+            is_kept = kept_ids is None or p["id"] in kept_ids
+            kept_class = "kept" if is_kept else ""
+            all_photos.append({"id": p["id"], "category": cat_key, "photographer": p["photographer"], "url": p["url"], "alt": p.get("alt", "")})
+            grid_items += f'''<div class="photo-card {kept_class}" data-id="{p["id"]}" data-category="{cat_key}" data-photographer="{p["photographer"]}" data-url="{p["url"]}" data-alt="{p.get("alt","")}" onclick="toggle(this)">
+                  <div class="badge">✓ Keep</div>
+                  <img src="{p["url"]}" alt="{p.get("alt","")}" loading="lazy">
                   <div class="photo-meta">
                     <span class="photographer">{p["photographer"]}</span>
                     <span class="photo-id">ID: {p["id"]}</span>
                   </div>
                 </div>'''
-            for p in photos
-        )
         category_html += f"""
         <div class="category">
           <h2>{label} <span class="count">({len(photos)} images)</span></h2>
@@ -310,17 +316,25 @@ def _build_html_report(
         </div>"""
 
     notes_html = f'<p class="notes">Generated with notes: <em>{notes}</em></p>' if notes else ""
+    all_photos_json = json.dumps(all_photos)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{client_name} — Stock Image Discovery Report</title>
+  <title>{client_name} — Stock Image Curation</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 1400px; margin: 0 auto; padding: 2rem; background: #f8f8f8; color: #222; }}
     h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
-    .subtitle {{ color: #666; margin-bottom: 2rem; font-size: 0.9rem; }}
-    .notes {{ color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }}
+    .subtitle {{ color: #666; margin-bottom: 0.5rem; font-size: 0.9rem; }}
+    .notes {{ color: #888; font-size: 0.85rem; margin-bottom: 1rem; }}
+    .toolbar {{ position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0.75rem 1rem; margin: 0 -2rem 2rem; display: flex; align-items: center; gap: 1rem; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.06); }}
+    .toolbar .count-label {{ font-size: 0.85rem; color: #6b7280; flex: 1; }}
+    .btn {{ padding: 0.5rem 1.25rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; }}
+    .btn-save {{ background: #16a34a; color: #fff; }}
+    .btn-save:hover {{ background: #15803d; }}
+    .btn-skip-all {{ background: #f3f4f6; color: #374151; }}
+    .btn-skip-all:hover {{ background: #e5e7eb; }}
     .series-box {{ background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; }}
     .series-box h2 {{ margin: 0 0 0.5rem; font-size: 1rem; color: #b45309; }}
     .series-box ul {{ margin: 0.5rem 0; padding-left: 1.25rem; }}
@@ -329,7 +343,13 @@ def _build_html_report(
     .category h2 {{ font-size: 1.1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; margin-bottom: 1rem; }}
     .count {{ font-weight: 400; color: #888; font-size: 0.9rem; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }}
-    .photo-card {{ background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+    .photo-card {{ background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; position: relative; transition: opacity 0.15s; border: 3px solid transparent; }}
+    .photo-card:hover {{ box-shadow: 0 4px 12px rgba(0,0,0,0.15); }}
+    .photo-card.kept {{ border-color: #16a34a; }}
+    .photo-card.kept .badge {{ background: #16a34a; opacity: 1; }}
+    .photo-card:not(.kept) {{ opacity: 0.45; }}
+    .photo-card:not(.kept) .badge {{ background: #9ca3af; }}
+    .badge {{ position: absolute; top: 8px; right: 8px; background: #9ca3af; color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; opacity: 0.9; }}
     .photo-card img {{ width: 100%; height: 200px; object-fit: cover; display: block; }}
     .photo-meta {{ padding: 0.6rem 0.75rem; display: flex; justify-content: space-between; align-items: center; }}
     .photographer {{ font-size: 0.78rem; font-weight: 600; color: #374151; }}
@@ -337,11 +357,54 @@ def _build_html_report(
   </style>
 </head>
 <body>
-  <h1>{client_name} — Stock Image Discovery Report</h1>
-  <p class="subtitle">Pass 1 — Review and identify photographer series candidates before downloading</p>
+  <h1>{client_name} — Stock Image Curation</h1>
+  <p class="subtitle">Click images to keep or skip. Green border = keep. Save selections when done.</p>
   {notes_html}
+
+  <div class="toolbar">
+    <span class="count-label" id="keep-count">Loading...</span>
+    <button class="btn btn-skip-all" onclick="skipAll()">Skip All</button>
+    <button class="btn btn-save" onclick="saveSelections()">Save selections.json</button>
+  </div>
+
   {series_html}
   {category_html}
+
+  <script>
+    function toggle(card) {{
+      card.classList.toggle('kept');
+      card.querySelector('.badge').textContent = card.classList.contains('kept') ? '✓ Keep' : 'Skip';
+      updateCount();
+    }}
+    function skipAll() {{
+      document.querySelectorAll('.photo-card.kept').forEach(c => {{
+        c.classList.remove('kept');
+        c.querySelector('.badge').textContent = 'Skip';
+      }});
+      updateCount();
+    }}
+    function updateCount() {{
+      const kept = document.querySelectorAll('.photo-card.kept').length;
+      const total = document.querySelectorAll('.photo-card').length;
+      document.getElementById('keep-count').textContent = kept + ' of ' + total + ' images kept';
+    }}
+    function saveSelections() {{
+      const kept = [];
+      const skipped = [];
+      document.querySelectorAll('.photo-card').forEach(c => {{
+        const entry = {{ id: parseInt(c.dataset.id), category: c.dataset.category, photographer: c.dataset.photographer, url: c.dataset.url, alt: c.dataset.alt }};
+        if (c.classList.contains('kept')) kept.push(entry);
+        else skipped.push(entry);
+      }});
+      const data = {{ kept, skipped, kept_ids: kept.map(p => p.id) }};
+      const blob = new Blob([JSON.stringify(data, null, 2)], {{type: 'application/json'}});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'selections.json';
+      a.click();
+    }}
+    updateCount();
+  </script>
 </body>
 </html>"""
 
@@ -413,6 +476,7 @@ async def main(
     notes: str,
     photographer_name: str | None,
     commit: bool,
+    fill: bool,
     open_output: bool,
 ) -> None:
     if not settings.pexels_api_key:
@@ -439,6 +503,21 @@ async def main(
 
     categories = DEFAULT_CATEGORIES
 
+    # ── Load existing selections if fill mode ─────────────────────────────────
+    selections_path = out_dir / "selections.json"
+    kept_ids: set[int] = set()
+    kept_photos_by_cat: dict[str, list[dict]] = {}
+
+    if fill and selections_path.exists():
+        sel = json.loads(selections_path.read_text())
+        kept_ids = set(sel.get("kept_ids", []))
+        for p in sel.get("kept", []):
+            cat = p["category"]
+            kept_photos_by_cat.setdefault(cat, []).append(p)
+        print(f"  Fill mode: keeping {len(kept_ids)} approved images, filling gaps...")
+    elif fill:
+        print("  ⚠ No selections.json found — running full discovery instead")
+
     # ── Generate search queries via Claude ────────────────────────────────────
     print("  Generating search queries via Claude...")
     queries = await _generate_search_queries(client_name, brand, services, categories, notes)
@@ -451,6 +530,17 @@ async def main(
     async with httpx.AsyncClient(timeout=20) as http:
         for cat in categories:
             cat_key = cat["key"]
+            already_kept = kept_photos_by_cat.get(cat_key, [])
+            slots_needed = cat["count"] - len(already_kept)
+
+            if fill and slots_needed <= 0:
+                # Category already full from previous selections
+                all_photos_by_cat[cat_key] = already_kept
+                for photo in already_kept:
+                    photographer_counter[photo["photographer"]] += 1
+                print(f"  {cat['label']}: {len(already_kept)} kept — skipping search")
+                continue
+
             cat_queries = queries.get(cat_key, [cat["label"]])
             raw_photos: list[dict] = []
 
@@ -458,6 +548,11 @@ async def main(
                 print(f"  Searching Pexels: '{q}'...")
                 try:
                     results = await _pexels_search(http, q, per_page=15)
+                    # Filter out already-kept or already-skipped IDs in fill mode
+                    if fill and selections_path.exists():
+                        sel = json.loads(selections_path.read_text())
+                        seen_ids = {p["id"] for p in sel.get("kept", []) + sel.get("skipped", [])}
+                        results = [r for r in results if r["id"] not in seen_ids]
                     # If leaning into a specific photographer, filter
                     if photographer_name:
                         results = [
@@ -476,13 +571,16 @@ async def main(
                     seen.add(p["id"])
                     unique.append(p)
 
-            # Score and select via Claude
+            # Score and select via Claude (only fill the remaining slots)
             if unique:
-                print(f"  Scoring {len(unique)} candidates for {cat['label']}...")
-                selected = await _score_images(client_name, brand, cat["label"], unique, cat["count"])
-                all_photos_by_cat[cat_key] = selected
-                for photo in selected:
+                print(f"  Scoring {len(unique)} candidates for {cat['label']} ({slots_needed} slots needed)...")
+                new_selected = await _score_images(client_name, brand, cat["label"], unique, slots_needed)
+                combined = already_kept + new_selected
+                all_photos_by_cat[cat_key] = combined
+                for photo in combined:
                     photographer_counter[photo["photographer"]] += 1
+            elif already_kept:
+                all_photos_by_cat[cat_key] = already_kept
             else:
                 print(f"  ⚠ No results for {cat['label']}")
                 all_photos_by_cat[cat_key] = []
@@ -499,23 +597,38 @@ async def main(
         print("  → Re-run with --photographer \"Name\" to lean into one series")
 
     # ── Build HTML report ─────────────────────────────────────────────────────
-    report_html = _build_html_report(client_name, all_photos_by_cat, photographer_counter, notes)
+    # In fill mode, pre-mark previously kept images as kept
+    report_html = _build_html_report(client_name, all_photos_by_cat, photographer_counter, notes, kept_ids=kept_ids if fill else None)
     report_path = out_dir / "stock_images_report.html"
     report_path.write_text(report_html)
     print(f"\n✓ Report saved: {report_path}")
 
     if commit:
+        # ── Filter to only kept images if selections.json exists ──────────────
+        if selections_path.exists():
+            sel = json.loads(selections_path.read_text())
+            commit_ids = set(sel.get("kept_ids", []))
+            to_download = {
+                cat: [p for p in photos if p["id"] in commit_ids]
+                for cat, photos in all_photos_by_cat.items()
+            }
+            commit_total = sum(len(v) for v in to_download.values())
+            print(f"\nCommitting {commit_total} approved images (from selections.json)...")
+        else:
+            to_download = all_photos_by_cat
+            commit_total = total
+            print(f"\nNo selections.json found — committing all {commit_total} images...")
+
         # ── Download images locally ───────────────────────────────────────────
         images_dir = out_dir / "stock_images"
-        print(f"\nDownloading {total} images to {images_dir}...")
         async with httpx.AsyncClient(timeout=60) as http:
-            downloaded = await _download_images(http, all_photos_by_cat, images_dir)
+            downloaded = await _download_images(http, to_download, images_dir)
 
         downloaded_count = sum(
             1 for photos in downloaded.values()
             for p in photos if p.get("local_path")
         )
-        print(f"✓ Downloaded {downloaded_count}/{total} images")
+        print(f"✓ Downloaded {downloaded_count}/{commit_total} images to {images_dir}")
 
         # ── Save to Notion ────────────────────────────────────────────────────
         if cfg.get("images_db_id"):
@@ -525,9 +638,11 @@ async def main(
         else:
             print("⚠ No images_db_id in client config — skipping Notion save")
     else:
-        print("\nPass 1 complete — discovery only. Review the report then run:")
-        print(f"  make stock-images CLIENT={client_key}  (to download and save)")
-        print(f"  make stock-images CLIENT={client_key} PHOTOGRAPHER=\"Name\"  (to lean into a series)")
+        print("\nReview the report — click images to keep or skip, then click 'Save selections.json'.")
+        print(f"Drop selections.json into: output/{client_key}/")
+        print(f"\nThen run:")
+        print(f"  make stock-images CLIENT={client_key} FILL=1 OPEN=1   (fill gaps, keep approved)")
+        print(f"  make stock-images CLIENT={client_key} COMMIT=1        (download + save to Notion)")
 
     if open_output:
         import subprocess
@@ -539,7 +654,8 @@ if __name__ == "__main__":
     parser.add_argument("--client", default="summit_therapy")
     parser.add_argument("--notes", default="", help="Feedback or style direction for this run")
     parser.add_argument("--photographer", default=None, help="Lean into a specific photographer's work")
-    parser.add_argument("--commit", action="store_true", help="Download images + save to Notion (Pass 2)")
+    parser.add_argument("--commit", action="store_true", help="Download approved images + save to Notion")
+    parser.add_argument("--fill", action="store_true", help="Keep approved images from selections.json, fill gaps with new searches")
     parser.add_argument("--open", action="store_true", dest="open_output", help="Open report in browser")
     args = parser.parse_args()
     asyncio.run(main(
@@ -547,5 +663,6 @@ if __name__ == "__main__":
         notes=args.notes,
         photographer_name=args.photographer,
         commit=args.commit,
+        fill=args.fill,
         open_output=args.open_output,
     ))

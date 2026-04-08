@@ -62,6 +62,7 @@ stock-images:
 	@$(PYTHON) scripts/fetch_stock_images.py --client $(CLIENT) \
 	  $(if $(NOTES),--notes "$(NOTES)",) \
 	  $(if $(PHOTOGRAPHER),--photographer "$(PHOTOGRAPHER)",) \
+	  $(if $(FILL),--fill,) \
 	  $(if $(COMMIT),--commit,) \
 	  $(if $(OPEN),--open,)
 
@@ -134,11 +135,11 @@ help:
 	@echo "  make wireframe  NOTES=\"Use more split-layout components\""
 	@echo ""
 	@echo "  STOCK PHOTOGRAPHY (Pexels)"
-	@echo "  make stock-images                    Discovery pass → HTML report"
-	@echo "  make stock-images OPEN=1             Discovery pass + open report"
+	@echo "  make stock-images OPEN=1             Discovery → HTML report (click Keep/Skip)"
 	@echo "  make stock-images NOTES=\"warmer tones\"  Re-run with style notes"
 	@echo "  make stock-images PHOTOGRAPHER=\"Name\"   Lean into one photographer"
-	@echo "  make stock-images COMMIT=1           Download images + save to Notion"
+	@echo "  make stock-images FILL=1 OPEN=1      Keep approved, fill gaps with new images"
+	@echo "  make stock-images COMMIT=1           Download approved images + save to Notion"
 	@echo ""
 	@echo "  AI IMAGE GENERATION (Replicate + Flux Schnell)"
 	@echo "  make images-brand         Brand creative library (~15 images) → Notion"
