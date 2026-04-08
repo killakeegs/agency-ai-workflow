@@ -200,6 +200,9 @@ make mood-board-visuals     # HTML + JSON
 make sitemap-visuals        # HTML + JSON
 make brand-export           # Brand guidelines JSON
 make relume-export          # Relume AI prompt (paste into relume.io)
+make relume-sitemap         # Compact sitemap for Relume AI import (text paste method)
+make suggest-keywords       # Suggest primary + secondary keywords for all sitemap pages → Notion
+make approve-sitemap        # Bulk-set all sitemap pages to Approved in Notion
 
 # Client onboarding
 make onboarding-form        # Create Onboarding Submissions DB in Notion (one-time setup)
@@ -213,6 +216,97 @@ make advance                # Check Notion approval → run next stage
 ```
 
 All commands default to `CLIENT=wellwell`. Override with `CLIENT=client_key`.
+
+---
+
+## Relume Workflow
+
+`make relume-sitemap CLIENT=x` exports a compact indented tree to `output/{client}/relume_sitemap_export.txt`. Target: under 5,000 chars (Relume AI limit). Max 5 sections per page.
+
+**Correct workflow:**
+1. Run `make relume-sitemap CLIENT=x`
+2. Go to relume.io → New Project → Generate with AI → paste the full contents of the export file → Generate
+3. If Relume's AI drops some CMS subcategory pages (it often samples rather than includes all), add the missing pages manually in Relume's editor after generation — takes ~30 seconds per page
+
+**Do NOT use Relume's "import from web link" feature.** It is designed to crawl existing live websites and extract their navigation structure. It does not work for custom HTML files or structured sitemap exports. All hosting approaches tested (GitHub raw, GitHub Pages, Netlify Drop, jsDelivr CDN) were blocked by Relume's crawler. Text paste is the only reliable method.
+
+---
+
+## Deliverable Standards
+
+### Sitemap Visual (`generate_sitemap_visual.py`)
+- **Column layout with vertical nesting within columns** — nav groups (Services, Who We Serve, About, etc.) are shown as columns side by side. Within each column, pages stack vertically with child pages indented below their parent. Never render all pages in a single flat list.
+- **Two zones** — Main Navigation (top) and Footer (bottom, separated by a dashed divider).
+- **Nav group labels** — virtual nav groupings (Services, About, Resources, etc.) are shown as labeled headers, not as page cards. Real pages are cards.
+- **CMS rule** — service subcategory pages, individual location pages, and blog posts are always CMS. Their hub/index pages are always Static.
+- **Page cards** — color-coded by type (Static/CMS) and content mode (AI/Client). Sections are shown inline inside each card (not in a tooltip). Hover tooltip shows purpose only.
+
+### Section Outlines — Part of Sitemap Stage (not wireframe, not a separate stage)
+Section outlines (the list of named sections on each page) are generated and approved as part of the sitemap stage — not as a separate pipeline stage and not as part of the wireframe. This matches how the team works today: the sitemap document includes both page structure and what goes on each page. One approval covers both.
+
+- Standard section templates live in `config/page_sections.py`, keyed by page template type
+- The SitemapAgent uses these templates as the baseline when generating `Key Sections` for each page
+- Every page must have a section outline before the sitemap is considered ready for review
+- Downstream stages use the approved sections as their blueprint:
+  - **Content agent** — writes copy section by section
+  - **Wireframe agent** — maps each section to a Relume component
+- Default templates apply to all clients. Client-specific adjustments are made during sitemap revision.
+
+### Sitemap Page Type Rules (enforced in SitemapAgent prompt and rebuild_sitemap.py)
+- Service subcategory pages → always CMS; service hub pages → always Static
+- Individual location pages → always CMS; locations hub → always Static
+- Blog posts → always CMS; blog hub/index → always Static
+- Hub/index/overview pages that list CMS items → Static
+- Any page that is one instance of a repeating template → CMS
+
+### Navigation Architecture Rules
+- Main nav should be clean and minimal — avoid more than 6 top-level items
+- Legal pages (Privacy, Terms, Accessibility) always live in the Footer only
+- Location pages live in the Footer (not main nav) for multi-location clinics
+- Testimonials lives in the Footer
+
+### Content Standards (ContentAgent)
+
+**SEO Rules — applied to every page:**
+- Title tag: max 60 chars; target 55–60; front-load primary keyword
+- Meta description: 120–155 chars; end with a soft CTA
+- H1: must include primary keyword once; 20–70 characters; strip all marketing fluff after core keyword phrase
+- H1 must be identical to the hero headline — word for word. In Webflow the hero headline IS the H1.
+- Slugs: no stop words (a, the, and, of, for), no dates, no trailing slashes
+
+**H1/H2/H3 Structure:**
+- H1 = hero headline (same text, word for word — set once per page)
+- H2s = section headings (benefit-driven, used sparingly — one per major section)
+- H3s = sub-section headings or card titles within a section
+
+**Agency Copy Standards — encoded in ContentAgent system prompt, applied to all clients:**
+1. Above the Fold ≤25 words — hero headline + subheadline combined must stay under 25 words
+2. Front-load sentences — lead with the benefit or action, not the context
+3. Benefit-driven H2s — every H2 must deliver a benefit, not a label ("Get Back to Moving" not "Our Approach")
+4. No em dashes (—) — use a comma, period, or restructure the sentence instead
+5. Break up long-form text — use bullets or accordion (expandable) content for anything over 3 sentences in a single block
+
+**Primary vs Secondary Pages — different copy treatment:**
+
+Primary pages (full copy — convince, educate, convert):
+Home, About Us, all service hub pages (Speech Therapy, OT, PT), all service subcategory/condition pages, Who We Serve — Children, Who We Serve — Adults, Locations hub, individual location pages
+
+Secondary pages (minimal copy — navigate, transact, support):
+Contact Us, New Patient Resources, Insurance & Billing, Blog hub, Privacy Policy, Terms of Service, Accessibility Statement
+
+**Contact Page Specific Rules:**
+- Hero: one warm, short line — no FAQs on this page
+- Location details rendered as clean labeled fields (Address:, Phone:, Hours:), not prose
+- Map = one line ("View on Google Maps")
+- Appointment Request Form = form fields only, minimal intro copy
+
+**Home Page — Required Section:**
+Every home page must include a "How to Get Started" section, positioned after Testimonials and before Final CTA. Standard format: 3 numbered steps using the client's brand voice. This section is baked into `config/page_sections.py` home template.
+
+**Notion DB Fields Added (schema self-heals via `_patch_missing_fields()` in ContentAgent):**
+- Sitemap DB: `Primary Keyword` (rich_text), `Secondary Keywords` (rich_text) — populated by `make suggest-keywords`
+- Brand Guidelines DB: `Voice & Tone`, `Reading Level`, `Power Words`, `Words to Avoid`, `CTA Style`, `POV Notes` (all rich_text) — client style guide, read by ContentAgent at runtime
+- Content DB: `Primary Keyword` (from sitemap), `Title Tag Status` (computed select: ✓ OK / ⚠ Over 60 / ⚠ Under 55), `Internal Link Target` (rich_text), `Alt Text Status` (select: Pending / Complete / N/A)
 
 ---
 
