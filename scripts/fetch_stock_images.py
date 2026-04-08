@@ -47,11 +47,11 @@ PEXELS_API = "https://api.pexels.com/v1"
 # ── Default image categories ──────────────────────────────────────────────────
 
 DEFAULT_CATEGORIES = [
-    {"key": "hero_lifestyle",   "label": "Hero Lifestyle",         "count": 5},
-    {"key": "people_candid",    "label": "People — Candid",        "count": 4},
-    {"key": "clinic_environment","label": "Clinic / Environment",  "count": 4},
-    {"key": "detail_closeup",   "label": "Detail Close-Up",        "count": 3},
-    {"key": "abstract_texture", "label": "Abstract / Texture",     "count": 3},
+    {"key": "hero_lifestyle",    "label": "Hero Lifestyle",        "count": 10},
+    {"key": "people_candid",     "label": "People — Candid",       "count": 10},
+    {"key": "clinic_environment","label": "Clinic / Environment",  "count": 10},
+    {"key": "detail_closeup",    "label": "Detail Close-Up",       "count": 10},
+    {"key": "abstract_texture",  "label": "Abstract / Texture",    "count": 10},
 ]
 
 
