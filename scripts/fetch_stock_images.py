@@ -65,6 +65,24 @@ def _get_title(prop: dict) -> str:
     return "".join(p.get("text", {}).get("content", "") for p in prop.get("title", []))
 
 
+async def _patch_brand_guidelines_db(notion: NotionClient, db_id: str) -> None:
+    """Ensure Photography Style field exists in the Brand Guidelines DB.
+    Safe to run on any client — only adds fields that are missing."""
+    fields_to_ensure = {
+        "Photography Style": {"rich_text": {}},
+    }
+    db_info = await notion._client.request(path=f"databases/{db_id}", method="GET")
+    existing = db_info.get("properties", {})
+    to_add = {k: v for k, v in fields_to_ensure.items() if k not in existing}
+    if to_add:
+        await notion._client.request(
+            path=f"databases/{db_id}",
+            method="PATCH",
+            body={"properties": to_add},
+        )
+        print(f"  ✓ Patched Brand Guidelines DB — added: {', '.join(to_add.keys())}")
+
+
 async def _read_brand_guidelines(notion: NotionClient, db_id: str) -> dict:
     entries = await notion.query_database(db_id)
     if not entries:
@@ -410,6 +428,9 @@ async def main(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Fetching stock images for {client_name}...")
+
+    # ── Ensure Brand Guidelines DB has Photography Style field ───────────────
+    await _patch_brand_guidelines_db(notion, cfg["brand_guidelines_db_id"])
 
     # ── Read brand context ────────────────────────────────────────────────────
     brand = await _read_brand_guidelines(notion, cfg["brand_guidelines_db_id"])
