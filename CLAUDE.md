@@ -72,7 +72,7 @@ Each client has a master page under the workspace root with 9 linked databases (
 
 - **Client Info** — pipeline stage, stage status, revision notes, ClickUp folder ID, timeline
 - **Meeting Notes & Transcripts** — raw transcripts, parsed decisions, action item counts
-- **Brand Guidelines** — colors, fonts, tone descriptors, logo assets, image direction notes
+- **Brand Guidelines** — colors, fonts, tone descriptors, logo assets, image direction notes, photography style (drives Pexels search queries)
 - **Mood Board** — variations (A–F), status, style keywords, color palette, client feedback
 - **Sitemap** — page hierarchy, slugs, page type (Static/CMS), content mode, approval status
 - **Page Content** — copy per page, SEO fields (title tag, meta, H1, keywords), word count
@@ -134,7 +134,11 @@ make sitemap          → Generate page hierarchy
   [Client approves]
 make content          → Generate per-page copy + SEO
   [Client approves]
+make stock-images     → Discovery: Claude queries Pexels → HTML report with 15–20 candidates
+                         Review report, spot photographer series candidates
+make stock-images COMMIT=1  → Download chosen images + save to Notion Images DB
                       → Paste relume_sitemap_core.txt into Relume AI → build sitemap
+                      → Upload stock images to Relume Style Guide
                       → Set Relume Style Guide (colors, fonts, spacing)  ← visual direction approval
                       → Build wireframes in Relume using component map from:
 make wireframe        → Generate Relume component map → Notion (reference for Relume build)
@@ -207,6 +211,13 @@ make relume-export          # Relume AI prompt (paste into relume.io)
 make relume-sitemap         # Compact sitemap for Relume AI import (text paste method)
 make suggest-keywords       # Suggest primary + secondary keywords for all sitemap pages → Notion
 make approve-sitemap        # Bulk-set all sitemap pages to Approved in Notion
+
+# Stock photography (Pexels)
+make stock-images           # Discovery pass: query Pexels → HTML report
+make stock-images OPEN=1    # Discovery + open report in browser
+make stock-images NOTES="warmer tones, more candid"  # Revised style direction
+make stock-images PHOTOGRAPHER="Cottonbro Studio"    # Lean into one photographer
+make stock-images COMMIT=1  # Download images + save to Notion Images DB
 
 # Client onboarding
 make onboarding-form        # Create Onboarding Submissions DB in Notion (one-time setup)

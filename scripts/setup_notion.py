@@ -113,6 +113,14 @@ def brand_guidelines_schema() -> dict:
         "Inspiration URLs": {"rich_text": {}},
         "Raw Guidelines": {"rich_text": {}},
         "Image Direction": {"rich_text": {}},
+        "Photography Style": {"rich_text": {}},
+        # ── Content Style Guide ───────────────────────────────────────────────
+        "Voice & Tone": {"rich_text": {}},
+        "Reading Level": {"rich_text": {}},
+        "Power Words": {"rich_text": {}},
+        "Words to Avoid": {"rich_text": {}},
+        "CTA Style": {"rich_text": {}},
+        "POV Notes": {"rich_text": {}},
     }
 
 
@@ -269,6 +277,7 @@ def images_schema() -> dict:
                 "options": [
                     {"name": "Brand Creative", "color": "blue"},
                     {"name": "Page Content",   "color": "green"},
+                    {"name": "Stock",          "color": "purple"},
                 ]
             }
         },
@@ -282,6 +291,9 @@ def images_schema() -> dict:
                     {"name": "Product Flat Lay",   "color": "purple"},
                     {"name": "Brand Abstract",     "color": "orange"},
                     {"name": "Page Feature",       "color": "yellow"},
+                    {"name": "People — Candid",    "color": "red"},
+                    {"name": "Clinic / Environment","color": "brown"},
+                    {"name": "Abstract / Texture", "color": "gray"},
                 ]
             }
         },
@@ -289,6 +301,7 @@ def images_schema() -> dict:
             "select": {
                 "options": [
                     {"name": "Generated",       "color": "blue"},
+                    {"name": "Candidate",       "color": "purple"},
                     {"name": "Approved",        "color": "green"},
                     {"name": "Rejected",        "color": "red"},
                     {"name": "Revision Needed", "color": "yellow"},
@@ -297,6 +310,7 @@ def images_schema() -> dict:
         },
         "Page":              {"rich_text": {}},
         "Image URL":         {"url": {}},
+        "Source":            {"rich_text": {}},
         "Prompt Used":       {"rich_text": {}},
         "Replicate Job ID":  {"rich_text": {}},
         "Mood Board Option": {"rich_text": {}},

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # ── Replicate (image generation) ──────────────────────────────────────────
     replicate_api_key: str | None = None
 
+    # ── Pexels (stock photography for client image libraries) ────────────────
+    pexels_api_key: str | None = None
+
+    # ── Unsplash (stock photos for lifestyle/people categories) ───────────────
+    unsplash_access_key: str | None = None
+
     # ── Google Drive (migration only) ─────────────────────────────────────────
     google_service_account_json_path: str | None = None
 

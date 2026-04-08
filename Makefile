@@ -31,6 +31,21 @@ sitemap:
 	@$(PYTHON) scripts/generate_sitemap_visual.py --client $(CLIENT) --notion
 	@$(PYTHON) scripts/advance_pipeline.py --client $(CLIENT) --mark-pending
 
+suggest-keywords:
+	@$(PYTHON) scripts/suggest_keywords.py --client $(CLIENT) \
+	  $(if $(FORCE),--force,)
+
+approve-sitemap:
+	@$(PYTHON) -c "\
+import asyncio, sys; sys.path.insert(0, '.'); \
+from config.clients import CLIENTS; from src.config import settings; from src.integrations.notion import NotionClient; \
+async def run(): \
+    notion = NotionClient(settings.notion_api_key); \
+    entries = await notion.query_database(CLIENTS['$(CLIENT)']['sitemap_db_id']); \
+    [await notion._client.request(path=f'pages/{e[\"id\"]}', method='PATCH', body={'properties': {'Status': {'select': {'name': 'Approved'}}}}) for e in entries]; \
+    print(f'Done — {len(entries)} sitemap pages set to Approved'); \
+asyncio.run(run())"
+
 content:
 	@$(PYTHON) scripts/run_pipeline_stage.py --stage content --client $(CLIENT) \
 	  $(if $(NOTES),--revision "$(NOTES)",)
@@ -42,6 +57,13 @@ wireframe:
 	@$(PYTHON) scripts/advance_pipeline.py --client $(CLIENT) --mark-pending
 
 # ── Visual generators (HTML + JSON for Figma plugin) ─────────────────────────
+
+stock-images:
+	@$(PYTHON) scripts/fetch_stock_images.py --client $(CLIENT) \
+	  $(if $(NOTES),--notes "$(NOTES)",) \
+	  $(if $(PHOTOGRAPHER),--photographer "$(PHOTOGRAPHER)",) \
+	  $(if $(COMMIT),--commit,) \
+	  $(if $(OPEN),--open,)
 
 images-brand:
 	@$(PYTHON) scripts/generate_images.py --client $(CLIENT) --mode brand \
@@ -61,6 +83,10 @@ sitemap-visuals:
 
 brand-export:
 	@$(PYTHON) scripts/export_brand_guidelines.py --client $(CLIENT) --open
+
+relume-sitemap:
+	@$(PYTHON) scripts/export_relume_sitemap.py --client $(CLIENT) \
+	  $(if $(OPEN),--open,)
 
 relume-export:
 	@$(PYTHON) scripts/export_relume_prompt.py --client $(CLIENT) --open
@@ -97,6 +123,7 @@ help:
 	@echo "  make transcript       Parse meeting transcript → Notion"
 	@echo "  make mood-board       Generate mood board variations → Notion"
 	@echo "  make sitemap          Generate sitemap → Notion"
+	@echo "  make suggest-keywords Suggest target keywords for all sitemap pages → Notion"
 	@echo "  make content          Generate page copy → Notion"
 	@echo "  make wireframe        Generate Relume component maps → Notion"
 	@echo ""
@@ -106,7 +133,14 @@ help:
 	@echo "  make content    NOTES=\"Homepage tone needs to be warmer\""
 	@echo "  make wireframe  NOTES=\"Use more split-layout components\""
 	@echo ""
-	@echo "  IMAGE GENERATION (Replicate + Flux Schnell)"
+	@echo "  STOCK PHOTOGRAPHY (Pexels)"
+	@echo "  make stock-images                    Discovery pass → HTML report"
+	@echo "  make stock-images OPEN=1             Discovery pass + open report"
+	@echo "  make stock-images NOTES=\"warmer tones\"  Re-run with style notes"
+	@echo "  make stock-images PHOTOGRAPHER=\"Name\"   Lean into one photographer"
+	@echo "  make stock-images COMMIT=1           Download images + save to Notion"
+	@echo ""
+	@echo "  AI IMAGE GENERATION (Replicate + Flux Schnell)"
 	@echo "  make images-brand         Brand creative library (~15 images) → Notion"
 	@echo "  make images-pages         Page-specific images (~3 per page)  → Notion"
 	@echo "  make images-brand NOTES=\"Make textures softer\"  Regenerate with feedback"
@@ -125,6 +159,6 @@ help:
 	@echo ""
 
 .PHONY: run transcript mood-board sitemap content wireframe \
-        images-brand images-pages \
+        stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-export \
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup help
