@@ -1,4 +1,21 @@
 """
+MoodBoardAgent — DEPRECATED (2026-04-08)
+
+This agent is no longer part of the standard pipeline. Visual direction is now
+handled via Relume's built-in Style Guide (colors, fonts, spacing), which applies
+directly to components with no translation gap.
+
+Brand voice and tone data continues to flow through:
+  TranscriptParser → Brand Guidelines DB → ContentAgent
+
+The mood board step remains available as an optional step for clients who need
+early visual alignment before committing to a direction, but is no longer a
+required pipeline stage.
+
+Code is kept for reference. Do not call this agent in new pipeline runs.
+
+--- Original docstring below ---
+
 MoodBoardAgent — Stage 3: MOOD_BOARD_DRAFT (approval gate)
 
 Reads all client context from Notion, generates 4 distinct mood board variation
@@ -56,7 +73,7 @@ For each variation return a JSON object in this exact structure:
     {
       "option": "Option A",
       "concept_name": "Short evocative name (e.g. 'Boutique Clinical')",
-      "concept_description": "2-3 sentences. What is the core creative idea? What emotion does it evoke? What does the patient feel when they land on this site?",
+      "concept_description": "2 sentences max. Core creative idea and the emotion it evokes.",
       "color_palette": {
         "primary": "#HEX — name and usage",
         "secondary": "#HEX — name and usage",
@@ -68,40 +85,40 @@ For each variation return a JSON object in this exact structure:
       "typography": {
         "primary_font": "Font name (Google Fonts preferred) — usage",
         "secondary_font": "Font name — usage",
-        "pairing_rationale": "Why these two fonts work together for this brand"
+        "pairing_rationale": "One sentence on why these fonts work together"
       },
-      "imagery_style": "Describe the photography/illustration style in 2-3 sentences. Lighting, subject matter, mood, color grading.",
-      "layout_principles": "2-3 key layout principles for this variation (e.g., generous white space, bold typography, asymmetric grids)",
-      "sample_headline": "A real, usable headline for the homepage hero that fits this concept",
+      "imagery_style": "1-2 sentences. Lighting, subject matter, mood.",
+      "layout_principles": "2 key layout principles for this variation",
+      "sample_headline": "A real, usable homepage hero headline",
       "reference_aesthetics": [
-        "Company/site name — what specific element to reference",
-        "Company/site name — what specific element to reference"
+        "Site name — specific element to reference",
+        "Site name — specific element to reference"
       ],
-      "target_audience_fit": "Why this variation specifically appeals to this client's target demographic (derived from brand guidelines and meeting notes)",
+      "target_audience_fit": "One sentence on why this appeals to the client's target demographic",
       "best_practices_score": {
-        "trust_credibility": "Score 1-10 with brief explanation",
-        "conversion_optimization": "Score 1-10 with brief explanation",
-        "accessibility": "Score 1-10 with brief explanation",
-        "brand_alignment": "Score 1-10 with brief explanation (alignment with client stated prefs)",
-        "differentiation": "Score 1-10 with brief explanation (stands out vs. generic telehealth)"
+        "trust_credibility": "N/10 — 5 words",
+        "conversion_optimization": "N/10 — 5 words",
+        "accessibility": "N/10 — 5 words",
+        "brand_alignment": "N/10 — 5 words",
+        "differentiation": "N/10 — 5 words"
       },
-      "strengths": ["Key strength 1", "Key strength 2", "Key strength 3"],
-      "risks": ["Potential concern 1", "Potential concern 2"],
-      "recommended_for": "Type of client/situation this option is best suited for"
+      "strengths": ["Strength 1", "Strength 2"],
+      "risks": ["Risk 1"],
+      "recommended_for": "One sentence on best client/situation fit"
     }
   ],
   "recommendation": {
     "top_pick": "Option X",
-    "rationale": "2-3 sentences on why this is the strongest choice for this client specifically",
+    "rationale": "1-2 sentences on why this is strongest for this client",
     "runner_up": "Option Y",
-    "runner_up_rationale": "Why this is worth presenting as the alternative",
-    "synthesis_opportunity": "What elements from different options could be combined if client wants a hybrid"
+    "runner_up_rationale": "One sentence on why worth presenting",
+    "synthesis_opportunity": "One sentence on what could be combined from different options"
   },
   "best_practices_summary": {
-    "telehealth_trust_signals": "What every telehealth site must have to convert skeptical patients (2-3 sentences)",
-    "female_audience_design": "Key design principles for female-skewing wellness brands (2-3 sentences)",
-    "booking_conversion": "What drives appointment bookings specifically — CTA placement, social proof, etc. (2-3 sentences)",
-    "competitive_gap": "What this client can do better than their primary competitors (2-3 sentences — derive competitors from brand guidelines and meeting notes)"
+    "telehealth_trust_signals": "1-2 sentences on must-have trust elements for telehealth conversion",
+    "female_audience_design": "1-2 sentences on design principles for female-skewing wellness brands",
+    "booking_conversion": "1-2 sentences on what drives appointment bookings",
+    "competitive_gap": "1-2 sentences on what this client can do better than competitors"
   }
 }
 

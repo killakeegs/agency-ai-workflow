@@ -115,7 +115,7 @@ Pure state machine — no LLM calls. Reads PipelineState from ClickUp + Notion, 
 |---|---|---|---|
 | Onboarding | `src/agents/onboarding.py` | Built | Reads form submission → provisions all Notion DBs + ClickUp → writes client brief → adds to clients.json |
 | Transcript Parser | `src/agents/transcript_parser.py` | Built | Parses Gemini transcript → decisions, action items, brand preferences → Notion |
-| Mood Board | `src/agents/mood_board.py` | Built | Brand prefs → 4–6 mood board variations → Notion |
+| Mood Board | `src/agents/mood_board.py` | **Deprecated** | Replaced by Relume Style Guide. Code kept for reference but no longer runs in the pipeline. |
 | Sitemap | `src/agents/sitemap.py` | Built | Goals + business type → page hierarchy → Notion |
 | Content | `src/agents/content.py` | Built | Sitemap pages → per-page copy + SEO → Notion |
 | Wireframe Spec | `src/agents/wireframe_spec.py` | Built | Sitemap + content → Relume component map → Notion |
@@ -130,20 +130,23 @@ Pure state machine — no LLM calls. Reads PipelineState from ClickUp + Notion, 
 ```
 make onboard          → Provision client (Notion DBs + ClickUp + client brief)
 make transcript       → Parse meeting → brand prefs, decisions, action items
-make mood-board       → Generate 4–6 mood board variations
-  [Client approves]
 make sitemap          → Generate page hierarchy
   [Client approves]
 make content          → Generate per-page copy + SEO
   [Client approves]
-make wireframe        → Generate Relume component map
-  [Client approves]
+                      → Paste relume_sitemap_core.txt into Relume AI → build sitemap
+                      → Set Relume Style Guide (colors, fonts, spacing)  ← visual direction approval
+                      → Build wireframes in Relume using component map from:
+make wireframe        → Generate Relume component map → Notion (reference for Relume build)
+  [Client approves wireframe in Relume]
 make images-brand     → Generate ~15 brand images via Replicate
 make images-pages     → Generate ~3 images per page via Replicate
-  → Designer builds in Figma following Relume map
+  → Designer builds hi-fi in Figma following Relume map
   → Developer builds in Webflow
   [make webflow-push] → (PENDING — Webflow MCP integration)
 ```
+
+**Why mood board was removed:** Relume's built-in Style Guide (colors, fonts, spacing) replaces the visual direction step and applies it directly to components — no translation gap. The brand voice and tone data the mood board previously surfaced is already captured by the transcript parser → Brand Guidelines DB → ContentAgent. Mood board is available as an optional step for clients who need early visual alignment before committing, but is no longer a required pipeline stage.
 
 **Approval flow:**
 - Each stage auto-sets Notion Stage Status = "Pending Review" + creates ClickUp task
@@ -152,8 +155,9 @@ make images-pages     → Generate ~3 images per page via Replicate
 
 **Revisions:**
 ```bash
-make mood-board NOTES="Option A is too clinical"
+make sitemap NOTES="Add a FAQs page"
 make content NOTES="Homepage tone needs to be warmer"
+make wireframe NOTES="Use more split-layout components"
 ```
 
 ---
