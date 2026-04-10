@@ -1,5 +1,5 @@
 """
-ImageGenerationAgent — AI image generation via Replicate (Flux Schnell)
+ImageGenerationAgent — AI image generation via Replicate (Flux Schnell) + Unsplash
 
 Two generation modes:
 
@@ -8,6 +8,10 @@ Two generation modes:
     6 categories: hero_lifestyle, detail_closeup, texture_background,
     environment, product_flatlay, brand_abstract.
     Driven by: approved mood board + brand guidelines + Image Direction notes.
+
+    Source routing (when UNSPLASH_ACCESS_KEY is set):
+      hero_lifestyle, detail_closeup  → Unsplash stock photos (real people)
+      texture_background, environment, product_flatlay, brand_abstract → Replicate
 
   PAGE BATCH (mode="pages") — runs after content approval
     Generates 3 images per sitemap page, contextually relevant to each
@@ -45,6 +49,19 @@ from .base_agent import AgentError, BaseAgent
 
 logger = logging.getLogger(__name__)
 
+# ── Source routing ────────────────────────────────────────────────────────────
+# Categories that fetch real stock photos from Unsplash (when key is available)
+UNSPLASH_CATEGORIES = {"hero_lifestyle", "detail_closeup"}
+
+# Map aspect_ratio → Unsplash orientation parameter
+ASPECT_TO_ORIENTATION = {
+    "16:9": "landscape",
+    "3:2":  "landscape",
+    "4:3":  "landscape",
+    "1:1":  "squarish",
+    "9:16": "portrait",
+}
+
 # ── Brand batch category definitions ──────────────────────────────────────────
 
 BRAND_CATEGORIES = [
@@ -73,34 +90,54 @@ telehealth and wellness brands. Generate brand creative images for a client webs
 These {total} images form the visual library that will be reused across the entire site —
 every category serves a distinct design role.
 
-Flux Schnell prompt rules:
-- Lead with the main subject and scene
-- Specify lighting: soft window light, diffused studio, golden hour, etc.
-- Include color grading that aligns with the brand palette
-- Specify photography style: editorial, lifestyle, commercial healthcare, etc.
-- Add technical specs at the end: camera, aperture, resolution
-- Avoid: text, logos, UI elements, watermarks
-- 80–130 words per prompt — specific beats vague
+IMPORTANT — two different prompt types depending on category:
+
+For "hero_lifestyle" and "detail_closeup":
+  {lifestyle_instruction}
+
+For "texture_background", "environment", "product_flatlay", "brand_abstract":
+  Write a full Flux Schnell image generation prompt (80-130 words).
+  - Lead with the main subject and scene
+  - Specify lighting: soft window light, diffused studio, golden hour, etc.
+  - Include color grading that aligns with the brand palette
+  - Specify photography style: editorial, lifestyle, commercial healthcare, etc.
+  - Add technical specs at the end: camera, aperture, resolution
+  - Avoid: text, logos, UI elements, watermarks
 
 IMPORTANT: Read the "Image Direction Notes" in the brand context carefully.
 These are client-specific instructions that OVERRIDE general creative guidance.
 
 Return ONLY this JSON (no markdown, no commentary):
-{
+{{
   "images": [
-    {
+    {{
       "category": "hero_lifestyle",
       "index": 1,
       "label": "Hero Lifestyle 1",
       "prompt": "...",
       "aspect_ratio": "16:9",
       "rationale": "One sentence on how this serves the brand"
-    }
+    }}
   ],
   "direction_notes": "2-3 sentences on the overall visual direction for this batch"
-}
+}}
 
 Generate ALL {total} images across ALL categories.
+"""
+
+LIFESTYLE_INSTRUCTION_UNSPLASH = """\
+Write a SHORT Unsplash stock photo search query (8-15 words) in the "prompt" field.
+  Think: what would a photographer search for to find this exact type of image?
+  Be specific about subject, setting, mood, and style — NOT a full prose description.
+  Examples: "wellness woman yoga studio natural light calm morning"
+            "skincare close-up dewy skin textured neutral background"
+            "female professional telehealth consultation laptop home office"\
+"""
+
+LIFESTYLE_INSTRUCTION_REPLICATE = """\
+Write a full Flux Schnell image generation prompt (80-130 words).
+  Lead with subject, lighting, color grading, photography style, and camera specs.
+  Avoid text, logos, UI elements, watermarks.\
 """
 
 PAGE_SYSTEM_PROMPT = """\
@@ -121,19 +158,19 @@ IMPORTANT: Read the Image Direction Notes — these are client-specific instruct
 OVERRIDE general creative guidance.
 
 Return ONLY this JSON:
-{
+{{
   "pages": [
-    {
+    {{
       "page_title": "...",
       "images": [
-        {"label": "...", "prompt": "...", "aspect_ratio": "16:9"},
-        {"label": "...", "prompt": "...", "aspect_ratio": "4:3"},
-        {"label": "...", "prompt": "...", "aspect_ratio": "3:2"}
+        {{"label": "...", "prompt": "...", "aspect_ratio": "16:9"}},
+        {{"label": "...", "prompt": "...", "aspect_ratio": "4:3"}},
+        {{"label": "...", "prompt": "...", "aspect_ratio": "3:2"}}
       ]
-    }
+    }}
   ],
   "direction_notes": "2-3 sentences on visual consistency across page images"
-}
+}}
 """
 
 # ── Notion helpers ─────────────────────────────────────────────────────────────
@@ -233,7 +270,12 @@ Image Direction notes above — not generic defaults. The images should feel lik
 a cohesive editorial shoot: different subjects and crops, one unified language.
 {f"REVISION REQUEST: {revision_notes}" if revision_notes else ""}"""
 
-        system = BRAND_SYSTEM_PROMPT.format(total=BRAND_TOTAL)
+        lifestyle_instr = (
+            LIFESTYLE_INSTRUCTION_UNSPLASH
+            if settings.unsplash_access_key
+            else LIFESTYLE_INSTRUCTION_REPLICATE
+        )
+        system = BRAND_SYSTEM_PROMPT.format(total=BRAND_TOTAL, lifestyle_instruction=lifestyle_instr)
         images_data = await self._call_claude_for_prompts(system, user_message, mode="brand")
 
         results = await self._generate_and_save_batch(
@@ -466,6 +508,38 @@ specific page: one wide hero (16:9), one medium feature (4:3), one accent (3:2).
         self.log.info(f"Got prompts for {count} {'images' if mode == 'brand' else 'pages'} from Claude")
         return data
 
+    async def _search_unsplash(self, query: str, orientation: str = "landscape") -> tuple[str, str]:
+        """Search Unsplash and return (photo_id, image_url). Triggers required download signal."""
+        headers = {"Authorization": f"Client-ID {settings.unsplash_access_key}"}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                "https://api.unsplash.com/search/photos",
+                headers=headers,
+                params={
+                    "query": query,
+                    "orientation": orientation,
+                    "per_page": 10,
+                    "content_filter": "high",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                raise AgentError(f"No Unsplash results for query: {query!r}")
+
+            photo = results[0]
+            photo_id = photo["id"]
+            image_url = photo["urls"]["regular"]
+
+            # Required by Unsplash API guidelines — signal a download event
+            try:
+                await client.get(photo["links"]["download_location"], headers=headers)
+            except Exception:
+                pass  # non-fatal
+
+            return photo_id, image_url
+
     async def _generate_and_save_batch(
         self,
         images_data: dict,
@@ -473,9 +547,10 @@ specific page: one wide hero (16:9), one medium feature (4:3), one accent (3:2).
         batch: str,
         mood_option: str,
     ) -> list[dict]:
-        """Generate each image via Replicate and save to Notion. Returns results list."""
+        """Generate each image (Unsplash or Replicate) and save to Notion. Returns results list."""
         raw_images: list[dict] = images_data.get("images", [])
         results: list[dict] = []
+        use_unsplash = bool(settings.unsplash_access_key)
 
         for img in raw_images:
             label = img.get("label", "Image")
@@ -484,10 +559,20 @@ specific page: one wide hero (16:9), one medium feature (4:3), one accent (3:2).
             category = img.get("category", img.get("key", ""))
             page = img.get("page", "")
 
-            self.log.info(f"Generating: {label} ({aspect_ratio})...")
+            via_unsplash = use_unsplash and category in UNSPLASH_CATEGORIES
+
+            if via_unsplash:
+                self.log.info(f"Searching Unsplash: {label} ({aspect_ratio})...")
+            else:
+                self.log.info(f"Generating: {label} ({aspect_ratio})...")
+                await asyncio.sleep(3)  # stay within Replicate rate limits
 
             try:
-                pred_id, image_url = await self._generate_image(prompt, aspect_ratio)
+                if via_unsplash:
+                    orientation = ASPECT_TO_ORIENTATION.get(aspect_ratio, "landscape")
+                    pred_id, image_url = await self._search_unsplash(prompt, orientation)
+                else:
+                    pred_id, image_url = await self._generate_image(prompt, aspect_ratio)
                 self.log.info(f"  ✓ {label}")
             except Exception as e:
                 self.log.error(f"  ✗ {label}: {e}")
@@ -495,13 +580,14 @@ specific page: one wide hero (16:9), one medium feature (4:3), one accent (3:2).
                 continue
 
             # Save to Notion
+            job_id_value = f"unsplash:{pred_id}" if via_unsplash else pred_id
             properties: dict = {
                 "Image Name": self.notion.title_property(label),
                 "Batch": self.notion.select_property(batch),
                 "Status": self.notion.select_property("Generated"),
                 "Image URL": {"url": image_url},
                 "Prompt Used": self.notion.text_property(prompt[:2000]),
-                "Replicate Job ID": self.notion.text_property(pred_id),
+                "Replicate Job ID": self.notion.text_property(job_id_value),
                 "Mood Board Option": self.notion.text_property(mood_option),
             }
             if category:
@@ -566,12 +652,22 @@ specific page: one wide hero (16:9), one medium feature (4:3), one accent (3:2).
         }
 
         async with httpx.AsyncClient(timeout=90) as client:
-            resp = await client.post(
-                "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-                headers=headers,
-                json=payload,
-            )
-            resp.raise_for_status()
+            # Retry up to 4 times with backoff on 429 rate limit errors
+            for attempt in range(4):
+                resp = await client.post(
+                    "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+                    headers=headers,
+                    json=payload,
+                )
+                if resp.status_code == 429:
+                    wait = 10 * (attempt + 1)
+                    self.log.warning(f"Replicate rate limited — waiting {wait}s before retry {attempt + 1}/3")
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                break
+            else:
+                resp.raise_for_status()
             data = resp.json()
             pred_id = data["id"]
             status = data.get("status", "")

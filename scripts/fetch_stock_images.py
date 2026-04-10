@@ -508,14 +508,61 @@ async def main(
     out_dir = Path(__file__).parent.parent / "output" / client_key
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Fetching stock images for {client_name}...")
+    selections_path = out_dir / "selections.json"
 
     # ── Ensure DBs have all required fields ──────────────────────────────────
     await _patch_brand_guidelines_db(notion, cfg["brand_guidelines_db_id"])
     if cfg.get("images_db_id"):
         await _patch_images_db(notion, cfg["images_db_id"])
 
-    # ── Read brand context ────────────────────────────────────────────────────
+    # ── COMMIT MODE: skip discovery, download directly from selections.json ──
+    if commit:
+        if not selections_path.exists():
+            print("✗ No selections.json found. Run discovery first, save selections, then commit.")
+            sys.exit(1)
+
+        sel = json.loads(selections_path.read_text())
+        kept = sel.get("kept", [])
+        if not kept:
+            print("✗ selections.json has no kept images. Review the HTML report and save selections first.")
+            sys.exit(1)
+
+        # Group kept photos by category using data already stored in selections.json
+        to_download: dict[str, list[dict]] = {}
+        for p in kept:
+            cat = p.get("category", "hero_lifestyle")
+            to_download.setdefault(cat, []).append(p)
+
+        commit_total = len(kept)
+        print(f"Committing {commit_total} approved images (from selections.json)...")
+
+        images_dir = out_dir / "stock_images"
+        async with httpx.AsyncClient(timeout=60) as http:
+            downloaded = await _download_images(http, to_download, images_dir)
+
+        downloaded_count = sum(
+            1 for photos in downloaded.values()
+            for p in photos if p.get("local_path")
+        )
+        print(f"✓ Downloaded {downloaded_count}/{commit_total} images to {images_dir}")
+
+        if cfg.get("images_db_id"):
+            print("Saving to Notion Images DB...")
+            await _save_to_notion(notion, cfg["images_db_id"], client_name, downloaded)
+            print("✓ Saved to Notion")
+        else:
+            print("⚠ No images_db_id in client config — skipping Notion save")
+
+        if open_output:
+            import subprocess
+            report_path = out_dir / "stock_images_report.html"
+            if report_path.exists():
+                subprocess.run(["open", str(report_path)])
+        return
+
+    # ── DISCOVERY MODE ────────────────────────────────────────────────────────
+    print(f"Fetching stock images for {client_name}...")
+
     brand = await _read_brand_guidelines(notion, cfg["brand_guidelines_db_id"])
     services = await _read_approved_services(notion, cfg["sitemap_db_id"])
     print(f"  Brand guidelines loaded. Services: {len(services)} pages")
@@ -523,7 +570,6 @@ async def main(
     categories = DEFAULT_CATEGORIES
 
     # ── Load existing selections if fill mode ─────────────────────────────────
-    selections_path = out_dir / "selections.json"
     kept_ids: set[int] = set()
     kept_photos_by_cat: dict[str, list[dict]] = {}
 
@@ -553,7 +599,6 @@ async def main(
             slots_needed = cat["count"] - len(already_kept)
 
             if fill and slots_needed <= 0:
-                # Category already full from previous selections
                 all_photos_by_cat[cat_key] = already_kept
                 for photo in already_kept:
                     photographer_counter[photo["photographer"]] += 1
@@ -567,12 +612,10 @@ async def main(
                 print(f"  Searching Pexels: '{q}'...")
                 try:
                     results = await _pexels_search(http, q, per_page=15)
-                    # Filter out already-kept or already-skipped IDs in fill mode
                     if fill and selections_path.exists():
                         sel = json.loads(selections_path.read_text())
                         seen_ids = {p["id"] for p in sel.get("kept", []) + sel.get("skipped", [])}
                         results = [r for r in results if r["id"] not in seen_ids]
-                    # If leaning into a specific photographer, filter
                     if photographer_name:
                         results = [
                             r for r in results
@@ -582,7 +625,6 @@ async def main(
                 except Exception as e:
                     print(f"  ⚠ Search failed for '{q}': {e}")
 
-            # Deduplicate by photo ID
             seen = set()
             unique = []
             for p in raw_photos:
@@ -590,7 +632,6 @@ async def main(
                     seen.add(p["id"])
                     unique.append(p)
 
-            # Score and select via Claude (only fill the remaining slots)
             if unique:
                 print(f"  Scoring {len(unique)} candidates for {cat['label']} ({slots_needed} slots needed)...")
                 new_selected = await _score_images(client_name, brand, cat["label"], unique, slots_needed)
@@ -607,7 +648,6 @@ async def main(
     total = sum(len(v) for v in all_photos_by_cat.values())
     print(f"\n  Selected {total} images across {len(all_photos_by_cat)} categories")
 
-    # ── Photographer series summary ───────────────────────────────────────────
     series = [(n, c) for n, c in photographer_counter.most_common() if c >= 3]
     if series:
         print("\n  Series candidates (3+ images from same photographer):")
@@ -615,53 +655,15 @@ async def main(
             print(f"    • {name}: {count} images")
         print("  → Re-run with --photographer \"Name\" to lean into one series")
 
-    # ── Build HTML report ─────────────────────────────────────────────────────
-    # In fill mode, pre-mark previously kept images as kept
     report_html = _build_html_report(client_name, all_photos_by_cat, photographer_counter, notes, kept_ids=kept_ids if fill else None)
     report_path = out_dir / "stock_images_report.html"
     report_path.write_text(report_html)
     print(f"\n✓ Report saved: {report_path}")
-
-    if commit:
-        # ── Filter to only kept images if selections.json exists ──────────────
-        if selections_path.exists():
-            sel = json.loads(selections_path.read_text())
-            commit_ids = set(sel.get("kept_ids", []))
-            to_download = {
-                cat: [p for p in photos if p["id"] in commit_ids]
-                for cat, photos in all_photos_by_cat.items()
-            }
-            commit_total = sum(len(v) for v in to_download.values())
-            print(f"\nCommitting {commit_total} approved images (from selections.json)...")
-        else:
-            to_download = all_photos_by_cat
-            commit_total = total
-            print(f"\nNo selections.json found — committing all {commit_total} images...")
-
-        # ── Download images locally ───────────────────────────────────────────
-        images_dir = out_dir / "stock_images"
-        async with httpx.AsyncClient(timeout=60) as http:
-            downloaded = await _download_images(http, to_download, images_dir)
-
-        downloaded_count = sum(
-            1 for photos in downloaded.values()
-            for p in photos if p.get("local_path")
-        )
-        print(f"✓ Downloaded {downloaded_count}/{commit_total} images to {images_dir}")
-
-        # ── Save to Notion ────────────────────────────────────────────────────
-        if cfg.get("images_db_id"):
-            print("Saving to Notion Images DB...")
-            await _save_to_notion(notion, cfg["images_db_id"], client_name, downloaded)
-            print("✓ Saved to Notion")
-        else:
-            print("⚠ No images_db_id in client config — skipping Notion save")
-    else:
-        print("\nReview the report — click images to keep or skip, then click 'Save selections.json'.")
-        print(f"Drop selections.json into: output/{client_key}/")
-        print(f"\nThen run:")
-        print(f"  make stock-images CLIENT={client_key} FILL=1 OPEN=1   (fill gaps, keep approved)")
-        print(f"  make stock-images CLIENT={client_key} COMMIT=1        (download + save to Notion)")
+    print("\nReview the report — click images to keep or skip, then click 'Save selections.json'.")
+    print(f"Drop selections.json into: output/{client_key}/")
+    print(f"\nThen run:")
+    print(f"  make stock-images CLIENT={client_key} FILL=1 OPEN=1   (fill gaps, keep approved)")
+    print(f"  make stock-images CLIENT={client_key} COMMIT=1        (download + save to Notion)")
 
     if open_output:
         import subprocess

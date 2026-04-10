@@ -25,6 +25,7 @@ Output:
 from __future__ import annotations
 
 import json
+import json_repair
 import logging
 import re
 from typing import Any
@@ -413,9 +414,9 @@ class WireframeSpecAgent(BaseAgent):
             )
         self.log.info(f"Processing {len(pages_to_process)} pages")
 
-        # ── Step 5: Generate component maps in batches of 5 ───────────────────
-        generated_pages: list[dict] = []
-        batch_size = 5
+        # ── Step 5: Generate component maps one page at a time ────────────────
+        created_ids: list[str] = []
+        batch_size = 1
 
         for batch_idx in range(0, len(pages_to_process), batch_size):
             batch = pages_to_process[batch_idx:batch_idx + batch_size]
@@ -468,9 +469,11 @@ and Footer last on every page. Return the JSON as specified."""
 
             try:
                 clean = re.sub(r"```(?:json)?\n?", "", raw_output).strip()
-                batch_data: dict = json.loads(clean)
-                generated_pages.extend(batch_data.get("pages", []))
-            except json.JSONDecodeError as exc:
+                try:
+                    batch_data: dict = json.loads(clean)
+                except json.JSONDecodeError:
+                    batch_data = json_repair.repair_json(clean, return_objects=True)
+            except Exception as exc:
                 self.log.error(
                     f"JSON parse failed for batch {batch_num}: {exc}\n"
                     f"{raw_output[:400]}"
@@ -480,37 +483,35 @@ and Footer last on every page. Return the JSON as specified."""
                     f"— {exc}"
                 ) from exc
 
-        # ── Step 6: Write each page spec to Wireframes DB ─────────────────────
-        created_ids: list[str] = []
+            # ── Save each page immediately (so progress survives failures) ────
+            for page_data in batch_data.get("pages", []):
+                title = page_data.get("title", "Untitled")
+                total_components = page_data.get("total_components", 0)
+                if not isinstance(total_components, int):
+                    total_components = len(page_data.get("components", []))
 
-        for page_data in generated_pages:
-            title = page_data.get("title", "Untitled")
-            total_components = page_data.get("total_components", 0)
-            if not isinstance(total_components, int):
-                total_components = len(page_data.get("components", []))
-
-            entry_id = await self.notion.create_database_entry(
-                wireframes_db_id,
-                {
-                    "Page Title": self.notion.title_property(title),
-                    "Status": self.notion.select_property("Draft"),
-                    "Component Count": {"number": total_components},
-                },
-            )
-
-            spec_blocks = _wireframe_blocks(page_data)
-            for i in range(0, len(spec_blocks), 90):
-                await self.notion.append_blocks(
-                    entry_id, spec_blocks[i:i + 90]
+                entry_id = await self.notion.create_database_entry(
+                    wireframes_db_id,
+                    {
+                        "Name": self.notion.title_property(title),
+                        "Status": self.notion.select_property("Draft"),
+                        "Component Count": {"number": total_components},
+                    },
                 )
 
-            created_ids.append(entry_id)
-            self.log.info(
-                f"  ✓ {title} — {total_components} components → {entry_id}"
-            )
+                spec_blocks = _wireframe_blocks(page_data)
+                for i in range(0, len(spec_blocks), 90):
+                    await self.notion.append_blocks(
+                        entry_id, spec_blocks[i:i + 90]
+                    )
+
+                created_ids.append(entry_id)
+                self.log.info(
+                    f"  ✓ {title} — {total_components} components → {entry_id}"
+                )
 
         self.log.info(
-            f"WireframeSpecAgent complete | {len(created_ids)} pages written"
+            f"WireframeSpecAgent complete | {len(created_ids)} pages written to Notion"
         )
 
         return {

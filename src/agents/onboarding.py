@@ -1,24 +1,28 @@
 """
-OnboardingAgent — Provision a new client from a Notion form submission
+OnboardingAgent — Provision a new client from a Notion intake form submission
 
-Triggered by: a new entry in the Client Onboarding Submissions DB
+Triggered by: a new entry in the Client Intake — Submissions DB
               with Pipeline Status = "New Submission"
+              and Intake Type = "Website Build Intake" (or "Core Business Intake")
 
 What it does:
-  1. Reads all 54 onboarding form fields from Notion
+  1. Reads the intake form submission from Notion
   2. Creates the full 9-database Notion structure for the client
-  3. Creates a ClickUp folder + "Website Development" list
-  4. Populates Client Info DB with contact + business details from the form
-  5. Populates Brand Guidelines DB with colors, fonts, tone from the form
-  6. Asks Claude to synthesize the form into a Client Brief document
+  3. Populates Client Info DB with contact + business details from the form
+  4. Populates Brand Guidelines DB with colors, fonts, tone from the form
+  5. Asks Claude to synthesize the form into a Client Brief document
      and writes it to a Notion page under the client root
-  7. Writes the new client entry to config/clients.json
-  8. Marks the submission as "Active Client" in the Onboarding Submissions DB
-  9. Returns the new client key (slug) for immediate pipeline use
+  6. Writes the new client entry to config/clients.json
+  7. Marks the submission as "Active Client" in the intake DB
+  8. Returns the new client key (slug) for immediate pipeline use
+
+Note: ClickUp folder + Slack channel are created automatically by the GHL
+integration when a deal closes. This agent does NOT create ClickUp resources.
 
 After this runs, the client is fully provisioned and:
-    make mood-board CLIENT=<client_key>
-    make images-brand CLIENT=<client_key>
+    make transcript CLIENT=<client_key>
+    make sitemap CLIENT=<client_key>
+    make content CLIENT=<client_key>
 ...work immediately.
 """
 from __future__ import annotations
@@ -77,6 +81,41 @@ Return ONLY this JSON:
 """
 
 
+# ── Submission merge helpers ───────────────────────────────────────────────────
+
+def _is_prop_empty(prop: dict) -> bool:
+    """Return True if a Notion property value has no meaningful content."""
+    if not prop:
+        return True
+    prop_type = prop.get("type", "")
+    if prop_type == "rich_text":
+        return not any(p.get("text", {}).get("content", "") for p in prop.get("rich_text", []))
+    if prop_type == "title":
+        return not any(p.get("text", {}).get("content", "") for p in prop.get("title", []))
+    if prop_type == "select":
+        return prop.get("select") is None
+    if prop_type == "multi_select":
+        return len(prop.get("multi_select", [])) == 0
+    if prop_type in ("email", "phone_number", "url"):
+        return not prop.get(prop_type)
+    if prop_type == "number":
+        return prop.get("number") is None
+    return True
+
+
+def _merge_submission_props(submissions: list[dict]) -> dict:
+    """
+    Merge Notion property dicts from multiple submissions.
+    First non-empty value wins — Core Business Intake should be first in the list.
+    """
+    merged: dict = {}
+    for sub in submissions:
+        for key, val in sub.get("properties", {}).items():
+            if key not in merged or _is_prop_empty(merged[key]):
+                merged[key] = val
+    return merged
+
+
 # ── Notion helpers ─────────────────────────────────────────────────────────────
 
 def _get_rich_text(prop: dict) -> str:
@@ -130,59 +169,73 @@ class OnboardingAgent(BaseAgent):
 
     async def run(self, client_id: str, **kwargs: Any) -> dict:
         """
-        Process a single onboarding form submission.
+        Process one or more intake form submissions for the same client.
 
         Required kwargs:
-          - submission_page_id (str): Notion page ID of the submission entry
-          - onboarding_db_id (str): Notion DB ID of Onboarding Submissions
-          - clickup_space_id (str): ClickUp space to create the client folder in
+          - submission_page_ids (list[str]): Notion page IDs of all submissions for
+            this client. Core Business Intake should be first — its fields take
+            priority when merging. All IDs are marked "Active Client" when done.
+          - intake_db_id (str): Notion DB ID of the Client Intake — Submissions DB
         """
-        submission_page_id = kwargs["submission_page_id"]
-        onboarding_db_id   = kwargs["onboarding_db_id"]
-        clickup_space_id   = kwargs["clickup_space_id"]
+        submission_page_ids = kwargs["submission_page_ids"]
+        intake_db_id        = kwargs["intake_db_id"]
+        primary_id          = submission_page_ids[0]
 
-        self.log.info(f"OnboardingAgent starting | submission={submission_page_id}")
-
-        # ── Step 1: Read the onboarding form submission ────────────────────────
-        submission = await self.notion._client.request(
-            path=f"pages/{submission_page_id}", method="GET"
+        self.log.info(
+            f"OnboardingAgent starting | submissions={len(submission_page_ids)} | primary={primary_id}"
         )
-        props = submission.get("properties", {})
 
-        business_name      = _get_title(props.get("Business Name", {}))
+        # ── Step 1: Read and merge all submissions ─────────────────────────────
+        all_submissions = []
+        for page_id in submission_page_ids:
+            sub = await self.notion._client.request(path=f"pages/{page_id}", method="GET")
+            all_submissions.append(sub)
+            self.log.info(f"  Loaded submission: {page_id}")
+
+        props = _merge_submission_props(all_submissions)
+        self.log.info(f"  Merged {len(all_submissions)} submission(s) into unified props")
+
+        # Business Name is rich_text in the new DB; Submission is the title field
+        business_name      = _get_rich_text(props.get("Business Name", {})) or \
+                             _get_title(props.get("Submission", {}))
         first_name         = _get_rich_text(props.get("First Name", {}))
         last_name          = _get_rich_text(props.get("Last Name", {}))
         contact_name       = f"{first_name} {last_name}".strip() or business_name
         email              = _get_email(props.get("Email", {}))
-        phone              = _get_phone(props.get("Phone Number", {}))
-        business_type      = _get_select(props.get("Business Type", {}))
-        geo_scope          = _get_select(props.get("Geographic Scope", {}))
-        services_requested = _get_multi_select(props.get("Services Requested", {}))
+        phone              = _get_phone(props.get("Phone", {}))
+        practice_type      = _get_multi_select(props.get("Practice Type", {}))
+        geo_scope          = _get_select(props.get("What Best Describes Your Service Area", {}))
+        services_interested = _get_multi_select(props.get("Services Interested", {}))
+        description        = _get_rich_text(props.get("Practice Description", {}))
         mission            = _get_rich_text(props.get("Mission Statement", {}))
         core_values        = _get_rich_text(props.get("Core Values", {}))
         tagline            = _get_rich_text(props.get("Tagline / Slogan", {}))
-        description        = _get_rich_text(props.get("Company Description", {}))
-        differentiators    = _get_rich_text(props.get("What Sets You Apart", {}))
-        competitors        = _get_rich_text(props.get("Primary Competitors", {}))
-        perceived_as       = _get_rich_text(props.get("How You Want to Be Perceived", {}))
+        differentiators    = _get_rich_text(props.get("Differentiators", {}))
+        competitors        = _get_rich_text(props.get("Competitors", {}))
         brand_colors       = _get_rich_text(props.get("Brand Colors", {}))
-        typography         = _get_rich_text(props.get("Typography / Fonts", {}))
+        brand_fonts        = _get_rich_text(props.get("Brand Fonts", {}))
+        brand_elements     = _get_rich_text(props.get("Brand Elements", {}))
         websites_admire    = _get_rich_text(props.get("Websites You Admire", {}))
         websites_dislike   = _get_rich_text(props.get("Websites You Dislike", {}))
-        target_audience    = _get_rich_text(props.get("Target Audience", {}))
+        target_audience    = _get_rich_text(props.get("Ideal Patient/Client", {}))
         seo_keywords       = _get_rich_text(props.get("SEO Keywords", {}))
-        primary_goal       = _get_select(props.get("Primary Goal of Website", {}))
-        existing_domain    = _get_url(props.get("Current Domain", {}))
-        pages_needed       = _get_rich_text(props.get("Pages You Know You Need", {}))
-        faqs               = _get_rich_text(props.get("Frequently Asked Questions", {}))
-        business_address   = _get_rich_text(props.get("Business Address", {}))
-        primary_location   = _get_rich_text(props.get("Primary Service Location(s)", {}))
+        primary_goals      = _get_multi_select(props.get("Primary Goals", {}))
+        existing_domain    = _get_url(props.get("Current Website URL", {}))
+        pages_needed       = _get_rich_text(props.get("Specific Pages Needed", {}))
+        required_pages     = _get_multi_select(props.get("Required Pages", {}))
+        priority_services  = _get_rich_text(props.get("Priority Services (top 3–5)", {}))
+        location_addresses = _get_rich_text(props.get("Location Addresses", {}))
+        primary_location   = _get_rich_text(props.get("Primary Service Locations", {}))
+        website_type       = _get_select(props.get("Website Project Type", {}))
+        booking_platform   = _get_rich_text(props.get("Booking Platform (if any)", {}))
+        medical_reviewer   = _get_rich_text(props.get("Medical Reviewer Name", {}))
+        intake_type        = _get_select(props.get("Intake Type", {}))
 
         if not business_name:
             raise AgentError("Submission has no Business Name — cannot onboard.")
 
         client_key = _slug(business_name)
-        self.log.info(f"Processing: {business_name} → client_key={client_key}")
+        self.log.info(f"Processing: {business_name} ({intake_type}) → client_key={client_key}")
 
         # ── Step 2: Create Notion structure ───────────────────────────────────
         self.log.info("Creating Notion databases...")
@@ -196,24 +249,23 @@ class OnboardingAgent(BaseAgent):
         databases      = setup_result["databases"]
         self.log.info(f"  ✓ Notion structure created | page={client_page_id}")
 
-        # ── Step 3: Create ClickUp folder + list ──────────────────────────────
-        self.log.info("Creating ClickUp folder...")
-        clickup_folder_id = await self.clickup.create_folder(clickup_space_id, business_name)
-        clickup_list_id   = await self.clickup.create_list(clickup_folder_id, "Website Development")
-        self.log.info(f"  ✓ ClickUp folder={clickup_folder_id} | list={clickup_list_id}")
-
-        # ── Step 4: Populate Client Info ──────────────────────────────────────
+        # ── Step 3: Populate Client Info ──────────────────────────────────────
         self.log.info("Populating Client Info DB...")
         client_info_db_id = databases.get("Client Info", "")
 
         notes_parts = [p for p in [
-            f"Business Address: {business_address}" if business_address else "",
-            f"Geographic Scope: {geo_scope}" if geo_scope else "",
+            f"Location Addresses:\n{location_addresses}" if location_addresses else "",
+            f"Service Area: {geo_scope}" if geo_scope else "",
             f"Primary Location: {primary_location}" if primary_location else "",
-            f"Services Requested: {', '.join(services_requested)}" if services_requested else "",
-            f"Primary Goal: {primary_goal}" if primary_goal else "",
+            f"Services Interested: {', '.join(services_interested)}" if services_interested else "",
+            f"Practice Type: {', '.join(practice_type)}" if practice_type else "",
+            f"Primary Goals: {', '.join(primary_goals)}" if primary_goals else "",
+            f"Website Project Type: {website_type}" if website_type else "",
             f"Existing Website: {existing_domain}" if existing_domain else "",
             f"Pages Needed: {pages_needed}" if pages_needed else "",
+            f"Required Pages: {', '.join(required_pages)}" if required_pages else "",
+            f"Booking Platform: {booking_platform}" if booking_platform else "",
+            f"Medical Reviewer: {medical_reviewer}" if medical_reviewer else "",
         ] if p]
 
         client_info_entries = await self.notion.query_database(client_info_db_id)
@@ -231,48 +283,52 @@ class OnboardingAgent(BaseAgent):
             if existing_domain:
                 update_props["Website"] = {"url": existing_domain}
             await self.notion.update_database_entry(entry_id, update_props)
-            self.log.info(f"  ✓ Client Info populated")
+            self.log.info("  ✓ Client Info populated")
 
-        # ── Step 5: Populate Brand Guidelines ────────────────────────────────
+        # ── Step 4: Populate Brand Guidelines ────────────────────────────────
         self.log.info("Populating Brand Guidelines DB...")
         brand_db_id = databases.get("Brand Guidelines", "")
 
         tone_parts = [p for p in [
-            f"How we want to be perceived: {perceived_as}" if perceived_as else "",
+            f"Mission: {mission}" if mission else "",
             f"Core Values: {core_values}" if core_values else "",
             f"Tagline: {tagline}" if tagline else "",
             f"What sets us apart: {differentiators}" if differentiators else "",
+            f"Brand elements: {brand_elements}" if brand_elements else "",
         ] if p]
 
         raw_parts = [p for p in [
-            f"MISSION: {mission}" if mission else "",
             f"DESCRIPTION: {description}" if description else "",
+            f"MISSION: {mission}" if mission else "",
+            f"CORE VALUES: {core_values}" if core_values else "",
+            f"TAGLINE: {tagline}" if tagline else "",
             f"DIFFERENTIATORS: {differentiators}" if differentiators else "",
+            f"PRIORITY SERVICES: {priority_services}" if priority_services else "",
             f"COMPETITORS: {competitors}" if competitors else "",
             f"TARGET AUDIENCE: {target_audience}" if target_audience else "",
-            f"FAQs: {faqs}" if faqs else "",
             f"WEBSITES WE ADMIRE: {websites_admire}" if websites_admire else "",
             f"WEBSITES WE DISLIKE: {websites_dislike}" if websites_dislike else "",
             f"SEO KEYWORDS: {seo_keywords}" if seo_keywords else "",
             f"PAGES NEEDED: {pages_needed}" if pages_needed else "",
+            f"REQUIRED PAGES: {', '.join(required_pages)}" if required_pages else "",
         ] if p]
 
         brand_entry_props: dict = {
-            "Name":            self.notion.title_property(f"{business_name} Brand Guidelines"),
+            "Name":             self.notion.title_property(f"{business_name} Brand Guidelines"),
             "Tone Descriptors": self.notion.text_property("\n".join(tone_parts)[:2000]),
-            "Raw Guidelines":  self.notion.text_property("\n\n".join(raw_parts)[:2000]),
+            "Raw Guidelines":   self.notion.text_property("\n\n".join(raw_parts)[:2000]),
         }
         if brand_colors:
             brand_entry_props["Primary Color"] = self.notion.text_property(brand_colors[:200])
-        if typography:
-            brand_entry_props["Primary Font"] = self.notion.text_property(typography[:200])
+        if brand_fonts:
+            brand_entry_props["Primary Font"] = self.notion.text_property(brand_fonts[:200])
         if websites_admire:
             brand_entry_props["Inspiration URLs"] = self.notion.text_property(websites_admire[:500])
 
         await self.notion.create_database_entry(brand_db_id, brand_entry_props)
         self.log.info("  ✓ Brand Guidelines populated")
 
-        # ── Step 6: Claude writes the Client Brief ────────────────────────────
+        # ── Step 5: Claude writes the Client Brief ────────────────────────────
         self.log.info("Generating client brief with Claude...")
         brief_data = await self._generate_brief(props, business_name)
 
@@ -283,11 +339,12 @@ class OnboardingAgent(BaseAgent):
         await self.notion.append_blocks(brief_page_id, _brief_blocks(brief_data))
         self.log.info(f"  ✓ Client brief written → {brief_page_id}")
 
-        # ── Step 7: Write to config/clients.json ──────────────────────────────
+        # ── Step 6: Write to config/clients.json ──────────────────────────────
         self.log.info("Writing client config...")
         new_client_config = {
             "client_id":   client_key,
             "name":        business_name,
+            "intake_submission_ids":   submission_page_ids,
             "client_info_db_id":       databases.get("Client Info", ""),
             "meeting_notes_db_id":     databases.get("Meeting Notes & Transcripts", ""),
             "brand_guidelines_db_id":  databases.get("Brand Guidelines", ""),
@@ -299,7 +356,7 @@ class OnboardingAgent(BaseAgent):
             "action_items_db_id":      databases.get("Action Items", ""),
             "images_db_id":            databases.get("Images", ""),
             "meeting_notes_entry_id":  "",
-            "clickup_review_list_id":  clickup_list_id,
+            "clickup_review_list_id":  "",
         }
         existing: dict = {}
         if CLIENTS_JSON_PATH.exists():
@@ -311,21 +368,20 @@ class OnboardingAgent(BaseAgent):
         CLIENTS_JSON_PATH.write_text(json.dumps(existing, indent=2))
         self.log.info(f"  ✓ config/clients.json updated")
 
-        # ── Step 8: Mark submission as Active Client ──────────────────────────
-        await self.notion.update_database_entry(submission_page_id, {
-            "Pipeline Status": self.notion.select_property("Active Client"),
-        })
-        self.log.info("  ✓ Submission marked as Active Client")
+        # ── Step 7: Mark all submissions as Active Client ─────────────────────
+        for page_id in submission_page_ids:
+            await self.notion.update_database_entry(page_id, {
+                "Pipeline Status": self.notion.select_property("Active Client"),
+            })
+        self.log.info(f"  ✓ {len(submission_page_ids)} submission(s) marked as Active Client")
 
         return {
-            "status":        "success",
-            "client_key":    client_key,
-            "client_name":   business_name,
+            "status":         "success",
+            "client_key":     client_key,
+            "client_name":    business_name,
             "client_page_id": client_page_id,
-            "brief_page_id": brief_page_id,
-            "clickup_folder_id": clickup_folder_id,
-            "clickup_list_id":   clickup_list_id,
-            "databases":     databases,
+            "brief_page_id":  brief_page_id,
+            "databases":      databases,
         }
 
     async def _generate_brief(self, props: dict, business_name: str) -> dict:
@@ -333,7 +389,7 @@ class OnboardingAgent(BaseAgent):
         # Build a readable summary of all form fields
         field_lines = []
         for field_name, prop in props.items():
-            prop_type = next(iter(prop.keys()), "")
+            prop_type = prop.get("type", "")
             if prop_type == "title":
                 val = _get_title(prop)
             elif prop_type == "rich_text":

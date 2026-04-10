@@ -73,10 +73,30 @@ CONTENT_DB_SCHEMA: dict[str, Any] = {
             ]
         }
     },
+    "Primary Keyword": {"rich_text": {}},
     "Title Tag": {"rich_text": {}},
+    "Title Tag Status": {
+        "select": {
+            "options": [
+                {"name": "✓ OK", "color": "green"},
+                {"name": "⚠ Over 60", "color": "red"},
+                {"name": "⚠ Under 55", "color": "yellow"},
+            ]
+        }
+    },
     "Meta Description": {"rich_text": {}},
     "H1": {"rich_text": {}},
     "SEO Keywords": {"rich_text": {}},
+    "Internal Link Target": {"rich_text": {}},
+    "Alt Text Status": {
+        "select": {
+            "options": [
+                {"name": "Pending", "color": "yellow"},
+                {"name": "Complete", "color": "green"},
+                {"name": "N/A", "color": "gray"},
+            ]
+        }
+    },
     "Word Count": {"number": {}},
 }
 
@@ -91,11 +111,19 @@ All client details — services, brand voice, target audience, location, booking
 system, and tone — are provided in the context below. Use them precisely.
 
 SEO rules:
-- Title tags: exactly 50–60 characters. Include the brand name on homepage and About only.
-- Meta descriptions: exactly 150–160 characters. Lead with primary value prop +
+- Title tags: max 60 characters (Google truncates beyond ~580px / ~60 chars). Include
+  the brand name on homepage and About only. Aim for 55–60 chars.
+- Meta descriptions: 120–155 characters. Target ~150 — mobile Google often cuts at 120,
+  so the key message must land in the first 120 chars. Lead with primary value prop +
   target keyword.
-- H1: one per page, keyword-rich, natural sounding. Different from title tag.
+- H1: exactly one per page. Must include the Primary Keyword once, naturally. Different
+  from the title tag. Keyword-rich but reads like a headline, not a keyword string.
+  Length: 20–70 characters. Strip all marketing fluff after the core keyword phrase.
+  Bad: "Pediatric Therapy Clinic in Frisco TX Where Kids Actually Look Forward to Coming" (81 chars)
+  Good: "Pediatric Therapy Clinic in Frisco, TX" (38 chars)
 - H2s: 2–5 per page, support page keywords and guide UX.
+- Slugs: clean, no stop words (a, the, and, of, for), no dates. e.g. /speech-therapy
+  not /the-best-speech-therapy-2026.
 - Local SEO pages: weave the city/location naturally in first paragraph.
 - Virtual/national pages: target condition + "telehealth" or "online" keywords.
 - Location CMS template pages: write ONE complete sample entry using the client's
@@ -112,7 +140,7 @@ Return a JSON object with this exact structure:
       "meta_description": "SEO meta description (150-160 chars)",
       "h1": "Page H1 — keyword-rich, compelling, unique across all pages",
       "hero": {
-        "headline": "Hero headline — can match H1 or be a punchier tagline",
+        "headline": "MUST be identical to the h1 field above — word for word. The H1 tag is applied to the hero headline in Webflow. They are the same element.",
         "subheadline": "1-2 sentences. Expands on headline with the key patient benefit.",
         "cta_primary": "Primary CTA button text — specific and action-oriented",
         "cta_secondary": "Secondary CTA text (empty string if not needed)"
@@ -133,6 +161,7 @@ Return a JSON object with this exact structure:
         }
       ],
       "seo_keywords": ["primary keyword", "secondary keyword", "location modifier"],
+      "internal_link_target": "/slug-of-most-relevant-page-to-link-to",
       "word_count_estimate": 600,
       "internal_notes": "Team note on copy strategy or any special considerations"
     }
@@ -146,10 +175,77 @@ Rules:
 - CTAs must be specific: "Book Your Free Consultation", not "Learn More" or "Click Here"
 - Body paragraphs: 2–4 sentences each, conversational, no filler phrases
 - Sections per page: 3–5 (not counting hero or FAQ)
+- Every home page must include a "How to Get Started" section — a simple 3-step process
+  (e.g. Step 1: Call or book online. Step 2: We match you with the right therapist.
+  Step 3: Your child starts making progress.) Make it scannable and friction-free.
 - For virtual service pages: lead with convenience, accessibility, expert care from home
 - For in-person pages: lead with the expertise + local community connection (use client's location from brand guidelines)
 - For CMS collection template pages: write ONE real sample entry that demonstrates
   the content depth — this is the reference the developer builds the CMS template from
+- internal_link_target: the single most valuable page on this site to link to from
+  this page (use the slug, e.g. "/contact"). Subcategory pages link to their hub.
+  Hub pages link to /contact. Blog posts link to the most relevant service page.
+
+AGENCY COPY STANDARDS — non-negotiable on every page:
+
+1. Above the Fold Rule
+   The H1 and hero subheadline combined must be 25 words or fewer. Visitors decide
+   within 3 seconds. Do not "set the stage" — state the value and the next step immediately.
+
+2. Front-Load Every Sentence
+   Put the most important word of every sentence in the first 3 words. Never open a
+   sentence with "We provide...", "Our goal is...", "At [Company] we...", or "In order to...".
+   Bad: "We provide expert speech therapy services for children in the greater Frisco area."
+   Good: "Expert speech therapy for children — right here in Frisco."
+
+3. Benefit-Driven Subheaders
+   Every H2 and H3 must be a descriptive benefit, never a single noun label.
+   Minimum 4 words. A user scanning only the headers must understand the full value proposition.
+   Bad: "Our Services", "The Process", "About Us", "Results"
+   Good: "Speech Therapy Built Around Your Child", "Three Steps to Your First Appointment"
+
+4. No Em Dashes
+   Never use em dashes (—) anywhere in copy. If a sentence requires one, either split
+   it into two sentences or use a colon. Em dashes break readability on mobile devices.
+   Bad: "We offer speech therapy — right here in Frisco."
+   Good: "We offer speech therapy right here in Frisco." or "One goal: your child's progress."
+
+5. Break Up Long-Form Text
+   Never write more than 2 consecutive paragraphs of body copy in a section. If a section
+   has 3 or more points to make, format them as bullet points or numbered steps instead.
+   Lists of features, benefits, conditions, or process steps must always be bullets or
+   numbered — never written out as prose sentences.
+   Where content is list-based or multi-item, note in internal_notes that this section
+   should be laid out as a grid, card row, or accordion in Webflow — not a text block.
+   Goal: every page must be fully skimmable. A user who reads only headers and bullets
+   should still understand the full value proposition.
+
+PAGE-SPECIFIC RULES:
+
+Pages fall into two categories — apply the correct treatment to each:
+
+PRIMARY pages — convince, educate, and convert. Full copy: rich sections, benefit-driven
+H2s, FAQs, detailed body copy.
+  - Home, About Us
+  - Service hub pages (e.g. /services/speech-therapy)
+  - Service subcategory pages (e.g. /services/speech-therapy/articulation)
+  - Who We Serve pages
+  - Individual location pages (e.g. /locations/frisco)
+
+SECONDARY pages — navigate, transact, or support. Minimal copy: one strong H1,
+2-3 intro sentences max, then let the structured content (forms, maps, grids, lists)
+do the work. These rank for navigational and transactional queries — clarity beats length.
+  - Contact, Blog hub, Locations hub
+  - New Patient Resources, Insurance & Billing
+  - Legal pages (Privacy Policy, Terms of Service, Accessibility Statement)
+
+Contact page specifically:
+- Hero: H1 + 1-2 sentences only. No paragraph blocks.
+- Location Details: display address, phone, and hours as clean labeled fields.
+  No descriptive sentences around them.
+- Map section: one line of directional context maximum. The map embed does the work.
+- No FAQs on the Contact page. FAQs belong on service pages and New Patient Resources.
+
 - Only return the JSON object — no markdown code fences, no preamble, no commentary
 """
 
@@ -225,10 +321,12 @@ def _page_blocks(page: dict) -> list[dict]:
 
     # ── SEO Summary ──────────────────────────────────────────────────────────
     blocks.append(_h("── SEO ──", 2))
-    blocks.append(_bullet(f"Title Tag ({len(page.get('title_tag', ''))} chars): "
-                          f"{page.get('title_tag', '')}"))
-    blocks.append(_bullet(f"Meta Description ({len(page.get('meta_description', ''))} chars): "
-                          f"{page.get('meta_description', '')}"))
+    tt = page.get("title_tag", "")
+    md = page.get("meta_description", "")
+    tt_flag = " ⚠ OVER 60" if len(tt) > 60 else ""
+    md_flag = " ⚠ OVER 155" if len(md) > 155 else (" ⚠ UNDER 120" if len(md) < 120 else "")
+    blocks.append(_bullet(f"Title Tag ({len(tt)} chars{tt_flag}): {tt}"))
+    blocks.append(_bullet(f"Meta Description ({len(md)} chars{md_flag}): {md}"))
     blocks.append(_bullet(f"H1: {page.get('h1', '')}"))
     kw = ", ".join(page.get("seo_keywords", []))
     if kw:
@@ -343,6 +441,25 @@ class ContentAgent(BaseAgent):
     name = "content"
     tools = CONTENT_TOOLS
 
+    async def _patch_missing_fields(self, content_db_id: str) -> None:
+        """Add any fields from CONTENT_DB_SCHEMA that are missing from an existing DB."""
+        db_info = await self.notion._client.request(
+            path=f"databases/{content_db_id}",
+            method="GET",
+        )
+        existing = db_info.get("properties", {})
+        to_add = {
+            k: v for k, v in CONTENT_DB_SCHEMA.items()
+            if k not in existing and k != "Page Title"  # title field can't be patched
+        }
+        if to_add:
+            await self.notion._client.request(
+                path=f"databases/{content_db_id}",
+                method="PATCH",
+                body={"properties": to_add},
+            )
+            self.log.info(f"Patched Content DB — added: {', '.join(to_add.keys())}")
+
     async def _ensure_content_db(
         self,
         content_db_id: str | None,
@@ -415,11 +532,12 @@ class ContentAgent(BaseAgent):
 
         self.log.info(f"ContentAgent starting | client={client_id}")
 
-        # ── Step 0: Ensure Content DB exists ──────────────────────────────────
+        # ── Step 0: Ensure Content DB exists + has all required fields ───────
         content_db_id = await self._ensure_content_db(
             content_db_id_arg or None,
             sitemap_db_id,
         )
+        await self._patch_missing_fields(content_db_id)
 
         # ── Step 1: Gather client context ─────────────────────────────────────
 
@@ -430,8 +548,9 @@ class ContentAgent(BaseAgent):
         business_type = _get_select(client_props.get("Business Type", {}))
         client_notes = _get_rich_text(client_props.get("Notes", {}))
 
-        # Brand guidelines
+        # Brand guidelines + content style guide
         brand_context = ""
+        style_context = ""
         brand_entries = await self.notion.query_database(brand_guidelines_db_id)
         if brand_entries:
             bp = brand_entries[0]["properties"]
@@ -443,6 +562,22 @@ class ContentAgent(BaseAgent):
             brand_body = _blocks_to_text(brand_blocks)
             if brand_body:
                 brand_context += f"\n\nBrand Document:\n{brand_body[:3000]}"
+
+            # Content style guide fields
+            voice_tone  = _get_rich_text(bp.get("Voice & Tone", {}))
+            reading_lvl = _get_rich_text(bp.get("Reading Level", {}))
+            power_words = _get_rich_text(bp.get("Power Words", {}))
+            avoid_words = _get_rich_text(bp.get("Words to Avoid", {}))
+            cta_style   = _get_rich_text(bp.get("CTA Style", {}))
+            pov_notes   = _get_rich_text(bp.get("POV Notes", {}))
+            style_parts = []
+            if voice_tone:  style_parts.append(f"Voice & Tone: {voice_tone}")
+            if reading_lvl: style_parts.append(f"Reading Level: {reading_lvl}")
+            if power_words: style_parts.append(f"Power Words (use these): {power_words}")
+            if avoid_words: style_parts.append(f"Words to Avoid: {avoid_words}")
+            if cta_style:   style_parts.append(f"CTA Style: {cta_style}")
+            if pov_notes:   style_parts.append(f"POV Rules: {pov_notes}")
+            style_context = "\n".join(style_parts)
 
         # Meeting notes
         meeting_context = ""
@@ -521,6 +656,8 @@ class ContentAgent(BaseAgent):
                 ),
                 "purpose": _get_rich_text(pp.get("Purpose", {})),
                 "key_sections": _get_rich_text(pp.get("Key Sections", {})),
+                "primary_keyword": _get_rich_text(pp.get("Primary Keyword", {})),
+                "secondary_keywords": _get_rich_text(pp.get("Secondary Keywords", {})),
                 "order": pp.get("Order", {}).get("number", 99),
             })
 
@@ -583,8 +720,12 @@ class ContentAgent(BaseAgent):
                     f"Slug: {pg['slug']}\n"
                     f"Type: {pg['page_type']}\n"
                     f"Purpose: {pg['purpose']}\n"
-                    f"Key Sections from Sitemap:\n{pg['key_sections']}\n"
                 )
+                if pg.get("primary_keyword"):
+                    page_list += f"Primary Keyword: {pg['primary_keyword']}\n"
+                if pg.get("secondary_keywords"):
+                    page_list += f"Secondary Keywords: {pg['secondary_keywords']}\n"
+                page_list += f"Key Sections from Sitemap:\n{pg['key_sections']}\n"
 
             user_message = f"""CLIENT: {company}
 BUSINESS TYPE: {business_type}
@@ -592,6 +733,9 @@ BUSINESS TYPE: {business_type}
 BRAND GUIDELINES:
 {brand_context[:4000]}
 
+{f'''CONTENT STYLE GUIDE — follow these rules exactly for every word of copy:
+{style_context}
+''' if style_context else ''}
 MEETING CONTEXT:
 {meeting_context[:3000]}
 
@@ -654,9 +798,22 @@ Do NOT reproduce previous copy. Use the feedback to meaningfully improve it.
             meta_desc = page_data.get("meta_description", "")[:2000]
             h1 = page_data.get("h1", "")[:2000]
             seo_kw = ", ".join(page_data.get("seo_keywords", []))[:2000]
+            internal_link = page_data.get("internal_link_target", "")[:2000]
             word_count = page_data.get("word_count_estimate", 0)
             if not isinstance(word_count, int):
                 word_count = 0
+
+            # Primary keyword comes from the sitemap entry, not from Claude's copy output
+            primary_kw = matching["primary_keyword"] if matching else ""
+
+            # Title tag status — computed in Python so it's filterable in Notion
+            tt_len = len(title_tag)
+            if tt_len > 60:
+                tt_status = "⚠ Over 60"
+            elif tt_len < 55:
+                tt_status = "⚠ Under 55"
+            else:
+                tt_status = "✓ OK"
 
             entry_id = await self.notion.create_database_entry(content_db_id, {
                 "Page Title": self.notion.title_property(title),
@@ -664,10 +821,14 @@ Do NOT reproduce previous copy. Use the feedback to meaningfully improve it.
                 "Page Type": self.notion.select_property(page_type),
                 "Content Mode": self.notion.select_property("AI Generated"),
                 "Status": self.notion.select_property("Team Review"),
+                "Primary Keyword": self.notion.text_property(primary_kw),
                 "Title Tag": self.notion.text_property(title_tag),
+                "Title Tag Status": self.notion.select_property(tt_status),
                 "Meta Description": self.notion.text_property(meta_desc),
                 "H1": self.notion.text_property(h1),
                 "SEO Keywords": self.notion.text_property(seo_kw),
+                "Internal Link Target": self.notion.text_property(internal_link),
+                "Alt Text Status": self.notion.select_property("Pending"),
                 "Word Count": {"number": word_count},
             })
 
@@ -688,10 +849,14 @@ Do NOT reproduce previous copy. Use the feedback to meaningfully improve it.
                 "Page Type": self.notion.select_property(pg["page_type"]),
                 "Content Mode": self.notion.select_property("Client Provided"),
                 "Status": self.notion.select_property("Client Providing"),
+                "Primary Keyword": self.notion.text_property(pg.get("primary_keyword", "")),
                 "Title Tag": self.notion.text_property(""),
+                "Title Tag Status": self.notion.select_property("⚠ Under 55"),
                 "Meta Description": self.notion.text_property(""),
                 "H1": self.notion.text_property(""),
                 "SEO Keywords": self.notion.text_property(""),
+                "Internal Link Target": self.notion.text_property(""),
+                "Alt Text Status": self.notion.select_property("N/A"),
                 "Word Count": {"number": 0},
             })
 

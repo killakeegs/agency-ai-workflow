@@ -140,9 +140,10 @@ make stock-images     → Discovery: Claude queries Pexels → HTML report with 
                          Review report, spot photographer series candidates
 make stock-images COMMIT=1  → Download chosen images + save to Notion Images DB
                       → Paste relume_sitemap_core.txt into Relume AI → build sitemap
-                      → Upload stock images to Relume Style Guide
                       → Set Relume Style Guide (colors, fonts, spacing)  ← visual direction approval
                       → Build wireframes in Relume using component map from:
+                         NOTE: Stock images cannot be uploaded to Relume Style Guide.
+                         They are used directly in Webflow after developer handoff.
 make wireframe        → Generate Relume component map → Notion (reference for Relume build)
   [Client approves wireframe in Relume]
 make images-brand     → Generate ~15 brand images via Replicate

@@ -264,12 +264,10 @@ class TranscriptParserAgent(BaseAgent):
                 assignee = "Agency"
 
             await self.notion.create_database_entry(action_items_db_id, {
-                "Name": self.notion.title_property(item.get("task", "Untitled")),
+                "Task": self.notion.title_property(item.get("task", "Untitled")),
                 "Assigned To": self.notion.select_property(assignee),
                 "Status": self.notion.select_property("To Do"),
-                "Source Meeting": self.notion.text_property(
-                    kwargs.get("meeting_title", "Parsed meeting")
-                ),
+                "Source Meeting": {"relation": [{"id": meeting_id}]},
             })
             created_count += 1
 

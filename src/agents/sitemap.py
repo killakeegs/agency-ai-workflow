@@ -56,6 +56,7 @@ Return a single JSON object with this exact structure:
       "slug": "/url-slug",
       "page_type": "Static" or "CMS",
       "content_mode": "AI Generated" or "Client Provided",
+      "section": "Core" or "Services" or "Service Subcategories" or "Who We Serve" or "Locations" or "Programs" or "Patient Resources" or "Blog" or "Legal",
       "order": 1,
       "purpose": "One sentence: what is the primary goal of this page?",
       "key_sections": [
@@ -85,19 +86,28 @@ Return a single JSON object with this exact structure:
 
 Rules:
 - Every page must have a clear purpose and at least 3 key sections
-- CMS pages are things that will have multiple instances (blog posts,
-  conditions treated, location service pages)
 - "Client Provided" should only be used for content truly unique to the client
   (founder story, specific pricing, team photos/bios)
 - Include ALL pages: main nav, legal pages, CMS collection templates
-- Location SEO sub-pages should be listed as CMS type with parent noted
 - Order numbers should reflect nav priority (1 = homepage, highest = legal/utility)
-- For location SEO pages, list ONE representative CMS template entry (e.g.
-  "Teledermatology — [City], [State]") with a note that it will be replicated
-  for 15-20 cities. Do NOT list every city individually.
+- Slugs must be clean: no stop words (a, the, and, of, for), no dates, no trailing slashes.
+  e.g. /speech-therapy not /the-best-speech-therapy or /speech-therapy-services-2026
 - Keep the total page list to the core navigation pages + one CMS template
-  entry per repeating pattern (conditions, blog posts, location pages)
+  entry per repeating pattern (blog posts, location pages, service subcategories)
 - Only return the JSON object — no markdown, no commentary
+
+PAGES TO EXCLUDE BY DEFAULT — do not include these unless the client explicitly requests them:
+- Careers page — most clients don't need it; add only if client specifically asks
+- Standalone Testimonials page — testimonials are embedded on Home and all service pages; a dedicated page is redundant
+
+MANDATORY CMS RULES — no exceptions:
+- Service subcategory pages (e.g. /services/speech-therapy/fluency) → always "CMS"
+  The service hub page (e.g. /services/speech-therapy) stays "Static"
+- Blog posts → always "CMS". The blog hub/index page (/blog) stays "Static"
+- Individual location pages (e.g. /locations/frisco) → always "CMS"
+  The locations hub/overview page (/locations) stays "Static"
+- Any page that is one instance of a repeating template → "CMS"
+- Hub/index/overview pages that list CMS items → "Static"
 """
 
 
@@ -198,6 +208,21 @@ class SitemapAgent(BaseAgent):
         revision_notes = kwargs.get("revision_notes", "")
 
         self.log.info(f"SitemapAgent starting | client={client_id}")
+
+        # ── Step 0: Clear existing Draft pages to prevent duplicates ──────────
+        existing = await self.notion.query_database(sitemap_db_id)
+        draft_pages = [
+            e for e in existing
+            if _get_select(e["properties"].get("Status", {})) == "Draft"
+        ]
+        if draft_pages:
+            self.log.info(f"Clearing {len(draft_pages)} existing Draft pages...")
+            for page in draft_pages:
+                await self.notion._client.request(
+                    path=f"pages/{page['id']}", method="PATCH",
+                    body={"in_trash": True},
+                )
+            self.log.info("  ✓ Draft pages cleared")
 
         # ── Step 1: Gather context ────────────────────────────────────────────
 
@@ -314,6 +339,7 @@ revise the page structure, types, or scope.
             slug = page.get("slug", "/")
             page_type = page.get("page_type", "Static")
             content_mode = page.get("content_mode", "AI Generated")
+            section = page.get("section", "Core")
             order = page.get("order", 99)
             purpose = page.get("purpose", "")
             key_sections = page.get("key_sections", [])
@@ -324,6 +350,10 @@ revise the page structure, types, or scope.
                 page_type = "Static"
             if content_mode not in ("AI Generated", "Client Provided"):
                 content_mode = "AI Generated"
+            valid_sections = {"Core", "Services", "Service Subcategories", "Who We Serve",
+                              "Locations", "Programs", "Patient Resources", "Blog", "Legal"}
+            if section not in valid_sections:
+                section = "Core"
 
             key_sections_text = "\n".join(f"• {s}" for s in key_sections)
             purpose_full = purpose
@@ -333,10 +363,11 @@ revise the page structure, types, or scope.
                 purpose_full += f"\n\nWebflow: {webflow_notes}"
 
             entry_id = await self.notion.create_database_entry(sitemap_db_id, {
-                "Name": self.notion.title_property(title),
+                "Page Title": self.notion.title_property(title),
                 "Slug": self.notion.text_property(slug),
                 "Page Type": self.notion.select_property(page_type),
                 "Content Mode": self.notion.select_property(content_mode),
+                "Section": self.notion.select_property(section),
                 "Status": self.notion.select_property("Draft"),
                 "Purpose": self.notion.text_property(purpose_full[:2000]),
                 "Key Sections": self.notion.text_property(key_sections_text[:2000]),

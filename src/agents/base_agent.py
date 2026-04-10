@@ -42,9 +42,9 @@ class BaseAgent(ABC):
     def __init__(
         self,
         notion: NotionClient,
-        clickup: ClickUpClient,
         model: str,
         max_tokens: int = 4096,
+        clickup: ClickUpClient | None = None,
     ) -> None:
         self.notion = notion
         self.clickup = clickup

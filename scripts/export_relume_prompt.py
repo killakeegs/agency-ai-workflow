@@ -191,6 +191,8 @@ async def main(client_key: str, open_output: bool) -> None:
 
     # Page list — title + section NAMES only (no descriptions)
     page_lines: list[str] = []
+    seen_titles: set[str] = set()  # deduplicate by page title
+
     for entry in sitemap_entries:
         pp = entry["properties"]
         title = (
@@ -199,6 +201,12 @@ async def main(client_key: str, open_output: bool) -> None:
             or _get_rich_text(pp.get("Name", {}))
             or "Untitled"
         )
+
+        # Skip duplicate page titles (keep first occurrence)
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+
         slug = _get_rich_text(pp.get("Slug", {}))
         page_type = _get_select(pp.get("Page Type", {}))
         key_sections = _get_rich_text(pp.get("Key Sections", {}))
