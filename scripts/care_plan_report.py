@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -31,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import httpx
 
 from config.clients import CLIENTS
-from src.config import settings
+from src.config import settings  # loads .env via pydantic-settings
 from src.integrations.notion import NotionClient
 
 logger = logging.getLogger(__name__)
@@ -55,11 +56,13 @@ async def _run_pagespeed(url: str, strategy: str) -> tuple[int, str]:
     Run PageSpeed Insights for a URL and strategy ('mobile' or 'desktop').
     Returns (score 0-100, top_opportunity description).
     """
-    async with httpx.AsyncClient(timeout=30) as http:
-        r = await http.get(
-            PAGESPEED_URL,
-            params={"url": url, "strategy": strategy},
-        )
+    params: dict = {"url": url, "strategy": strategy}
+    google_api_key = settings.google_api_key or os.environ.get("GOOGLE_API_KEY", "")
+    if google_api_key:
+        params["key"] = google_api_key.strip()
+
+    async with httpx.AsyncClient(timeout=120) as http:
+        r = await http.get(PAGESPEED_URL, params=params)
 
     if r.status_code != 200:
         logger.warning(f"PageSpeed API error {r.status_code} for {url} ({strategy})")

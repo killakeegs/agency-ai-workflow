@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     # ── Unsplash (stock photos for lifestyle/people categories) ───────────────
     unsplash_access_key: str | None = None
 
-    # ── Google Drive (migration only) ─────────────────────────────────────────
+    # ── Google ────────────────────────────────────────────────────────────────
+    google_api_key: str | None = None
     google_service_account_json_path: str | None = None
 
     # ── Notifications ─────────────────────────────────────────────────────────
