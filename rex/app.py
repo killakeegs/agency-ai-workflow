@@ -28,18 +28,17 @@ from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
 
 from config.clients import CLIENTS
-from src.config import settings
 from src.integrations.notion import NotionClient
 
 
-# ── Initialize clients ────────────────────────────────────────────────────────
+# ── Initialize clients (read directly from os.environ — no pydantic Settings) ─
 
 slack_app = AsyncApp(
-    token=os.environ.get("SLACK_BOT_TOKEN") or settings.slack_bot_token,
-    signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
+    token=os.environ["SLACK_BOT_TOKEN"],
+    signing_secret=os.environ["SLACK_SIGNING_SECRET"],
 )
-claude = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-notion = NotionClient(settings.notion_api_key)
+claude = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+notion = NotionClient(os.environ["NOTION_API_KEY"])
 
 
 # ── Notion property helpers ───────────────────────────────────────────────────
