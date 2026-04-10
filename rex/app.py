@@ -102,6 +102,14 @@ Approval gates exist between stages. The pipeline never auto-advances without a 
 
 Active client: Summit Therapy — pediatric speech therapy, OT, and PT clinic in Frisco and McKinney, TX. Currently in Webflow developer build stage (handed off April 2026).
 
+━━ CREATING CLICKUP TASKS ━━
+When asked to create a task, you need exactly three things before proceeding:
+1. Which space and list (use list_clickup_workspace to find the list ID)
+2. Due date (ask if not provided — convert to ms timestamp before calling create_clickup_task)
+3. Who to assign it to (use get_clickup_members to find their user ID)
+
+If any of the three are missing, ask for them before creating anything. Once you have all three, confirm back what you're about to create, then call create_clickup_task.
+
 ━━ HOW TO ANSWER ━━
 • Factual workflow questions — answer from your knowledge
 • Live data (sitemap pages, tasks, action items, pipeline status) — use a tool
@@ -193,6 +201,35 @@ TOOLS = [
                 },
             },
             "required": ["client_key"],
+        },
+    },
+    {
+        "name": "list_clickup_workspace",
+        "description": "List all spaces, folders, and lists in the ClickUp workspace with their IDs. Use this to find the right list_id before creating a task.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_clickup_members",
+        "description": "List all members in the ClickUp workspace with their user IDs. Use this to find the right assignee ID when creating a task.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "create_clickup_task",
+        "description": "Create a new task in ClickUp. Requires list_id, task name, due date (as millisecond timestamp), and assignee user IDs. Always confirm all three with the user before calling this tool.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "list_id": {"type": "string", "description": "The ClickUp list ID to create the task in"},
+                "name": {"type": "string", "description": "The task name"},
+                "due_date_ms": {"type": "integer", "description": "Due date as a Unix timestamp in milliseconds"},
+                "assignee_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "List of ClickUp user IDs to assign the task to",
+                },
+                "description": {"type": "string", "description": "Optional task description"},
+            },
+            "required": ["list_id", "name"],
         },
     },
     {
@@ -385,6 +422,88 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                 lines.append(f"• {name_val} ({status}){assignee_str}{due_str}")
             return f"ClickUp tasks ({len(tasks)} total):\n" + "\n".join(lines)
 
+        elif name == "list_clickup_workspace":
+            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
+            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            async with httpx.AsyncClient() as http:
+                r = await http.get(
+                    f"https://api.clickup.com/api/v2/team/{workspace_id}/space",
+                    headers={"Authorization": clickup_key},
+                    params={"archived": "false"},
+                    timeout=15,
+                )
+            spaces = r.json().get("spaces", [])
+            lines = []
+            for space in spaces:
+                lines.append(f"Space: {space['name']} (id: {space['id']})")
+                # Get folders
+                async with httpx.AsyncClient() as http:
+                    fr = await http.get(
+                        f"https://api.clickup.com/api/v2/space/{space['id']}/folder",
+                        headers={"Authorization": clickup_key},
+                        params={"archived": "false"},
+                        timeout=15,
+                    )
+                for folder in fr.json().get("folders", []):
+                    lines.append(f"  Folder: {folder['name']} (id: {folder['id']})")
+                    for lst in folder.get("lists", []):
+                        lines.append(f"    List: {lst['name']} (id: {lst['id']})")
+                # Get folderless lists
+                async with httpx.AsyncClient() as http:
+                    lr = await http.get(
+                        f"https://api.clickup.com/api/v2/space/{space['id']}/list",
+                        headers={"Authorization": clickup_key},
+                        params={"archived": "false"},
+                        timeout=15,
+                    )
+                for lst in lr.json().get("lists", []):
+                    lines.append(f"  List: {lst['name']} (id: {lst['id']})")
+            return "\n".join(lines) if lines else "No spaces found."
+
+        elif name == "get_clickup_members":
+            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
+            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            async with httpx.AsyncClient() as http:
+                r = await http.get(
+                    f"https://api.clickup.com/api/v2/team/{workspace_id}/member",
+                    headers={"Authorization": clickup_key},
+                    timeout=15,
+                )
+            members = r.json().get("members", [])
+            lines = []
+            for m in members:
+                u = m.get("user", {})
+                lines.append(f"• {u.get('username', '')} — {u.get('email', '')} (id: {u.get('id', '')})")
+            return "\n".join(lines) if lines else "No members found."
+
+        elif name == "create_clickup_task":
+            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            list_id = tool_input["list_id"]
+            task_name = tool_input["name"]
+            due_date_ms = tool_input.get("due_date_ms")
+            assignee_ids = tool_input.get("assignee_ids", [])
+            description = tool_input.get("description", "")
+
+            body: dict = {"name": task_name}
+            if due_date_ms:
+                body["due_date"] = due_date_ms
+            if assignee_ids:
+                body["assignees"] = assignee_ids
+            if description:
+                body["description"] = description
+
+            async with httpx.AsyncClient() as http:
+                r = await http.post(
+                    f"https://api.clickup.com/api/v2/list/{list_id}/task",
+                    headers={"Authorization": clickup_key, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=15,
+                )
+            if r.status_code not in (200, 201):
+                return f"Failed to create task: {r.status_code} — {r.text[:200]}"
+            task = r.json()
+            return f"Task created: *{task.get('name')}* (id: {task.get('id')}) — {task.get('url', '')}"
+
         else:
             return f"Unknown tool: {name}"
 
@@ -394,10 +513,8 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
 
 # ── Claude tool-use loop ──────────────────────────────────────────────────────
 
-async def ask_rex(user_message: str) -> str:
-    messages: list[dict] = [{"role": "user", "content": user_message}]
-
-    for _ in range(6):  # max 6 rounds of tool use
+async def ask_rex(messages: list[dict]) -> str:
+    for _ in range(8):  # max 8 rounds (more for multi-turn task creation)
         response = await claude.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1000,
@@ -431,31 +548,65 @@ async def ask_rex(user_message: str) -> str:
     return "Something went wrong — please try again."
 
 
+# ── Thread history ────────────────────────────────────────────────────────────
+
+async def _build_messages(event: dict, client, current_text: str) -> list[dict]:
+    """
+    Build a Claude messages list from the Slack thread history so Rex
+    remembers context across multi-turn conversations (e.g. task creation).
+    Falls back to a single message if thread history isn't accessible.
+    """
+    messages: list[dict] = []
+    thread_ts = event.get("thread_ts")
+    channel = event.get("channel")
+
+    if thread_ts and thread_ts != event.get("ts"):
+        try:
+            result = await client.conversations_replies(
+                channel=channel,
+                ts=thread_ts,
+                limit=12,
+            )
+            for msg in result.get("messages", [])[:-1]:  # exclude current message
+                text = re.sub(r"<@\w+>", "", msg.get("text", "")).strip()
+                if not text:
+                    continue
+                if msg.get("bot_id"):
+                    messages.append({"role": "assistant", "content": text})
+                else:
+                    messages.append({"role": "user", "content": text})
+        except Exception:
+            pass  # scope missing or error — just use current message
+
+    messages.append({"role": "user", "content": current_text})
+    return messages
+
+
 # ── Slack event handlers ──────────────────────────────────────────────────────
 
-async def _process(event: dict, say) -> None:
-    # Strip @Rex mention from the text so Claude doesn't see it
+async def _process(event: dict, say, client) -> None:
     text = re.sub(r"<@\w+>", "", event.get("text", "")).strip()
     if not text:
         return
-    reply = await ask_rex(text)
+    messages = await _build_messages(event, client, text)
+    reply = await ask_rex(messages)
     await say(text=reply, thread_ts=event.get("ts"))
 
 
 @slack_app.event("app_mention")
-async def handle_mention(event, say):
-    await _process(event, say)
+async def handle_mention(event, say, client):
+    await _process(event, say, client)
 
 
 @slack_app.event("message")
-async def handle_message(event, say):
+async def handle_message(event, say, client):
     # Only handle direct messages; ignore bot messages and message edits
     if (
         event.get("channel_type") == "im"
         and not event.get("bot_id")
         and not event.get("subtype")
     ):
-        await _process(event, say)
+        await _process(event, say, client)
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
