@@ -643,7 +643,7 @@ async def slack_events(req: Request):
 
 @api.get("/health")
 async def health():
-    return {"status": "ok", "agent": "Rex", "version": "1.0"}
+    return {"status": "ok", "agent": "Rex", "version": "1.2"}
 
 
 if __name__ == "__main__":
