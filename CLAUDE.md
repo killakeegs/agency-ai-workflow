@@ -56,7 +56,9 @@ All agents read client context entirely from Notion at runtime. No client-specif
 | Dev Environment | Claude Code |
 | Version Control | GitHub |
 | Project Management | ClickUp (pipeline state, approval tasks, client folders) |
-| Automation / Triggers | Make (Integromat) — connected via MCP |
+| Automation / Triggers | Make (Integromat) — connected via MCP. Rex (Slack agent) replaced Make.com's AI routing. |
+| Internal Team Agent | Rex — Python Slack bot deployed on Railway. Reads Notion + ClickUp live. Creates ClickUp tasks. |
+| Hosting (Rex) | Railway (`web-production-956bf.up.railway.app`) — Python backend only. Vercel for frontend projects. |
 | Image Generation | Replicate API (black-forest-labs/flux-schnell) |
 | Design | Figma + Relume (component maps → Webflow-compatible components) |
 | Meeting Transcription | Gemini (Google Meet integration) |
@@ -356,6 +358,49 @@ Every home page must include a "How to Get Started" section, positioned after Te
 - Sitemap DB: `Primary Keyword` (rich_text), `Secondary Keywords` (rich_text) — populated by `make suggest-keywords`
 - Brand Guidelines DB: `Voice & Tone`, `Reading Level`, `Power Words`, `Words to Avoid`, `CTA Style`, `POV Notes` (all rich_text) — client style guide, read by ContentAgent at runtime
 - Content DB: `Primary Keyword` (from sitemap), `Title Tag Status` (computed select: ✓ OK / ⚠ Over 60 / ⚠ Under 55), `Internal Link Target` (rich_text), `Alt Text Status` (select: Pending / Complete / N/A)
+
+---
+
+## Rex — Internal Team AI Agent
+
+Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any channel to get instant answers about client status, pipeline, and agency workflow. He can also create ClickUp tasks on request.
+
+**Deployment:** Railway — `web-production-956bf.up.railway.app`
+**Entry point:** `rex/app.py` (FastAPI + slack-bolt async)
+**Code changes:** Edit `rex/app.py` → commit → push → Railway auto-deploys (~30s)
+
+**Slack app:** Rex (App ID: A0ARX6MR3K8)
+- Bot token: in `.env` as `SLACK_BOT_TOKEN`
+- Signing secret: in `.env` as `SLACK_SIGNING_SECRET`
+- Event Subscriptions URL: `https://web-production-956bf.up.railway.app/slack/events`
+- Subscribed events: `message.im`, `app_mention`
+
+**Make.com scenario 4449778** (Rex — RxMedia AI Agent) is deactivated. Railway replaced it entirely.
+
+**Rex's role:** Read-only knowledge + status agent. He answers questions and creates ClickUp tasks. He does NOT write content, copy, or creative material — redirects those requests to Claude.ai or Gemini.
+
+**Tools Rex has:**
+
+| Tool | What it does |
+|---|---|
+| `list_clients` | Lists all clients from config |
+| `get_pipeline_status` | Current pipeline stage from Notion Client Info DB |
+| `get_sitemap` | All sitemap pages with sections from Notion |
+| `get_page_content` | Page copy, title tag, H1, meta from Notion Content DB |
+| `get_action_items` | Open action items from Notion, filterable by assignee |
+| `get_clickup_tasks` | Live tasks from ClickUp, with overdue filter |
+| `list_clickup_workspace` | Full space/folder/list hierarchy with IDs |
+| `get_clickup_members` | Team members with user IDs (for task assignment) |
+| `create_clickup_task` | Creates a task — requires list, due date, assignee |
+
+**Task creation flow:** Rex always confirms space/list, due date, and assignee before creating. Thread history is enabled so multi-turn conversations work naturally within a Slack thread.
+
+**Deployment platform split:**
+- Railway → Python backend services (Rex and any future agents)
+- Vercel → frontend/web projects
+- No other deployment platforms needed
+
+**Rex env vars (Railway):** Same as project env vars plus `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`. Railway reads directly from env — does NOT use `src/config.py` Settings (bypassed to avoid pydantic import-time failures on Railway). All keys are `.strip()`'d to handle Railway newline quirk.
 
 ---
 
