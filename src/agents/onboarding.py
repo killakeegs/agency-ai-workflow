@@ -220,7 +220,8 @@ class OnboardingAgent(BaseAgent):
         target_audience    = _get_rich_text(props.get("Ideal Patient/Client", {}))
         seo_keywords       = _get_rich_text(props.get("SEO Keywords", {}))
         primary_goals      = _get_multi_select(props.get("Primary Goals", {}))
-        existing_domain    = _get_url(props.get("Current Website URL", {}))
+        existing_domain    = _get_url(props.get("Current Website URL", {})) or \
+                             _get_rich_text(props.get("Current Website URL", {}))
         pages_needed       = _get_rich_text(props.get("Specific Pages Needed", {}))
         required_pages     = _get_multi_select(props.get("Required Pages", {}))
         priority_services  = _get_rich_text(props.get("Priority Services (top 3–5)", {}))
