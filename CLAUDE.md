@@ -440,7 +440,9 @@ make care-plan                  # Run for all care plan clients
 - Desktop: 77/100 (Needs Improvement)
 - Baseline for comparison once new Webflow site launches
 
-**PageSpeed API:** Uses Google PageSpeed Insights API (free). Requires `GOOGLE_API_KEY` in `.env`. API key lives in Google Cloud project "RxMedia Agency". Takes 60–90 seconds per run — normal, it runs a full Lighthouse audit. If it times out, just run again.
+**PageSpeed API:** Uses Google PageSpeed Insights API (free). Requires `GOOGLE_API_KEY` in `.env`. API key lives in Google Cloud project "RxMedia Agency". Takes 60–90 seconds per run — normal, it runs a full Lighthouse audit. Script retries up to 3 times with backoff. If it still fails, just run again.
+
+**Monthly automation:** Railway cron service "Care Plan Cron" in the Rex project. Schedule: `0 9 1 * *` (9am UTC / 4am Central on the 1st). Start command: `python scripts/care_plan_report.py`. Uses Railway shared variables — all 7 keys shared across Rex and Care Plan Cron services.
 
 ---
 
