@@ -103,6 +103,10 @@ care-plan-init:
 
 # ── SEO ───────────────────────────────────────────────────────────────────────
 
+# One-time setup for existing clients (new clients get these DBs via make onboard)
+seo-init:
+	@$(PYTHON) scripts/seo_init.py --client $(CLIENT)
+
 # Step 1 (one-time): create Battle Plan Input page in Notion for team to fill in
 battle-plan-init:
 	@$(PYTHON) scripts/battle_plan.py --client $(CLIENT) --init
@@ -184,6 +188,7 @@ help:
 	@echo "  make advance              Check Notion for approval and run the next pipeline stage"
 	@echo ""
 	@echo "  SEO"
+	@echo "  make seo-init             Create Competitors + Keywords DBs for an existing client (one-time)"
 	@echo "  make battle-plan-init     Create Battle Plan Input page in Notion (team fills before running)"
 	@echo "  make battle-plan          Generate SEO Battle Plan → Notion"
 	@echo "  make battle-plan NOTES=\"focus on LGBTQ+ keywords\"  Regenerate with team notes"
@@ -194,5 +199,5 @@ help:
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-export \
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup \
-        battle-plan-init battle-plan seo-activate \
+        seo-init battle-plan-init battle-plan seo-activate \
         care-plan care-plan-init help
