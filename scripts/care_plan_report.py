@@ -200,9 +200,10 @@ async def run_report(client_key: str | None = None) -> None:
 
         print(f"  URL: {site_url}")
 
-        # Run PageSpeed for both strategies
+        # Run PageSpeed for both strategies (small delay to avoid rate limiting)
         print("  Running PageSpeed... ", end="", flush=True)
         mobile_score, mobile_top = await _run_pagespeed(site_url, "mobile")
+        await asyncio.sleep(2)
         desktop_score, desktop_top = await _run_pagespeed(site_url, "desktop")
         print(f"mobile {mobile_score} / desktop {desktop_score}")
 
