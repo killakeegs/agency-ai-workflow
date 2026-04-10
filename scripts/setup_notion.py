@@ -342,7 +342,10 @@ def care_plan_schema() -> dict:
                 ]
             }
         },
-        "Top Opportunity": {"rich_text": {}},
+        "Mobile Metrics":  {"rich_text": {}},
+        "Desktop Metrics": {"rich_text": {}},
+        "Insights":        {"rich_text": {}},
+        "Recommendations": {"rich_text": {}},
         "ADA Widget": {"checkbox": {}},
         "Privacy Policy": {
             "select": {
