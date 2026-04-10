@@ -34,11 +34,11 @@ from src.integrations.notion import NotionClient
 # ── Initialize clients (read directly from os.environ — no pydantic Settings) ─
 
 slack_app = AsyncApp(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    signing_secret=os.environ["SLACK_SIGNING_SECRET"],
+    token=os.environ["SLACK_BOT_TOKEN"].strip(),
+    signing_secret=os.environ["SLACK_SIGNING_SECRET"].strip(),
 )
-claude = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-notion = NotionClient(os.environ["NOTION_API_KEY"])
+claude = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"].strip())
+notion = NotionClient(os.environ["NOTION_API_KEY"].strip())
 
 
 # ── Notion property helpers ───────────────────────────────────────────────────
