@@ -345,6 +345,7 @@ class OnboardingAgent(BaseAgent):
         new_client_config = {
             "client_id":   client_key,
             "name":        business_name,
+            "services":    ["website_build", "care_plan"],
             "intake_submission_ids":   submission_page_ids,
             "client_info_db_id":       databases.get("Client Info", ""),
             "meeting_notes_db_id":     databases.get("Meeting Notes & Transcripts", ""),

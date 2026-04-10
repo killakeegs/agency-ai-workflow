@@ -2,6 +2,7 @@
   "summit_therapy": {
     "client_id": "summit_therapy",
     "name": "Summit Therapy",
+    "services": ["website_build", "care_plan"],
     "intake_submission_ids": [
       "33bf7f45-333e-81e3-b962-dc5f7d5873ca",
       "33bf7f45-333e-8194-9159-ef1692d9fea2"

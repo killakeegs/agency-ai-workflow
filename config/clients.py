@@ -26,6 +26,10 @@ _MANUAL: dict[str, dict] = {
     # "new_client": {
     #     "client_id":   "new_client",
     #     "name":        "Client Name",
+    #     # ── Services active for this client ───────────────────────────────────
+    #     # Options: "website_build", "care_plan", "seo", "social_media", "paid_ads"
+    #     "services": ["website_build", "care_plan"],
+    #     # ── Notion DB IDs ─────────────────────────────────────────────────────
     #     "client_info_db_id":       "",
     #     "meeting_notes_db_id":     "",
     #     "brand_guidelines_db_id":  "",
@@ -36,6 +40,13 @@ _MANUAL: dict[str, dict] = {
     #     "hifi_db_id":              "",
     #     "action_items_db_id":      "",
     #     "images_db_id":            "",
+    #     "care_plan_db_id":         "",
+    #     # ── SEO (if seo in services) ──────────────────────────────────────────
+    #     "competitors_db_id":       "",
+    #     "keywords_db_id":          "",
+    #     "seo_metrics_db_id":       "",
+    #     "gbp_location_id":         "",  # Google Business Profile location ID
+    #     # ── Pipeline ──────────────────────────────────────────────────────────
     #     "meeting_notes_entry_id":  "",
     #     "clickup_review_list_id":  "",
     # },
