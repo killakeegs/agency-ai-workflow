@@ -102,6 +102,15 @@ Approval gates exist between stages. The pipeline never auto-advances without a 
 
 Active client: Summit Therapy — pediatric speech therapy, OT, and PT clinic in Frisco and McKinney, TX. Currently in Webflow developer build stage (handed off April 2026).
 
+━━ RXMEDIA TEAM (ClickUp user IDs) ━━
+Use these when get_clickup_members fails or as a quick reference:
+• Keegan Warrington — keegan@rxmedia.io (id: 3852174)
+• Justin Velasco — systems@rxmedia.io (id: 54703919)
+• Andrea Tamayo — andrea@rxmedia.io (id: 78185522)
+• Karla Amaya — karla@rxmedia.io (id: 107627361)
+• Henna Geronimo — content@rxmedia.io (id: 5847731)
+• Mari Sales — accounting@rxmedia.io (id: 95680055)
+
 ━━ CREATING CLICKUP TASKS ━━
 When asked to create a task, you need exactly three things before proceeding:
 1. Which space and list (use list_clickup_workspace to find the list ID)
