@@ -101,6 +101,22 @@ care-plan:
 care-plan-init:
 	@$(PYTHON) scripts/care_plan_report.py --init --client $(CLIENT)
 
+# ── SEO ───────────────────────────────────────────────────────────────────────
+
+# Step 1 (one-time): create Battle Plan Input page in Notion for team to fill in
+battle-plan-init:
+	@$(PYTHON) scripts/battle_plan.py --client $(CLIENT) --init
+
+# Step 2: generate full battle plan from Notion data + competitor/keyword rows
+battle-plan:
+	@$(PYTHON) scripts/battle_plan.py --client $(CLIENT) \
+	  $(if $(NOTES),--notes "$(NOTES)",)
+
+# Activate full SEO retainer for a client (creates SEO Metrics DB, sets gbp_location_id)
+seo-activate:
+	@$(PYTHON) scripts/seo_activate.py --client $(CLIENT) \
+	  $(if $(GBP_ID),--gbp-location-id "$(GBP_ID)",)
+
 onboarding-form:
 	@$(PYTHON) scripts/setup_onboarding_form.py
 
@@ -167,8 +183,16 @@ help:
 	@echo "  make mark-pending         After a manual stage run — sets Pending Review + creates ClickUp task"
 	@echo "  make advance              Check Notion for approval and run the next pipeline stage"
 	@echo ""
+	@echo "  SEO"
+	@echo "  make battle-plan-init     Create Battle Plan Input page in Notion (team fills before running)"
+	@echo "  make battle-plan          Generate SEO Battle Plan → Notion"
+	@echo "  make battle-plan NOTES=\"focus on LGBTQ+ keywords\"  Regenerate with team notes"
+	@echo "  make seo-activate GBP_ID=\"...\"  Activate full SEO retainer (creates SEO Metrics DB)"
+	@echo ""
 
 .PHONY: run transcript mood-board sitemap content wireframe \
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-export \
-        onboarding-form onboard onboard-list advance mark-pending pipeline-setup help
+        onboarding-form onboard onboard-list advance mark-pending pipeline-setup \
+        battle-plan-init battle-plan seo-activate \
+        care-plan care-plan-init help

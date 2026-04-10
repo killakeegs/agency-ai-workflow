@@ -370,6 +370,186 @@ def care_plan_schema() -> dict:
     }
 
 
+def competitors_schema() -> dict:
+    """
+    Schema for the Competitors DB.
+    Covers Local SEO Competitor Analysis + Organic Competitor Analysis + Authority Gap
+    from the SEO Battle Plan workbook. One row per competitor per client.
+    """
+    return {
+        "Competitor Name": {"title": {}},
+        "Website": {"url": {}},
+        "GBP URL": {"url": {}},
+        "Type": {
+            "select": {
+                "options": [
+                    {"name": "Local",   "color": "blue"},
+                    {"name": "Organic", "color": "purple"},
+                    {"name": "Both",    "color": "green"},
+                ]
+            }
+        },
+        "Primary Category": {"rich_text": {}},
+        # ── GBP / Local signals ───────────────────────────────────────────────
+        "Review Count":          {"number": {}},
+        "Review Rating":         {"number": {}},
+        "Review Velocity":       {"rich_text": {}},  # e.g. "< 5/month", "1/week"
+        "Reviews Last 30 Days":  {"number": {}},     # manual — count from GBP
+        "Photo Count":           {"number": {}},
+        "Last Photo Added":      {"rich_text": {}},  # e.g. "1 year ago", "2 months ago"
+        "Photo Quality": {
+            "select": {
+                "options": [
+                    {"name": "Excellent", "color": "green"},
+                    {"name": "Good",      "color": "blue"},
+                    {"name": "Fair",      "color": "yellow"},
+                    {"name": "Poor",      "color": "red"},
+                ]
+            }
+        },
+        "Has Posts":              {"checkbox": {}},
+        "Service Menu Complete":  {"checkbox": {}},
+        "Network Presence":       {"rich_text": {}},  # list of directories
+        # ── Authority / backlink data (Search Atlas export) ───────────────────
+        "Authority Score":    {"number": {}},
+        "Referring Domains":  {"number": {}},
+        "Local Backlinks":    {"rich_text": {}},  # notes on local/civic links
+        "Industry Links":     {"rich_text": {}},  # notes on industry links
+        "Link Gap Notes":     {"rich_text": {}},  # gap analysis narrative
+        # ── Organic page analysis ─────────────────────────────────────────────
+        "Top Ranking Page":  {"url": {}},
+        "Target Cluster":    {"rich_text": {}},  # what content cluster they're targeting
+        "Content Depth": {
+            "select": {
+                "options": [
+                    {"name": "Short",       "color": "red"},
+                    {"name": "Medium",      "color": "yellow"},
+                    {"name": "Medium-Long", "color": "blue"},
+                    {"name": "Long",        "color": "green"},
+                ]
+            }
+        },
+        "Uses FAQs":      {"checkbox": {}},
+        "Uses Schema":    {"rich_text": {}},  # which schema types
+        "EEAT Signals":   {"rich_text": {}},
+        "Strengths":      {"rich_text": {}},
+        "Weaknesses":     {"rich_text": {}},
+        "Notes":          {"rich_text": {}},
+    }
+
+
+def keywords_schema() -> dict:
+    """
+    Schema for the Keywords DB.
+    Covers the Keyword Mapping tab from the SEO Battle Plan workbook.
+    One row per target keyword per client.
+    """
+    return {
+        "Keyword": {"title": {}},
+        "Cluster": {"rich_text": {}},  # e.g. "Core Substance Abuse", "Mental Health"
+        "Monthly Search Volume": {"rich_text": {}},  # rich_text: handles "Low-Vol / High-Intent"
+        "Intent": {
+            "select": {
+                "options": [
+                    {"name": "Informational",   "color": "blue"},
+                    {"name": "Commercial",      "color": "purple"},
+                    {"name": "Transactional",   "color": "green"},
+                    {"name": "Local",           "color": "orange"},
+                    {"name": "Navigational",    "color": "gray"},
+                ]
+            }
+        },
+        "Our Position":          {"rich_text": {}},  # current rank or "-"
+        "Competitor Positions":  {"rich_text": {}},  # "Crestview: 1, TreeHouse: 2"
+        "Priority": {
+            "select": {
+                "options": [
+                    {"name": "High",   "color": "red"},
+                    {"name": "Medium", "color": "yellow"},
+                    {"name": "Low",    "color": "gray"},
+                ]
+            }
+        },
+        "Type": {
+            "select": {
+                "options": [
+                    {"name": "GBP",           "color": "green"},
+                    {"name": "Landing Page",  "color": "blue"},
+                    {"name": "Blog",          "color": "purple"},
+                    {"name": "Home",          "color": "orange"},
+                    {"name": "Service Hub",   "color": "yellow"},
+                ]
+            }
+        },
+        "Target Page":       {"rich_text": {}},  # which page should rank for this
+        "Location Modifier": {"rich_text": {}},  # e.g. "Portland OR", "NE Portland"
+        "Status": {
+            "select": {
+                "options": [
+                    {"name": "Target",   "color": "gray"},
+                    {"name": "Ranking",  "color": "yellow"},
+                    {"name": "Won",      "color": "green"},
+                ]
+            }
+        },
+        "Notes": {"rich_text": {}},
+    }
+
+
+def seo_metrics_schema() -> dict:
+    """
+    Schema for the SEO Metrics DB.
+    Monthly performance rows — full SEO clients only.
+    Covers the Benchmark Metrics tab from the SEO workbook.
+    Created by `make seo-activate`, not at initial onboarding.
+    """
+    return {
+        "Month": {"title": {}},  # e.g. "April 2026"
+        "Report Date": {"date": {}},
+        # ── GBP ──────────────────────────────────────────────────────────────
+        "GBP Impressions":   {"number": {}},
+        "GBP Calls":         {"number": {}},
+        "GBP Clicks":        {"number": {}},
+        "GBP Score":         {"number": {}},
+        # ── Site / organic ───────────────────────────────────────────────────
+        "Organic Sessions":          {"number": {}},
+        "Domain Authority":          {"number": {}},
+        "Referring Domains":         {"number": {}},
+        "Backlinks":                 {"number": {}},
+        "Organic Conversion Rate":   {"number": {}},
+        "Organic Engagement Rate":   {"number": {}},
+        "Branded Clicks":            {"number": {}},
+        "Non-Branded Clicks":        {"number": {}},
+        # ── Citations ────────────────────────────────────────────────────────
+        "Citation Score":       {"number": {}},
+        "Data Aggregators":     {"number": {}},
+        # ── Technical ────────────────────────────────────────────────────────
+        "PageSpeed Mobile":   {"number": {}},
+        "PageSpeed Desktop":  {"number": {}},
+        "404 Errors":         {"number": {}},
+        "4XX Errors":         {"number": {}},
+        "5XX Errors":         {"number": {}},
+        # ── LLM visibility (0=not visible, 1=mentioned, 2=recommended) ───────
+        "LLM Gemini":      {"number": {}},
+        "LLM ChatGPT":     {"number": {}},
+        "LLM Perplexity":  {"number": {}},
+        # ── Reviews ──────────────────────────────────────────────────────────
+        "Review Count":          {"number": {}},
+        "New Reviews This Month": {"number": {}},
+        # ── Meta ─────────────────────────────────────────────────────────────
+        "Data Source": {
+            "select": {
+                "options": [
+                    {"name": "API",    "color": "green"},
+                    {"name": "Manual", "color": "yellow"},
+                    {"name": "Mixed",  "color": "blue"},
+                ]
+            }
+        },
+        "Notes": {"rich_text": {}},
+    }
+
+
 def action_items_schema() -> dict:
     return {
         "Task": {"title": {}},
@@ -437,6 +617,11 @@ async def setup_client(client_name: str, contact_email: str, dry_run: bool = Fal
         ("Action Items", action_items_schema()),
         ("Images", images_schema()),
         ("Care Plan", care_plan_schema()),
+        # ── SEO — Battle Plan DBs (always created, even for website-only clients) ──
+        ("Competitors", competitors_schema()),
+        ("Keywords", keywords_schema()),
+        # Note: SEO Metrics DB is created separately by `make seo-activate`
+        # (only for clients on the full SEO retainer)
     ]
 
     for db_name, schema in db_definitions:

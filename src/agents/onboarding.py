@@ -358,6 +358,10 @@ class OnboardingAgent(BaseAgent):
             "action_items_db_id":      databases.get("Action Items", ""),
             "images_db_id":            databases.get("Images", ""),
             "care_plan_db_id":         databases.get("Care Plan", ""),
+            "competitors_db_id":       databases.get("Competitors", ""),
+            "keywords_db_id":          databases.get("Keywords", ""),
+            "seo_metrics_db_id":       "",  # populated by make seo-activate
+            "gbp_location_id":         "",  # populated by make seo-activate
             "meeting_notes_entry_id":  "",
             "clickup_review_list_id":  "",
         }
