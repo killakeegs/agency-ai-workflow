@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
+import httpx
 from fastapi import FastAPI, Request
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
@@ -61,12 +62,21 @@ def _build_system_prompt() -> str:
         f"  • {key} — {cfg.get('name', key)}"
         for key, cfg in CLIENTS.items()
     )
-    return f"""You are Rex, the AI knowledge agent for RxMedia — a digital marketing agency that builds AI-powered website workflows for clients.
+    return f"""You are Rex, the internal knowledge agent for RxMedia — a digital marketing agency that builds AI-powered website workflows for clients.
 
-Your job: help the RxMedia team understand the agency workflow, client project status, and the tools being built. You have access to live Notion data via tools — use them when someone asks about specific client content, sitemap pages, action items, or pipeline status.
+━━ YOUR ROLE ━━
+You are a read-only status and knowledge agent. Your job is to help the team quickly find information: where things are in the pipeline, what's been built, what's pending, how the workflow operates.
+
+You are NOT a creative tool. Do not write website copy, generate content ideas, draft emails, brainstorm, or produce any creative material — even if asked nicely. For that, the team should use Claude.ai or Gemini directly. If someone asks you to create content, decline and redirect them: "For content creation, use Claude.ai or Gemini — I'm focused on project status and workflow questions."
+
+━━ WHAT YOU DO ━━
+• Answer questions about pipeline status, client projects, and where things stand
+• Look up live data from Notion and ClickUp using tools
+• Explain how the agency workflow and pipeline works
+• Help the team understand what stage a client is in and what comes next
 
 ━━ AGENCY PIPELINE ━━
-Each client goes through these stages (in order):
+Each client goes through these stages in order:
 1. Onboarding — Notion DBs + ClickUp provisioned automatically
 2. Kickoff Meeting — transcript parsed, brand preferences extracted
 3. Sitemap — page hierarchy built, client approves before proceeding
@@ -80,12 +90,11 @@ Approval gates exist between stages. The pipeline never auto-advances without a 
 
 ━━ KEY TOOLS & INTEGRATIONS ━━
 • Notion — central knowledge base (all client data lives here)
-• ClickUp — pipeline state + approval tasks
-• Relume — AI component library; generates Webflow-compatible wireframes from a sitemap
-• Replicate (Flux Schnell) — AI image generation for brand/page images
-• Pexels — stock photography (CC0, no attribution required)
-• Webflow — final website delivery and client editing
-• Make.com — workflow automation
+• ClickUp — pipeline state + tasks
+• Relume — AI component library for wireframes → Webflow
+• Replicate (Flux Schnell) — AI image generation
+• Pexels — stock photography (CC0)
+• Webflow — final website delivery
 • Claude (Anthropic) — AI orchestration engine for all agents
 
 ━━ CLIENTS ━━
@@ -94,9 +103,10 @@ Approval gates exist between stages. The pipeline never auto-advances without a 
 Active client: Summit Therapy — pediatric speech therapy, OT, and PT clinic in Frisco and McKinney, TX. Currently in Webflow developer build stage (handed off April 2026).
 
 ━━ HOW TO ANSWER ━━
-• For "how does X work" questions — answer from your knowledge above
-• For "what pages are in the sitemap", "what's the content for X page", "what action items are open" — use a tool to pull live Notion data
-• Don't invent specific data — if you're not sure, use a tool or say so
+• Factual workflow questions — answer from your knowledge
+• Live data (sitemap pages, tasks, action items, pipeline status) — use a tool
+• Creative requests — decline and redirect to Claude.ai or Gemini
+• Don't invent data — if unsure, use a tool or say so
 
 ━━ SLACK FORMATTING ━━
 • Use *bold* for key terms and section headers
@@ -183,6 +193,24 @@ TOOLS = [
                 },
             },
             "required": ["client_key"],
+        },
+    },
+    {
+        "name": "get_clickup_tasks",
+        "description": "Get tasks from ClickUp across the agency workspace. Use this for questions about what's in progress, what's overdue, or what tasks are assigned to someone.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "include_closed": {
+                    "type": "boolean",
+                    "description": "Whether to include completed/closed tasks. Default false.",
+                },
+                "overdue_only": {
+                    "type": "boolean",
+                    "description": "If true, only return tasks past their due date.",
+                },
+            },
+            "required": [],
         },
     },
 ]
@@ -309,6 +337,53 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                 due = due_obj.get("start", "no due date")
                 lines.append(f"• {task} [{assigned}] — {status_val} (due: {due})")
             return "\n".join(lines)
+
+        elif name == "get_clickup_tasks":
+            include_closed = tool_input.get("include_closed", False)
+            overdue_only = tool_input.get("overdue_only", False)
+            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
+            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            if not workspace_id or not clickup_key:
+                return "ClickUp credentials not configured."
+
+            params = {
+                "include_closed": str(include_closed).lower(),
+                "order_by": "due_date",
+                "reverse": "false",
+                "subtasks": "true",
+                "limit": "50",
+            }
+            if overdue_only:
+                import time
+                params["due_date_lt"] = str(int(time.time() * 1000))
+
+            async with httpx.AsyncClient() as http:
+                r = await http.get(
+                    f"https://api.clickup.com/api/v2/team/{workspace_id}/task",
+                    headers={"Authorization": clickup_key},
+                    params=params,
+                    timeout=15,
+                )
+            if r.status_code != 200:
+                return f"ClickUp API error: {r.status_code}"
+
+            tasks = r.json().get("tasks", [])
+            if not tasks:
+                return "No tasks found."
+
+            lines = []
+            for t in tasks[:20]:  # cap at 20
+                name_val = t.get("name", "Untitled")
+                status = t.get("status", {}).get("status", "unknown")
+                due = t.get("due_date")
+                due_str = ""
+                if due:
+                    import datetime
+                    due_str = f" — due {datetime.datetime.fromtimestamp(int(due)/1000).strftime('%b %d')}"
+                assignees = ", ".join(a.get("username", "") for a in t.get("assignees", []))
+                assignee_str = f" [{assignees}]" if assignees else ""
+                lines.append(f"• {name_val} ({status}){assignee_str}{due_str}")
+            return f"ClickUp tasks ({len(tasks)} total):\n" + "\n".join(lines)
 
         else:
             return f"Unknown tool: {name}"
