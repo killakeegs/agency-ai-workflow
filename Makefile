@@ -92,6 +92,15 @@ relume-sitemap:
 relume-export:
 	@$(PYTHON) scripts/export_relume_prompt.py --client $(CLIENT) --open
 
+# ── Care plan ─────────────────────────────────────────────────────────────────
+
+care-plan:
+	@$(PYTHON) scripts/care_plan_report.py \
+	  $(if $(CLIENT),--client $(CLIENT),)
+
+care-plan-init:
+	@$(PYTHON) scripts/care_plan_report.py --init --client $(CLIENT)
+
 onboarding-form:
 	@$(PYTHON) scripts/setup_onboarding_form.py
 

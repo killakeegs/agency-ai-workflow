@@ -246,6 +246,20 @@ TOOLS = [
         },
     },
     {
+        "name": "get_care_plan_status",
+        "description": "Get the latest care plan report for a client — PageSpeed scores, ADA status, privacy policy status, hours used this month.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {
+                    "type": "string",
+                    "description": "The client identifier, e.g. 'summit_therapy'",
+                },
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
         "name": "get_clickup_tasks",
         "description": "Get tasks from ClickUp across the agency workspace. Use this for questions about what's in progress, what's overdue, or what tasks are assigned to someone.",
         "input_schema": {
@@ -387,6 +401,50 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                 due = due_obj.get("start", "no due date")
                 lines.append(f"• {task} [{assigned}] — {status_val} (due: {due})")
             return "\n".join(lines)
+
+        elif name == "get_care_plan_status":
+            client_key = tool_input["client_key"]
+            if client_key not in CLIENTS:
+                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
+            cfg = CLIENTS[client_key]
+            db_id = cfg.get("care_plan_db_id", "")
+            if not db_id:
+                return f"No care plan configured for {client_key}. Run: python scripts/care_plan_report.py --init --client {client_key}"
+            entries = await notion.query_database(
+                db_id,
+                sorts=[{"property": "Report Date", "direction": "descending"}],
+            )
+            if not entries:
+                return f"No care plan reports found for {client_key}. Run: make care-plan CLIENT={client_key}"
+            latest = entries[0]["properties"]
+            def _text(p): return "".join(x.get("text", {}).get("content", "") for x in p.get("rich_text", []))
+            def _title(p): return "".join(x.get("text", {}).get("content", "") for x in p.get("title", []))
+            def _sel(p): s = p.get("select"); return s.get("name", "") if s else ""
+            def _num(p): return p.get("number", "N/A")
+            def _date(p): d = p.get("date"); return d.get("start", "N/A") if d else "N/A"
+            name_val = _title(latest.get("Name", {}))
+            report_date = _date(latest.get("Report Date", {}))
+            mobile = _num(latest.get("Mobile Score", {}))
+            desktop = _num(latest.get("Desktop Score", {}))
+            mobile_rating = _sel(latest.get("Mobile Rating", {}))
+            desktop_rating = _sel(latest.get("Desktop Rating", {}))
+            top_opp = _text(latest.get("Top Opportunity", {}))
+            ada = latest.get("ADA Widget", {}).get("checkbox", None)
+            privacy = _sel(latest.get("Privacy Policy", {}))
+            tos = _sel(latest.get("Terms of Service", {}))
+            hours = _num(latest.get("Hours Used", {}))
+            ada_str = "✓ Installed" if ada else ("✗ Not installed" if ada is False else "Not recorded")
+            return (
+                f"Care Plan: {name_val}\n"
+                f"Report date: {report_date}\n"
+                f"Mobile: {mobile}/100 ({mobile_rating})\n"
+                f"Desktop: {desktop}/100 ({desktop_rating})\n"
+                f"Top opportunity: {top_opp or 'N/A'}\n"
+                f"ADA widget: {ada_str}\n"
+                f"Privacy policy: {privacy or 'Not recorded'}\n"
+                f"Terms of service: {tos or 'Not recorded'}\n"
+                f"Hours used this month: {hours}"
+            )
 
         elif name == "get_clickup_tasks":
             include_closed = tool_input.get("include_closed", False)

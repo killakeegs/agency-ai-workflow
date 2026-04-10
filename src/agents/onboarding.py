@@ -355,6 +355,7 @@ class OnboardingAgent(BaseAgent):
             "hifi_db_id":              databases.get("High-Fidelity Design", ""),
             "action_items_db_id":      databases.get("Action Items", ""),
             "images_db_id":            databases.get("Images", ""),
+            "care_plan_db_id":         databases.get("Care Plan", ""),
             "meeting_notes_entry_id":  "",
             "clickup_review_list_id":  "",
         }

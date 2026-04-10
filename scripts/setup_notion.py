@@ -317,6 +317,56 @@ def images_schema() -> dict:
     }
 
 
+def care_plan_schema() -> dict:
+    return {
+        "Name": {"title": {}},  # e.g. "Summit Therapy — April 2026"
+        "Report Date": {"date": {}},
+        "Site URL": {"url": {}},
+        "Mobile Score": {"number": {}},
+        "Desktop Score": {"number": {}},
+        "Mobile Rating": {
+            "select": {
+                "options": [
+                    {"name": "Good (90–100)", "color": "green"},
+                    {"name": "Needs Improvement (50–89)", "color": "yellow"},
+                    {"name": "Poor (0–49)", "color": "red"},
+                ]
+            }
+        },
+        "Desktop Rating": {
+            "select": {
+                "options": [
+                    {"name": "Good (90–100)", "color": "green"},
+                    {"name": "Needs Improvement (50–89)", "color": "yellow"},
+                    {"name": "Poor (0–49)", "color": "red"},
+                ]
+            }
+        },
+        "Top Opportunity": {"rich_text": {}},
+        "ADA Widget": {"checkbox": {}},
+        "Privacy Policy": {
+            "select": {
+                "options": [
+                    {"name": "Current", "color": "green"},
+                    {"name": "Needs Update", "color": "yellow"},
+                    {"name": "Not Set", "color": "gray"},
+                ]
+            }
+        },
+        "Terms of Service": {
+            "select": {
+                "options": [
+                    {"name": "Current", "color": "green"},
+                    {"name": "Needs Update", "color": "yellow"},
+                    {"name": "Not Set", "color": "gray"},
+                ]
+            }
+        },
+        "Hours Used": {"number": {}},
+        "Notes": {"rich_text": {}},
+    }
+
+
 def action_items_schema() -> dict:
     return {
         "Task": {"title": {}},
@@ -383,6 +433,7 @@ async def setup_client(client_name: str, contact_email: str, dry_run: bool = Fal
         ("High-Fidelity Design", high_fid_schema()),
         ("Action Items", action_items_schema()),
         ("Images", images_schema()),
+        ("Care Plan", care_plan_schema()),
     ]
 
     for db_name, schema in db_definitions:
