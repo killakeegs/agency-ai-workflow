@@ -405,6 +405,45 @@ Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any 
 
 ---
 
+## Website Care Plan
+
+$199/month recurring service. Automatically provisioned for every client at launch.
+
+**What's included:**
+- Security & hosting (Webflow handles this)
+- Privacy policy & terms management (template-based, agency updates as needed)
+- ADA compliance widget (free widget installed in Webflow)
+- Site speed & technical performance — monthly PageSpeed Insights report (automated)
+- Digital asset backup (Webflow versioning handles this)
+- Website updates & changes (1hr/month cap)
+
+**Notion DB:** `Care Plan` — one entry per monthly report per client. Tracks mobile/desktop scores, ADA widget status, privacy/terms status, hours used. History is preserved — each month creates a new row, never overwrites.
+
+**Script:** `scripts/care_plan_report.py`
+**Make commands:**
+```bash
+make care-plan-init CLIENT=x    # Create Care Plan DB for an existing client (one-time)
+make care-plan CLIENT=x         # Run monthly report for one client
+make care-plan                  # Run for all care plan clients
+```
+
+**When to run — depends on client situation:**
+
+- **Client has an existing website at onboarding** → run `make care-plan-init` + `make care-plan` immediately after onboarding. Establishes a baseline score before the new site launches.
+- **Client has no website at onboarding** → skip until the new Webflow site is live. Then run `make care-plan-init` + `make care-plan` at launch. This becomes month 1 of the care plan.
+- **All clients** → once the care plan is active, `make care-plan` runs automatically on the 1st of each month via Railway cron (pending cron setup).
+
+**Important:** `make care-plan-init` must be run once per client to create their Care Plan DB. New clients onboarded via `make onboard` get the DB auto-created — but existing clients (like Summit) needed it added manually. Summit's care plan DB was created 2026-04-09.
+
+**First report — Summit Therapy (April 2026):**
+- Mobile: 66/100 (Needs Improvement)
+- Desktop: 77/100 (Needs Improvement)
+- Baseline for comparison once new Webflow site launches
+
+**PageSpeed API:** Uses Google PageSpeed Insights API (free). Requires `GOOGLE_API_KEY` in `.env`. API key lives in Google Cloud project "RxMedia Agency". Takes 60–90 seconds per run — normal, it runs a full Lighthouse audit. If it times out, just run again.
+
+---
+
 ## Pending / Upcoming
 
 - **Webflow MCP integration** — Webflow launched official MCP server (Feb 2026) that works with Claude Code. Enables programmatic content push to Webflow templates. User needs to get Webflow account access. Setup: `claude mcp add-json "webflow" '{"command":"npx","args":["mcp-remote","https://mcp.webflow.com/sse"]}'`
