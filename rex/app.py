@@ -592,18 +592,22 @@ async def _build_messages(event: dict, client, current_text: str) -> list[dict]:
 
 # ── Slack event handlers ──────────────────────────────────────────────────────
 
-async def _process(event: dict, say, client) -> None:
+async def _process(event: dict, say, client, thread: bool = False) -> None:
     text = re.sub(r"<@\w+>", "", event.get("text", "")).strip()
     if not text:
         return
     messages = await _build_messages(event, client, text)
     reply = await ask_rex(messages)
-    await say(text=reply, thread_ts=event.get("ts"))
+    if thread:
+        await say(text=reply, thread_ts=event.get("ts"))
+    else:
+        await say(text=reply)
 
 
 @slack_app.event("app_mention")
 async def handle_mention(event, say, client):
-    await _process(event, say, client)
+    # Post directly to the channel so the whole team sees Rex's response
+    await _process(event, say, client, thread=False)
 
 
 @slack_app.event("message")
@@ -614,7 +618,7 @@ async def handle_message(event, say, client):
         and not event.get("bot_id")
         and not event.get("subtype")
     ):
-        await _process(event, say, client)
+        await _process(event, say, client, thread=True)
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
