@@ -425,6 +425,8 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
         elif name == "list_clickup_workspace":
             workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
             clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            if not workspace_id or not clickup_key:
+                return "ClickUp credentials not configured."
             async with httpx.AsyncClient() as http:
                 r = await http.get(
                     f"https://api.clickup.com/api/v2/team/{workspace_id}/space",
@@ -432,11 +434,12 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                     params={"archived": "false"},
                     timeout=15,
                 )
+            if r.status_code != 200:
+                return f"ClickUp API error {r.status_code}: {r.text[:200]}"
             spaces = r.json().get("spaces", [])
             lines = []
             for space in spaces:
                 lines.append(f"Space: {space['name']} (id: {space['id']})")
-                # Get folders
                 async with httpx.AsyncClient() as http:
                     fr = await http.get(
                         f"https://api.clickup.com/api/v2/space/{space['id']}/folder",
@@ -444,11 +447,11 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                         params={"archived": "false"},
                         timeout=15,
                     )
-                for folder in fr.json().get("folders", []):
-                    lines.append(f"  Folder: {folder['name']} (id: {folder['id']})")
-                    for lst in folder.get("lists", []):
-                        lines.append(f"    List: {lst['name']} (id: {lst['id']})")
-                # Get folderless lists
+                if fr.status_code == 200:
+                    for folder in fr.json().get("folders", []):
+                        lines.append(f"  Folder: {folder['name']} (id: {folder['id']})")
+                        for lst in folder.get("lists", []):
+                            lines.append(f"    List: {lst['name']} (id: {lst['id']})")
                 async with httpx.AsyncClient() as http:
                     lr = await http.get(
                         f"https://api.clickup.com/api/v2/space/{space['id']}/list",
@@ -456,20 +459,25 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
                         params={"archived": "false"},
                         timeout=15,
                     )
-                for lst in lr.json().get("lists", []):
-                    lines.append(f"  List: {lst['name']} (id: {lst['id']})")
+                if lr.status_code == 200:
+                    for lst in lr.json().get("lists", []):
+                        lines.append(f"  List: {lst['name']} (id: {lst['id']})")
             return "\n".join(lines) if lines else "No spaces found."
 
         elif name == "get_clickup_members":
             workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
             clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
+            if not workspace_id or not clickup_key:
+                return "ClickUp credentials not configured."
             async with httpx.AsyncClient() as http:
                 r = await http.get(
-                    f"https://api.clickup.com/api/v2/team/{workspace_id}/member",
+                    f"https://api.clickup.com/api/v2/team/{workspace_id}",
                     headers={"Authorization": clickup_key},
                     timeout=15,
                 )
-            members = r.json().get("members", [])
+            if r.status_code != 200:
+                return f"ClickUp API error {r.status_code}: {r.text[:200]}"
+            members = r.json().get("team", {}).get("members", [])
             lines = []
             for m in members:
                 u = m.get("user", {})
