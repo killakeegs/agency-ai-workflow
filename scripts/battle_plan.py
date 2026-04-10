@@ -11,17 +11,20 @@ Usage:
     make battle-plan CLIENT=summit_therapy
     make battle-plan CLIENT=summit_therapy NOTES="focus on LGBTQ+ keywords"
 
-What gets auto-pulled:
+What gets auto-pulled and pre-seeded (make battle-plan-init):
   - Client business info, brand, and goals from Notion
-  - PageSpeed scores (from existing Care Plan DB if available)
+  - PageSpeed scores from Care Plan DB (if available)
+  - Competitors and keywords extracted from onboarding form data by Claude
+    → skeleton rows created in Competitors DB and Keywords DB automatically
+    → team verifies and fills in the SEO-specific data (volumes, rankings, DA)
 
-What team provides (via Notion Battle Plan Input page, created by this script):
-  - Competitor list with websites
-  - Search Atlas export: keyword volumes, current rankings, DA, referring domains
-  - LLM visibility check (Gemini/ChatGPT/Perplexity)
+What team fills in manually after make battle-plan-init:
+  - Search Atlas: search volumes, current rankings, DA, referring domains
   - GBP baseline metrics (until GBP API is connected)
+  - LLM visibility check (Gemini/ChatGPT/Perplexity)
+  - Heatmap screenshots
 
-What Claude generates:
+What Claude generates (make battle-plan):
   - Executive summary and gap analysis
   - 4-phase strategic action plan
   - Keyword cluster strategy
@@ -29,8 +32,7 @@ What Claude generates:
   - Authority gap analysis
   - Success milestones
 
-Run with --init to create a Battle Plan Input page in Notion for the team
-to fill in before the full run.
+Run with --init to pre-seed the DBs and create the input checklist in Notion.
 """
 from __future__ import annotations
 
@@ -475,69 +477,349 @@ async def _ensure_battle_plan_dbs(notion: NotionClient, cfg: dict) -> tuple[str,
     return comp_id, kw_id
 
 
-# ── Init (create input scaffold) ───────────────────────────────────────────────
+# ── Onboarding data parser ─────────────────────────────────────────────────────
+
+PARSE_ONBOARDING_PROMPT = """\
+You are extracting structured SEO data from a client's onboarding form submission.
+
+Read the business overview text and extract:
+1. Competitors — any businesses named as competitors, similar practices, or "websites we dislike"
+2. Target keywords — any keyword phrases mentioned (SEO keywords field, services, locations)
+3. The client's primary location(s)
+4. Their core services
+
+For keywords, suggest intent and keyword type based on context:
+- "Local" intent = service + city/region queries
+- "Transactional" intent = ready-to-book queries
+- "Informational" intent = research/educational queries
+- Type "GBP" = short local queries best targeted via Google Business Profile
+- Type "Landing Page" = service+location pages
+- Type "Blog" = informational/educational content
+- Type "Home" = brand/primary terms
+- Type "Service Hub" = main service category pages
+
+Priority guidance:
+- High = core service + primary location (highest traffic potential)
+- Medium = service variations, secondary locations
+- Low = long-tail, niche terms
+
+Return ONLY this JSON — no markdown:
+{
+  "competitors": [
+    {"name": "string", "website": "string or empty", "notes": "any context from the form"}
+  ],
+  "keywords": [
+    {
+      "keyword": "string",
+      "cluster": "string (group name, e.g. Core Services, Mental Health, Location-Based)",
+      "intent": "Local|Informational|Transactional|Commercial",
+      "type": "GBP|Landing Page|Blog|Home|Service Hub",
+      "location_modifier": "string or empty",
+      "priority": "High|Medium|Low"
+    }
+  ],
+  "location": "primary city, state",
+  "primary_services": ["list of core services"]
+}
+
+If a field is not mentioned in the text, return an empty list or empty string.
+Do not invent data — only extract what is explicitly or clearly implied in the text.
+"""
+
+
+async def _parse_onboarding_data(ctx: dict) -> dict:
+    """
+    Use Claude to extract structured competitors + keywords from onboarding form data.
+    Returns {"competitors": [...], "keywords": [...], "location": "...", "primary_services": [...]}
+    """
+    if _anthropic is None:
+        return {"competitors": [], "keywords": [], "location": "", "primary_services": []}
+
+    raw = ctx.get("raw_guidelines", "")
+    if not raw:
+        return {"competitors": [], "keywords": [], "location": "", "primary_services": []}
+
+    response = await _anthropic.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=2048,
+        system=PARSE_ONBOARDING_PROMPT,
+        messages=[{"role": "user", "content": raw[:4000]}],
+    )
+
+    text = response.content[0].text if response.content else "{}"
+    try:
+        import re
+        clean = re.sub(r"```(?:json)?\n?", "", text).strip().rstrip("```")
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        log.warning("Onboarding parse JSON failed")
+        return {"competitors": [], "keywords": [], "location": "", "primary_services": []}
+
+
+async def _seed_competitors_db(
+    notion: NotionClient, db_id: str, competitors: list[dict]
+) -> int:
+    """Create skeleton competitor rows from onboarding data. Returns count created."""
+    created = 0
+    for comp in competitors:
+        name = comp.get("name", "").strip()
+        if not name:
+            continue
+        props: dict = {
+            "Competitor Name": _title(name),
+            "Notes": _rt(
+                (comp.get("notes", "") + "\n\n⚠️ Pre-seeded from onboarding data — verify all fields.").strip()
+            ),
+        }
+        website = comp.get("website", "").strip()
+        if website and website.startswith("http"):
+            props["Website"] = _url(website)
+        try:
+            await notion.create_database_entry(db_id, props)
+            created += 1
+        except Exception as e:
+            log.warning(f"Could not create competitor row for {name}: {e}")
+    return created
+
+
+async def _seed_keywords_db(
+    notion: NotionClient, db_id: str, keywords: list[dict]
+) -> int:
+    """Create skeleton keyword rows from onboarding data. Returns count created."""
+    # Valid select options from our schema
+    valid_intent = {"Informational", "Commercial", "Transactional", "Local", "Navigational"}
+    valid_type   = {"GBP", "Landing Page", "Blog", "Home", "Service Hub"}
+    valid_priority = {"High", "Medium", "Low"}
+
+    created = 0
+    for kw in keywords:
+        keyword = kw.get("keyword", "").strip()
+        if not keyword:
+            continue
+        props: dict = {
+            "Keyword": _title(keyword),
+            "Cluster": _rt(kw.get("cluster", "")),
+            "Our Position": _rt("-"),
+            "Notes": _rt("⚠️ Pre-seeded from onboarding data — add search volume + verify."),
+        }
+        intent = kw.get("intent", "")
+        if intent in valid_intent:
+            props["Intent"] = _sel(intent)
+
+        kw_type = kw.get("type", "")
+        if kw_type in valid_type:
+            props["Type"] = _sel(kw_type)
+
+        priority = kw.get("priority", "")
+        if priority in valid_priority:
+            props["Priority"] = _sel(priority)
+
+        loc = kw.get("location_modifier", "").strip()
+        if loc:
+            props["Location Modifier"] = _rt(loc)
+
+        try:
+            await notion.create_database_entry(db_id, props)
+            created += 1
+        except Exception as e:
+            log.warning(f"Could not create keyword row for {keyword}: {e}")
+    return created
+
+
+# ── Init (create input scaffold + pre-seed from onboarding) ───────────────────
 
 async def _run_init(notion: NotionClient, cfg: dict, client_page_id: str) -> None:
     """
-    Create a Battle Plan Input page in Notion for the team to fill in.
-    This is the human review gate — team fills this before running the full plan.
+    Pre-seed Competitors and Keywords DBs from onboarding data, then create
+    a Battle Plan Input page showing what was auto-filled vs what still needs
+    manual input. This is the human review gate.
     """
-    print("\nCreating Battle Plan Input page in Notion...")
+    comp_id = cfg.get("competitors_db_id", "")
+    kw_id   = cfg.get("keywords_db_id", "")
 
-    blocks = [
+    if not comp_id or not kw_id:
+        print("⚠️  Missing competitors_db_id or keywords_db_id. Run: make seo-init first.")
+        return
+
+    # ── Step 1: Load onboarding context from Notion ────────────────────────────
+    print("\nLoading client context from Notion...")
+    ctx = await _load_client_context(notion, cfg)
+    business_name = ctx.get("business_name", cfg["name"])
+    print(f"  ✓ Loaded: {business_name}")
+
+    # ── Step 2: Parse competitors + keywords from onboarding data ──────────────
+    print("Parsing onboarding data with Claude...")
+    parsed = await _parse_onboarding_data(ctx)
+    competitors_found = parsed.get("competitors", [])
+    keywords_found    = parsed.get("keywords", [])
+    location          = parsed.get("location", "")
+    services          = parsed.get("primary_services", [])
+    print(f"  ✓ Found: {len(competitors_found)} competitors, {len(keywords_found)} keywords")
+
+    # ── Step 3: Check for existing rows (skip if already seeded) ──────────────
+    existing_comps = await notion.query_database(comp_id)
+    existing_kws   = await notion.query_database(kw_id)
+
+    comp_count = 0
+    kw_count   = 0
+
+    if not existing_comps and competitors_found:
+        print(f"Seeding Competitors DB ({len(competitors_found)} rows)...")
+        comp_count = await _seed_competitors_db(notion, comp_id, competitors_found)
+        print(f"  ✓ {comp_count} competitor rows created")
+    elif existing_comps:
+        comp_count = len(existing_comps)
+        print(f"  — Competitors DB already has {comp_count} rows — skipping seed")
+
+    if not existing_kws and keywords_found:
+        print(f"Seeding Keywords DB ({len(keywords_found)} rows)...")
+        kw_count = await _seed_keywords_db(notion, kw_id, keywords_found)
+        print(f"  ✓ {kw_count} keyword rows created")
+    elif existing_kws:
+        kw_count = len(existing_kws)
+        print(f"  — Keywords DB already has {kw_count} rows — skipping seed")
+
+    # ── Step 4: Create the input checklist page ────────────────────────────────
+    print("Creating Battle Plan Input page in Notion...")
+
+    auto_filled: list[str] = []
+    needs_manual: list[str] = []
+
+    if comp_count:
+        auto_filled.append(f"Competitors DB: {comp_count} rows pre-seeded from onboarding")
+    else:
+        needs_manual.append("Competitors DB: add competitor rows (name, website, GBP URL, review count, rating)")
+
+    if kw_count:
+        auto_filled.append(f"Keywords DB: {kw_count} keyword rows pre-seeded from onboarding")
+    else:
+        needs_manual.append("Keywords DB: add target keyword rows")
+
+    if ctx.get("pagespeed_mobile") is not None:
+        auto_filled.append(
+            f"PageSpeed scores: Mobile {ctx['pagespeed_mobile']}/100, "
+            f"Desktop {ctx['pagespeed_desktop']}/100 (from Care Plan DB)"
+        )
+    else:
+        needs_manual.append("PageSpeed scores (or run make care-plan first)")
+
+    needs_manual += [
+        "Search Atlas: add search volumes + current rankings to each keyword row",
+        "Search Atlas: add Authority Score + Referring Domains to each competitor row",
+        "GBP benchmark metrics (3-month avg): impressions, calls, clicks, GBP score",
+        "LLM visibility: search Gemini / ChatGPT / Perplexity for client's primary service + city",
+        "Technical baseline: Domain Authority, Referring Domains, Citation Score (Search Atlas)",
+        "Heatmaps: run 2–3 priority keywords in Search Atlas → attach screenshots here",
+    ]
+
+    blocks: list[dict] = [
         _callout(
-            "Fill this page before running `make battle-plan`. "
-            "The agent reads this data to generate the full battle plan.",
+            "Review and complete this page, then run `make battle-plan` to generate the full plan. "
+            "Rows marked ⚠️ were pre-seeded from onboarding data — verify before running.",
             "📋"
-        ),
-        _h("1. Competitor List", 2),
-        _p(
-            "Add competitor rows directly to the Competitors DB. "
-            "For each competitor, fill in: Website, GBP URL, Primary Category, "
-            "Review Count, Rating, Network Presence. "
-            "Authority Score and Referring Domains come from Search Atlas."
-        ),
-        _h("2. Search Atlas Data", 2),
-        _p("Export from Search Atlas and fill in the Keywords DB:"),
-        _bullet("Keyword, Monthly Search Volume, Our Current Position, Cluster"),
-        _bullet("Domain Authority and Referring Domains → paste into Competitors DB rows"),
-        _h("3. GBP Benchmark Metrics (3-month average)", 2),
-        _p("Pull from Google Business Profile dashboard (Jan–Mar average):"),
-        _bullet("Impressions: ___"),
-        _bullet("Calls: ___"),
-        _bullet("Clicks: ___"),
-        _bullet("GBP Score: ___"),
-        _h("4. LLM Visibility Check", 2),
-        _p("Search each LLM for the client's primary service + location. Note if mentioned/recommended:"),
-        _bullet("Gemini: ___  (0=not visible, 1=mentioned, 2=recommended)"),
-        _bullet("ChatGPT: ___"),
-        _bullet("Perplexity: ___"),
-        _h("5. Technical Baseline", 2),
-        _p("If not already in Care Plan DB:"),
-        _bullet("Domain Authority (Search Atlas): ___"),
-        _bullet("Referring Domains: ___"),
-        _bullet("Citation Score: ___"),
-        _h("6. Heatmaps", 2),
-        _p(
-            "Run heatmaps in Search Atlas for 2–3 priority keywords. "
-            "Attach screenshots to this page as images."
-        ),
-        _h("7. Strategic Notes", 2),
-        _p(
-            "Anything the team wants Claude to factor in — client priorities, "
-            "competitive dynamics, budget constraints, specific opportunities flagged."
         ),
     ]
 
-    page_title = f"{cfg['name']} — Battle Plan Input"
+    # What was auto-filled
+    if auto_filled:
+        blocks += [_h("✅ Auto-filled from onboarding data", 2)]
+        for item in auto_filled:
+            blocks.append(_bullet(item))
+        blocks.append(_p(
+            "These rows are in Notion now. Review them — they came from the client's intake form "
+            "and may be incomplete or need clarification."
+        ))
+
+    # What still needs manual input
+    blocks += [
+        _h("📋 Needs manual input", 2),
+        _p("Complete these before running make battle-plan:"),
+    ]
+    for item in needs_manual:
+        blocks.append(_bullet(item))
+
+    # Business context for reference
+    if location or services:
+        blocks.append(_divider())
+        blocks.append(_h("Client Context (from onboarding)", 2))
+        if location:
+            blocks.append(_bullet(f"Primary location: {location}"))
+        if services:
+            blocks.append(_bullet(f"Core services: {', '.join(services)}"))
+
+    # GBP metrics template
+    blocks += [
+        _divider(),
+        _h("GBP Benchmark Metrics (3-month average)", 2),
+        _p("Pull from Google Business Profile → Performance dashboard:"),
+        _bullet("Impressions: ___"),
+        _bullet("Calls: ___"),
+        _bullet("Direction Requests: ___"),
+        _bullet("Website Clicks: ___"),
+        _bullet("GBP Completeness Score: ___"),
+    ]
+
+    # LLM visibility
+    blocks += [
+        _divider(),
+        _h("LLM Visibility Check", 2),
+        _p(
+            f"Search: \"{services[0] if services else 'primary service'} in {location or 'city, state'}\" "
+            f"in each LLM. Score: 0 = not visible, 1 = mentioned, 2 = recommended."
+        ),
+        _bullet("Gemini: ___"),
+        _bullet("ChatGPT: ___"),
+        _bullet("Perplexity: ___"),
+    ]
+
+    # Technical baseline
+    blocks += [
+        _divider(),
+        _h("Technical Baseline (Search Atlas)", 2),
+        _bullet("Domain Authority: ___"),
+        _bullet("Referring Domains: ___"),
+        _bullet("Backlinks: ___"),
+        _bullet("Organic Sessions (GA4, last 3 months): ___"),
+        _bullet("Citation Score: ___"),
+        _bullet("Branded vs Non-Branded Clicks (GSC): ___"),
+    ]
+
+    # Heatmaps
+    blocks += [
+        _divider(),
+        _h("Heatmaps", 2),
+        _p(
+            "Run heatmaps in Search Atlas for 2–3 priority keywords. "
+            "Screenshot and attach to this page as images."
+        ),
+    ]
+
+    # Strategic notes
+    blocks += [
+        _divider(),
+        _h("Strategic Notes for Claude", 2),
+        _p(
+            "Anything the team wants factored into the battle plan: client priorities, "
+            "budget constraints, timing, specific opportunities or concerns."
+        ),
+    ]
+
+    page_title = f"{business_name} — Battle Plan Input"
     page_id = await notion.create_page(
         parent_page_id=client_page_id,
         title=page_title,
     )
     await notion.append_blocks(page_id, blocks)
+
     print(f"  ✓ Battle Plan Input page created")
-    print(f"  Fill it in at: https://notion.so/{page_id.replace('-', '')}")
-    print("\nNext: fill in the Input page, then run `make battle-plan` to generate the plan.")
+    print(f"\nOpen in Notion: https://notion.so/{page_id.replace('-', '')}")
+    print(f"\nWhat was auto-filled:")
+    for item in auto_filled:
+        print(f"  ✓ {item}")
+    print(f"\nWhat still needs manual input ({len(needs_manual)} items):")
+    for item in needs_manual:
+        print(f"  • {item}")
+    print(f"\nOnce complete, run: make battle-plan CLIENT={cfg['client_id']}")
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
