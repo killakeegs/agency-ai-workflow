@@ -134,6 +134,11 @@ make onboard          → Provision client (Notion DBs + ClickUp + client brief)
 make transcript       → Parse meeting → brand prefs, decisions, action items
 make sitemap          → Generate page hierarchy
   [Client approves]
+make keyword-research → Claude generates seeds → DataForSEO validates volumes/CPC → Claude prioritizes → Notion Keywords DB
+  [Team reviews Keywords DB — correct cities, services, priorities before proceeding]
+make competitor-research → SERP analysis on High-priority keywords → auto-seeds Competitors DB
+  [Team reviews Competitors DB — remove directories/aggregators, add any missing local competitors]
+make battle-plan      → SEO strategy document from Keywords + Competitors data → Notion
 make content          → Generate per-page copy + SEO
   [Client approves]
 make stock-images     → Discovery: Claude queries Pexels → HTML report with 15–20 candidates

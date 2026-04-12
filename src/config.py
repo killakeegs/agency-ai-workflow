@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
     google_service_account_json_path: str | None = None
 
+    # ── DataForSEO ────────────────────────────────────────────────────────────
+    dataforseo_login: str | None = None
+    dataforseo_password: str | None = None
+
+    # ── Search Atlas ──────────────────────────────────────────────────────────
+    search_atlas_api_key: str | None = None
+
     # ── Notifications ─────────────────────────────────────────────────────────
     slack_bot_token: str | None = None
     slack_channel_internal: str = "#agency-pipeline"

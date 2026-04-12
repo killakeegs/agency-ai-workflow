@@ -31,6 +31,18 @@ sitemap:
 	@$(PYTHON) scripts/generate_sitemap_visual.py --client $(CLIENT) --notion
 	@$(PYTHON) scripts/advance_pipeline.py --client $(CLIENT) --mark-pending
 
+keyword-research:
+	@$(PYTHON) scripts/keyword_research.py --client $(CLIENT) \
+	  $(if $(EXPORT),--export,) \
+	  $(if $(FORCE),--force,) \
+	  $(if $(YES),--yes,)
+
+competitor-research:
+	@$(PYTHON) scripts/competitor_research.py --client $(CLIENT) \
+	  $(if $(LIMIT),--limit $(LIMIT),) \
+	  $(if $(FORCE),--force,) \
+	  $(if $(YES),--yes,)
+
 suggest-keywords:
 	@$(PYTHON) scripts/suggest_keywords.py --client $(CLIENT) \
 	  $(if $(FORCE),--force,)
@@ -153,7 +165,8 @@ help:
 	@echo "  make transcript       Parse meeting transcript → Notion"
 	@echo "  make mood-board       Generate mood board variations → Notion"
 	@echo "  make sitemap          Generate sitemap → Notion"
-	@echo "  make suggest-keywords Suggest target keywords for all sitemap pages → Notion"
+	@echo "  make keyword-research  Cold keyword research via Google Ads Keyword Planner → Notion
+  make suggest-keywords Suggest target keywords for all sitemap pages → Notion"
 	@echo "  make content          Generate page copy → Notion"
 	@echo "  make wireframe        Generate Relume component maps → Notion"
 	@echo ""
@@ -199,5 +212,6 @@ help:
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-export \
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup \
+        keyword-research competitor-research suggest-keywords \
         seo-init battle-plan-init battle-plan seo-activate \
         care-plan care-plan-init help
