@@ -579,8 +579,8 @@ async def _ensure_keyword_count_field(notion: NotionClient, competitors_db_id: s
             updates["Backlinks"] = {"number": {"format": "number"}}
         if "AI Mentions" not in existing_props:
             updates["AI Mentions"] = {"number": {"format": "number"}}
-        if "Is Chain" not in existing_props:
-            updates["Is Chain"] = {"checkbox": {}}
+        if "Multi-Location" not in existing_props:
+            updates["Multi-Location"] = {"checkbox": {}}
         if "GBP URL" not in existing_props:
             updates["GBP URL"] = {"url": {}}
         if updates:
@@ -675,7 +675,7 @@ async def _write_competitors(
         if comp.get("ai_mentions"):
             properties["AI Mentions"] = {"number": comp["ai_mentions"]}
         if comp.get("is_chain"):
-            properties["Is Chain"] = {"checkbox": True}
+            properties["Multi-Location"] = {"checkbox": True}
 
         try:
             if force and lookup_key in existing:
