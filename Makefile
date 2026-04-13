@@ -130,6 +130,11 @@ battle-plan:
 	@$(PYTHON) scripts/battle_plan.py --client $(CLIENT) \
 	  $(if $(NOTES),--notes "$(NOTES)",)
 
+gbp-posts:
+	@$(PYTHON) scripts/gbp_posts.py --client $(CLIENT) \
+	  $(if $(MONTH),--month "$(MONTH)",) \
+	  $(if $(NOTES),--notes "$(NOTES)",)
+
 # Activate full SEO retainer for a client (creates SEO Metrics DB, sets gbp_location_id)
 seo-activate:
 	@$(PYTHON) scripts/seo_activate.py --client $(CLIENT) \
@@ -208,6 +213,9 @@ help:
 	@echo "  make battle-plan          Generate SEO Battle Plan → Notion"
 	@echo "  make battle-plan NOTES=\"focus on LGBTQ+ keywords\"  Regenerate with team notes"
 	@echo "  make seo-activate GBP_ID=\"...\"  Activate full SEO retainer (creates SEO Metrics DB)"
+	@echo "  make gbp-posts                Generate 3 GBP post drafts from website content → Notion"
+	@echo "  make gbp-posts NOTES=\"...\"    Regenerate with revision feedback"
+	@echo "  make gbp-posts MONTH=\"May 2026\"  Generate for a specific month"
 	@echo ""
 
 .PHONY: run transcript mood-board sitemap content wireframe \
@@ -215,5 +223,5 @@ help:
         mood-board-visuals sitemap-visuals brand-export relume-export \
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup \
         keyword-research competitor-research suggest-keywords \
-        seo-init battle-plan-init battle-plan seo-activate \
+        seo-init battle-plan-init battle-plan seo-activate gbp-posts \
         care-plan care-plan-init help
