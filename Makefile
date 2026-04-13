@@ -35,7 +35,8 @@ keyword-research:
 	@$(PYTHON) scripts/keyword_research.py --client $(CLIENT) \
 	  $(if $(EXPORT),--export,) \
 	  $(if $(FORCE),--force,) \
-	  $(if $(YES),--yes,)
+	  $(if $(YES),--yes,) \
+	  $(if $(OPEN),--open,)
 
 competitor-research:
 	@$(PYTHON) scripts/competitor_research.py --client $(CLIENT) \
@@ -165,8 +166,8 @@ help:
 	@echo "  make transcript       Parse meeting transcript → Notion"
 	@echo "  make mood-board       Generate mood board variations → Notion"
 	@echo "  make sitemap          Generate sitemap → Notion"
-	@echo "  make keyword-research  Cold keyword research via Google Ads Keyword Planner → Notion
-  make suggest-keywords Suggest target keywords for all sitemap pages → Notion"
+	@echo "  make keyword-research  Keyword research via DataForSEO (local + statewide) → Notion + HTML report"
+	@echo "  make suggest-keywords  Suggest target keywords for all sitemap pages → Notion"
 	@echo "  make content          Generate page copy → Notion"
 	@echo "  make wireframe        Generate Relume component maps → Notion"
 	@echo ""

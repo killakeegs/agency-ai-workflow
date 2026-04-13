@@ -68,12 +68,12 @@ EXCLUDE_DOMAINS = {
 
 CLASSIFY_PROMPT = """\
 You are an SEO analyst. Given a list of competitor domains found in Google search
-results for a local business, classify each as Local or Organic competitor.
+results for a local business, classify each and assess threat level.
 
 Business:
 {business_summary}
 
-Domains found (with keyword count = how many target keywords they rank for):
+Domains found (keyword count | avg position | specific keywords ranked):
 {domain_list}
 
 Return ONLY a JSON object (no markdown, no preamble):
@@ -83,18 +83,23 @@ Return ONLY a JSON object (no markdown, no preamble):
       "domain": "example.com",
       "name": "Business Name (if you know it, else leave blank)",
       "type": "Local | Organic | Both",
-      "keyword_count": 5,
-      "notes": "one-line note — e.g. direct local competitor, national chain, regional player"
+      "threat": "High | Medium | Low",
+      "notes": "one-line note — e.g. dominant local competitor in Frisco, national chain with local branch, regional content site"
     }}
   ]
 }}
 
 Type definitions:
-  Local    = appears in Google Map Pack or is a nearby physical location competitor
-  Organic  = ranks in organic blue-link results; may be national or regional
-  Both     = consistently appears in both Map Pack and organic results
+  Local    = nearby physical location competitor (same market area)
+  Organic  = ranks in organic results; may be national or regional
+  Both     = competes in both map pack and organic results
 
-Include ALL domains from the input. Order by keyword_count descending.
+Threat definitions (for a local business):
+  High   = keyword_count >= 5 AND avg_position <= 4  (eating your lunch today)
+  Medium = keyword_count >= 3 OR avg_position <= 5    (visible, beatable)
+  Low    = keyword_count < 3 AND avg_position > 5     (worth watching, not urgent)
+
+Include ALL domains from the input. Order by threat (High first), then keyword_count descending.
 """
 
 
@@ -145,10 +150,10 @@ async def _load_target_keywords(
 async def _fetch_serp(
     keyword: str,
     location_code: int = 2840,
-) -> list[str]:
+) -> list[dict]:
     """
-    Fetch top 10 organic domains for a keyword via DataForSEO SERP API.
-    Returns list of domains (not full URLs).
+    Fetch top 10 organic results for a keyword via DataForSEO SERP API.
+    Returns list of {domain, position} dicts.
     """
     headers = _dfs_headers()
     payload = [{
@@ -168,7 +173,7 @@ async def _fetch_serp(
         resp.raise_for_status()
         data = resp.json()
 
-    domains = []
+    results = []
     for task in data.get("tasks", []):
         if task.get("status_code") != 20000:
             continue
@@ -182,73 +187,109 @@ async def _fetch_serp(
                 parsed = urlparse(url)
                 domain = parsed.netloc.lower().removeprefix("www.")
                 if domain:
-                    domains.append(domain)
+                    results.append({
+                        "domain":   domain,
+                        "position": item.get("rank_absolute") or item.get("rank_group") or 99,
+                    })
 
-    return domains
+    return results
 
 
 async def _run_serp_analysis(
     keywords: list[dict],
     location_code: int,
-) -> dict[str, int]:
+    own_domains: set[str] | None = None,
+) -> dict[str, dict]:
     """
-    Run SERP call for each keyword. Returns domain → appearance count.
-    Adds a small delay between calls to be polite to the API.
+    Run SERP call for each keyword.
+    Returns domain → {keyword_count, positions, keywords_ranked}
+    where keywords_ranked is a list of {keyword, position}.
     """
-    domain_counts: dict[str, int] = defaultdict(int)
-    keyword_domains: dict[str, list[str]] = {}  # keyword → domains (for position notes)
+    # domain → {keyword_count, sum_positions, keywords_ranked: [{keyword, position}]}
+    domain_data: dict[str, dict] = defaultdict(lambda: {
+        "keyword_count": 0,
+        "sum_positions": 0,
+        "keywords_ranked": [],
+    })
 
     for i, kw in enumerate(keywords):
         keyword = kw["keyword"]
         print(f"  [{i+1}/{len(keywords)}] {keyword}")
         try:
-            domains = await _fetch_serp(keyword, location_code=location_code)
-            keyword_domains[keyword] = domains
-            for domain in set(domains):  # count once per keyword, not per position
-                if domain not in EXCLUDE_DOMAINS:
-                    domain_counts[domain] += 1
+            results = await _fetch_serp(keyword, location_code=location_code)
+            seen_domains: set[str] = set()
+            for r in results:
+                domain = r["domain"]
+                position = r["position"]
+                if domain in EXCLUDE_DOMAINS or domain in seen_domains:
+                    continue
+                if own_domains and domain in own_domains:
+                    continue
+                seen_domains.add(domain)
+                domain_data[domain]["keyword_count"] += 1
+                domain_data[domain]["sum_positions"] += position
+                domain_data[domain]["keywords_ranked"].append({
+                    "keyword":  keyword,
+                    "position": position,
+                })
         except Exception as e:
             print(f"    ⚠ SERP failed: {e}")
         if i < len(keywords) - 1:
-            await asyncio.sleep(0.5)  # rate limit courtesy
+            await asyncio.sleep(0.5)
 
-    return dict(domain_counts)
+    # Compute avg_position and sort keywords_ranked by position
+    for domain, data in domain_data.items():
+        kc = data["keyword_count"]
+        data["avg_position"] = round(data["sum_positions"] / kc, 1) if kc else 99
+        data["keywords_ranked"].sort(key=lambda x: x["position"])
+
+    return dict(domain_data)
 
 
 # ── Classify competitors via Claude ──────────────────────────────────────────
 
 async def _classify_competitors(
-    domain_counts: dict[str, int],
+    domain_data: dict[str, dict],
     business_summary: str,
     min_appearances: int = 2,
 ) -> list[dict]:
     """
-    Use Claude to classify domains as Local / Organic / Both and add names.
-    Only includes domains that appear for min_appearances+ keywords.
+    Use Claude to classify domains as Local / Organic / Both + assign threat tier.
+    Enriches each entry with keyword_count, avg_position, and keywords_ranked.
     """
     # Filter to meaningful competitors only
     filtered = {
-        domain: count
-        for domain, count in domain_counts.items()
-        if count >= min_appearances
+        domain: data
+        for domain, data in domain_data.items()
+        if data["keyword_count"] >= min_appearances
     }
-
     if not filtered:
-        # If nothing hits the threshold, include everything
-        filtered = domain_counts
+        filtered = domain_data
 
-    # Sort by frequency
-    sorted_domains = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
+    # Sort by keyword_count desc, then avg_position asc (bigger threat first)
+    sorted_domains = sorted(
+        filtered.items(),
+        key=lambda x: (-x[1]["keyword_count"], x[1]["avg_position"]),
+    )
+
+    def _fmt_domain_line(domain: str, data: dict) -> str:
+        top = ", ".join(
+            "{} [#{}]".format(r["keyword"], r["position"])
+            for r in data["keywords_ranked"][:3]
+        )
+        return (
+            f"- {domain} | {data['keyword_count']} keywords | "
+            f"avg pos {data['avg_position']} | top: {top}"
+        )
 
     domain_lines = "\n".join(
-        f"- {domain} (appears for {count} keywords)"
-        for domain, count in sorted_domains
+        _fmt_domain_line(domain, data) for domain, data in sorted_domains
     )
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     response = await client.messages.create(
         model=settings.anthropic_model,
-        max_tokens=3000,
+        max_tokens=4000,
         messages=[{"role": "user", "content": CLASSIFY_PROMPT.format(
             business_summary=business_summary,
             domain_list=domain_lines,
@@ -259,21 +300,152 @@ async def _classify_competitors(
     text = re.sub(r"\s*```$", "", text)
 
     try:
-        competitors = json.loads(text).get("competitors", [])
+        classified = json.loads(text).get("competitors", [])
     except json.JSONDecodeError:
-        # Fall back to unclassified list
-        competitors = [
-            {
-                "domain": domain,
-                "name": "",
-                "type": "Organic",
-                "keyword_count": count,
-                "notes": "",
-            }
-            for domain, count in sorted_domains
+        classified = [
+            {"domain": domain, "name": "", "type": "Organic", "threat": "Medium", "notes": ""}
+            for domain, _ in sorted_domains
         ]
 
+    # Merge Claude's classification back with the raw SERP data
+    data_map = {domain: data for domain, data in sorted_domains}
+    competitors = []
+    for comp in classified:
+        domain = comp.get("domain", "")
+        raw = data_map.get(domain, {})
+        comp["keyword_count"]   = raw.get("keyword_count", 0)
+        comp["avg_position"]    = raw.get("avg_position", 99)
+        comp["keywords_ranked"] = raw.get("keywords_ranked", [])
+        competitors.append(comp)
+
     return competitors
+
+
+# ── LLM / AI Overview mentions via DataForSEO ────────────────────────────────
+
+async def _fetch_ai_mentions(
+    keywords: list[dict],
+    own_domains: set[str],
+) -> tuple[dict[str, dict], dict[str, int]]:
+    """
+    For each target keyword, call DataForSEO LLM Mentions search/live.
+    Returns:
+      - competitor_ai: domain → {ai_mentions, ai_keywords: [{keyword, position}]}
+      - client_ai:     client_domain → count of keywords where client appears in AI results
+    """
+    headers = _dfs_headers()
+    competitor_ai: dict[str, dict] = defaultdict(lambda: {"ai_mentions": 0, "ai_keywords": []})
+    client_ai_count: dict[str, int] = defaultdict(int)
+    subscription_error = False
+
+    print(f"\nFetching AI Overview mentions ({len(keywords)} keywords)...")
+    for i, kw in enumerate(keywords):
+        keyword = kw["keyword"]
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{DATAFORSEO_BASE}/ai_optimization/llm_mentions/search/live",
+                    headers=headers,
+                    json=[{
+                        "target": [{"keyword": keyword}],
+                        "location_code": 2840,
+                        "language_code": "en",
+                        "limit": 10,
+                    }],
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            for task in data.get("tasks", []):
+                status = task.get("status_code")
+                if status == 40204:
+                    if not subscription_error:
+                        print(f"  ⚠ LLM Mentions API requires a DataForSEO AI Optimization subscription")
+                        print(f"     Activate at: app.dataforseo.com/ai-optimization-subscription")
+                        subscription_error = True
+                    return {}, {}
+                if status != 20000:
+                    continue
+                for result in (task.get("result") or []):
+                    for item in (result.get("items") or []):
+                        sources = item.get("sources") or []
+                        for source in sources:
+                            domain = (source.get("domain") or "").lower().removeprefix("www.")
+                            if not domain:
+                                continue
+                            position = source.get("position") or 99
+                            if domain in own_domains:
+                                # Client's own domain appearing in AI results
+                                client_ai_count[domain] += 1
+                            else:
+                                competitor_ai[domain]["ai_mentions"] += 1
+                                competitor_ai[domain]["ai_keywords"].append({
+                                    "keyword":  keyword,
+                                    "position": position,
+                                })
+
+            print(f"  [{i+1}/{len(keywords)}] {keyword}")
+        except Exception as e:
+            print(f"  ⚠ LLM fetch error for '{keyword}': {e}")
+
+        if i < len(keywords) - 1:
+            await asyncio.sleep(0.3)
+
+    return dict(competitor_ai), dict(client_ai_count)
+
+
+# ── Backlink data via DataForSEO ─────────────────────────────────────────────
+
+async def _fetch_backlink_summaries(domains: list[str]) -> dict[str, dict]:
+    """
+    Call DataForSEO backlinks/summary/live for each domain.
+    Returns domain → {authority_score, referring_domains, backlinks}
+    Batches 5 at a time to stay within API limits.
+    """
+    headers = _dfs_headers()
+    results: dict[str, dict] = {}
+    BATCH = 5
+
+    for i in range(0, len(domains), BATCH):
+        batch = domains[i : i + BATCH]
+        payload = [{"target": domain, "include_subdomains": True} for domain in batch]
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{DATAFORSEO_BASE}/backlinks/summary/live",
+                    headers=headers,
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            subscription_error = False
+            for task in data.get("tasks", []):
+                status_code = task.get("status_code")
+                if status_code == 40204:
+                    if not subscription_error:
+                        print(f"  ⚠ Backlinks API requires a DataForSEO Backlinks subscription")
+                        print(f"     Activate at: app.dataforseo.com/backlinks-subscription")
+                        print(f"     Skipping — all other data will still be written to Notion.")
+                        subscription_error = True
+                    return {}  # exit early — no point batching further
+                if status_code != 20000:
+                    continue
+                for item in (task.get("result") or []):
+                    target = (item.get("target") or "").lower().removeprefix("www.")
+                    results[target] = {
+                        "authority_score":   item.get("rank") or 0,
+                        "referring_domains":  item.get("referring_domains") or 0,
+                        "backlinks":          item.get("backlinks") or 0,
+                    }
+        except Exception as e:
+            print(f"  ⚠ Backlinks fetch error (batch {i//BATCH + 1}): {e}")
+
+        if i + BATCH < len(domains):
+            await asyncio.sleep(0.5)
+
+    return results
 
 
 # ── Pre-flight: show findings before writing ──────────────────────────────────
@@ -287,14 +459,24 @@ def _show_competitor_preflight(competitors: list[dict]) -> list[dict]:
     print(f"\n{sep}")
     print(f"  Competitors Found — Review Before Writing to Notion")
     print(sep)
-    print(f"\n  {'#':<4} {'Domain':<35} {'Type':<10} {'Keywords':<10} Notes")
-    print(f"  {'─'*4} {'─'*35} {'─'*10} {'─'*10} {'─'*30}")
+    print(f"\n  {'#':<4} {'Competitor':<30} {'Threat':<8} {'KWs':<5} {'Pos':<6} {'DA':<5} {'Ref Dom':<9} Top Keywords")
+    print(f"  {'─'*4} {'─'*30} {'─'*8} {'─'*5} {'─'*6} {'─'*5} {'─'*9} {'─'*30}")
 
     for i, comp in enumerate(competitors, 1):
-        name = f"{comp.get('name', '') or ''} ({comp['domain']})" if comp.get("name") else comp["domain"]
+        name = comp.get("name") or comp["domain"]
+        if len(name) > 28:
+            name = name[:26] + ".."
+        top_kws = ", ".join(
+            f"{r['keyword']} [#{r['position']}]"
+            for r in comp.get("keywords_ranked", [])[:2]
+        )
+        threat = comp.get("threat", "Medium")
+        threat_icon = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(threat, "")
+        da  = comp.get("authority_score", "—")
+        ref = comp.get("referring_domains", "—")
         print(
-            f"  {i:<4} {name:<35} {comp.get('type', '?'):<10} "
-            f"{comp.get('keyword_count', 0):<10} {comp.get('notes', '')[:40]}"
+            f"  {i:<4} {name:<30} {threat_icon}{threat:<7} {comp.get('keyword_count', 0):<5} "
+            f"{str(comp.get('avg_position', '?')):<6} {str(da):<5} {str(ref):<9} {top_kws}"
         )
 
     print(f"\n{sep}")
@@ -319,12 +501,56 @@ def _show_competitor_preflight(competitors: list[dict]) -> list[dict]:
 
 # ── Write to Competitors DB ───────────────────────────────────────────────────
 
+async def _ensure_keyword_count_field(notion: NotionClient, competitors_db_id: str) -> None:
+    """Add Keyword Count (number) and Threat (select) fields if missing."""
+    try:
+        db = await notion._client.request(
+            path=f"databases/{competitors_db_id}",
+            method="GET",
+        )
+        existing_props = set(db.get("properties", {}).keys())
+        updates = {}
+        if "Keyword Count" not in existing_props:
+            updates["Keyword Count"] = {"number": {"format": "number"}}
+        if "Threat" not in existing_props:
+            updates["Threat"] = {
+                "select": {
+                    "options": [
+                        {"name": "High",   "color": "red"},
+                        {"name": "Medium", "color": "yellow"},
+                        {"name": "Low",    "color": "green"},
+                    ]
+                }
+            }
+        if "Avg Position" not in existing_props:
+            updates["Avg Position"] = {"number": {"format": "number"}}
+        if "Authority Score" not in existing_props:
+            updates["Authority Score"] = {"number": {"format": "number"}}
+        if "Referring Domains" not in existing_props:
+            updates["Referring Domains"] = {"number": {"format": "number"}}
+        if "Backlinks" not in existing_props:
+            updates["Backlinks"] = {"number": {"format": "number"}}
+        if "AI Mentions" not in existing_props:
+            updates["AI Mentions"] = {"number": {"format": "number"}}
+        if updates:
+            await notion._client.request(
+                path=f"databases/{competitors_db_id}",
+                method="PATCH",
+                body={"properties": updates},
+            )
+    except Exception as e:
+        print(f"  ⚠ Could not self-heal Competitors DB schema: {e}")
+
+
 async def _write_competitors(
     notion: NotionClient,
     competitors_db_id: str,
     competitors: list[dict],
     force: bool = False,
 ) -> int:
+    # Self-heal schema
+    await _ensure_keyword_count_field(notion, competitors_db_id)
+
     # Load existing to avoid duplicates
     existing: dict[str, str] = {}
     if not force:
@@ -335,7 +561,7 @@ async def _write_competitors(
             )
             for entry in result.get("results", []):
                 props = entry.get("properties", {})
-                texts = props.get("Name", {}).get("title", [])
+                texts = (props.get("Competitor Name") or props.get("Name") or {}).get("title", [])
                 if texts:
                     name = texts[0].get("plain_text", "").lower().strip()
                     existing[name] = entry["id"]
@@ -360,17 +586,43 @@ async def _write_competitors(
         if comp_type not in ["Local", "Organic", "Both"]:
             comp_type = "Organic"
 
-        keyword_count = comp.get("keyword_count", 0)
-        notes = comp.get("notes", "")
-        if keyword_count:
-            notes = f"Ranks for {keyword_count} of our target keywords. {notes}".strip()
+        threat = comp.get("threat", "Medium")
+        if threat not in ["High", "Medium", "Low"]:
+            threat = "Medium"
+
+        keyword_count  = comp.get("keyword_count", 0)
+        avg_position   = comp.get("avg_position", 0)
+        keywords_ranked = comp.get("keywords_ranked", [])
+
+        # Build rich notes: summary line + specific keywords with positions
+        notes_parts = [comp.get("notes", "").strip()]
+        if keywords_ranked:
+            kw_list = ", ".join(
+                f"{r['keyword']} [#{r['position']}]"
+                for r in keywords_ranked
+            )
+            notes_parts.append(f"Ranks for: {kw_list}")
+        notes = " | ".join(p for p in notes_parts if p)
 
         properties: dict = {
-            "Name":    {"title": [{"text": {"content": display_name}}]},
-            "Type":    {"select": {"name": comp_type}},
-            "Website": {"url": f"https://{domain}"},
-            "Notes":   {"rich_text": [{"text": {"content": notes[:2000]}}]},
+            "Competitor Name": {"title":  [{"text": {"content": display_name}}]},
+            "Type":            {"select": {"name": comp_type}},
+            "Threat":          {"select": {"name": threat}},
+            "Website":         {"url":    f"https://{domain}"},
+            "Notes":           {"rich_text": [{"text": {"content": notes[:2000]}}]},
         }
+        if keyword_count:
+            properties["Keyword Count"] = {"number": keyword_count}
+        if avg_position:
+            properties["Avg Position"] = {"number": avg_position}
+        if comp.get("authority_score"):
+            properties["Authority Score"] = {"number": comp["authority_score"]}
+        if comp.get("referring_domains"):
+            properties["Referring Domains"] = {"number": comp["referring_domains"]}
+        if comp.get("backlinks"):
+            properties["Backlinks"] = {"number": comp["backlinks"]}
+        if comp.get("ai_mentions"):
+            properties["AI Mentions"] = {"number": comp["ai_mentions"]}
 
         try:
             if force and lookup_key in existing:
@@ -396,8 +648,11 @@ async def _write_competitors(
 
 # ── Build business summary for Claude ─────────────────────────────────────────
 
-async def _load_business_summary(notion: NotionClient, cfg: dict) -> str:
+async def _load_business_summary(notion: NotionClient, cfg: dict) -> tuple[str, set[str]]:
+    """Returns (business_summary, own_domains) where own_domains are excluded from competitor results."""
     parts = [f"Business: {cfg.get('name', 'Unknown')}"]
+    own_domains: set[str] = set()
+
     try:
         result = await notion._client.request(
             path=f"databases/{cfg['brand_guidelines_db_id']}/query",
@@ -413,6 +668,7 @@ async def _load_business_summary(notion: NotionClient, cfg: dict) -> str:
             location = _rt("Location") or _rt("City") or _rt("Service Area")
             services = _rt("Services") or _rt("Primary Services")
             raw      = _rt("Raw Guidelines")
+            website  = _rt("Website") or _rt("Current Website URL") or ""
 
             if location:
                 parts.append(f"Location: {location}")
@@ -420,9 +676,42 @@ async def _load_business_summary(notion: NotionClient, cfg: dict) -> str:
                 parts.append(f"Services: {services}")
             if not services and raw:
                 parts.append(f"Onboarding description: {raw[:800]}")
+            if website:
+                from urllib.parse import urlparse
+                parsed = urlparse(website if website.startswith("http") else f"https://{website}")
+                domain = parsed.netloc.lower().removeprefix("www.")
+                if domain:
+                    own_domains.add(domain)
     except Exception:
         pass
-    return "\n".join(parts)
+
+    # Also pull from Client Info DB
+    try:
+        result = await notion._client.request(
+            path=f"databases/{cfg['client_info_db_id']}/query",
+            method="POST", body={},
+        )
+        for entry in result.get("results", [])[:1]:
+            props = entry.get("properties", {})
+            for field in ["Current Website URL", "Website", "Website URL"]:
+                val = props.get(field, {})
+                url = ""
+                if val.get("type") == "url":
+                    url = val.get("url") or ""
+                elif val.get("type") == "rich_text":
+                    texts = val.get("rich_text", [])
+                    url = texts[0].get("plain_text", "") if texts else ""
+                if url:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url if url.startswith("http") else f"https://{url}")
+                    domain = parsed.netloc.lower().removeprefix("www.")
+                    if domain:
+                        own_domains.add(domain)
+                    break
+    except Exception:
+        pass
+
+    return "\n".join(parts), own_domains
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -469,7 +758,9 @@ async def main(
         print(f"    • {kw['keyword']}")
 
     # Location — auto-detect from brand guidelines or default to USA
-    business_summary = await _load_business_summary(notion, cfg)
+    business_summary, own_domains = await _load_business_summary(notion, cfg)
+    if own_domains:
+        print(f"  Excluding client's own domain(s): {', '.join(own_domains)}")
     location_code = 2840  # default USA
 
     if not yes:
@@ -488,21 +779,41 @@ async def main(
 
     # Run SERP analysis
     print(f"\nRunning SERP analysis ({len(keywords)} keywords × top 10 results)...")
-    domain_counts = await _run_serp_analysis(keywords, location_code)
+    domain_data = await _run_serp_analysis(keywords, location_code, own_domains=own_domains)
 
-    if not domain_counts:
+    if not domain_data:
         print("  ⚠ No domains found in SERP results. Check DataForSEO credentials.")
         sys.exit(1)
 
-    total_domains = len(domain_counts)
-    above_threshold = sum(1 for c in domain_counts.values() if c >= min_appearances)
+    total_domains = len(domain_data)
+    above_threshold = sum(1 for d in domain_data.values() if d["keyword_count"] >= min_appearances)
     print(f"\n  Found {total_domains} unique domains")
     print(f"  {above_threshold} appear for {min_appearances}+ keywords (likely competitors)")
 
     # Classify via Claude
     print("\nClassifying competitors via Claude...")
-    competitors = await _classify_competitors(domain_counts, business_summary, min_appearances)
+    competitors = await _classify_competitors(domain_data, business_summary, min_appearances)
     print(f"  Classified {len(competitors)} competitors")
+
+    # Fetch backlink data for all competitors
+    print("\nFetching backlink data from DataForSEO...")
+    domains = [c["domain"] for c in competitors if c.get("domain")]
+    backlink_data = await _fetch_backlink_summaries(domains)
+    for comp in competitors:
+        bl = backlink_data.get(comp.get("domain", ""), {})
+        comp["authority_score"]   = bl.get("authority_score", 0)
+        comp["referring_domains"] = bl.get("referring_domains", 0)
+        comp["backlinks"]         = bl.get("backlinks", 0)
+    with_bl = sum(1 for c in competitors if c.get("authority_score", 0) > 0)
+    print(f"  Got backlink data for {with_bl}/{len(competitors)} competitors")
+
+    # Fetch AI / LLM Overview mention data
+    ai_competitor_data, client_ai_data = await _fetch_ai_mentions(keywords, own_domains)
+    for comp in competitors:
+        ai = ai_competitor_data.get(comp.get("domain", ""), {})
+        comp["ai_mentions"] = ai.get("ai_mentions", 0)
+    with_ai = sum(1 for c in competitors if c.get("ai_mentions", 0) > 0)
+    print(f"  Got AI mention data for {with_ai}/{len(competitors)} competitors")
 
     # Pre-flight before writing
     if not yes:
@@ -519,15 +830,43 @@ async def main(
     local   = sum(1 for c in competitors if c.get("type") == "Local")
     organic = sum(1 for c in competitors if c.get("type") == "Organic")
     both    = sum(1 for c in competitors if c.get("type") == "Both")
+    high    = sum(1 for c in competitors if c.get("threat") == "High")
+    medium  = sum(1 for c in competitors if c.get("threat") == "Medium")
+    low     = sum(1 for c in competitors if c.get("threat") == "Low")
 
     print(f"\n{'─'*60}")
     print(f"  Results — {cfg['name']}")
     print(f"{'─'*60}")
     print(f"  Competitors written: {written}")
-    print(f"  Local: {local}  |  Organic: {organic}  |  Both: {both}")
+    print(f"  By type:   Local: {local}  |  Organic: {organic}  |  Both: {both}")
+    print(f"  By threat: 🔴 High: {high}  |  🟡 Medium: {medium}  |  🟢 Low: {low}")
+    if high:
+        print(f"\n  🔴 High-threat competitors (address first in Battle Plan):")
+        for c in competitors:
+            if c.get("threat") == "High":
+                da  = f"DA {c['authority_score']}" if c.get("authority_score") else ""
+                ref = f"{c['referring_domains']:,} ref domains" if c.get("referring_domains") else ""
+                ai  = f"{c['ai_mentions']} AI mentions" if c.get("ai_mentions") else ""
+                meta = " · ".join(p for p in [da, ref, ai] if p)
+                print(f"     • {c.get('name') or c['domain']} — {c.get('keyword_count', 0)} keywords, avg pos {c.get('avg_position', '?')}{(' · ' + meta) if meta else ''}")
+
+    # Client AI visibility
+    if client_ai_data:
+        total_client_ai = sum(client_ai_data.values())
+        print(f"\n  🤖 Client AI visibility: appears in AI Overviews for {total_client_ai} keyword(s)")
+    else:
+        print(f"\n  🤖 Client AI visibility: not appearing in AI Overviews for any target keywords yet")
+        ai_leaders = sorted(
+            [(c.get("name") or c["domain"], c["ai_mentions"]) for c in competitors if c.get("ai_mentions", 0) > 0],
+            key=lambda x: x[1], reverse=True,
+        )[:3]
+        if ai_leaders:
+            leaders_str = ", ".join("{} ({})".format(n, m) for n, m in ai_leaders)
+            print(f"     Competitors in AI results: {leaders_str}")
     print(f"\n  Next steps:")
-    print(f"  1. Review Competitors DB in Notion — fill in any missing details")
-    print(f"  2. make battle-plan CLIENT={client_key}  ← generate full SEO strategy")
+    print(f"  1. Review Competitors DB in Notion — remove any that aren't real competitors")
+    print(f"  2. Add any local competitors you know about that are missing")
+    print(f"  3. make battle-plan CLIENT={client_key}  ← generate full SEO strategy")
 
 
 if __name__ == "__main__":

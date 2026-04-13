@@ -76,32 +76,43 @@ def _dfs_headers() -> dict:
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
 SEED_KEYWORDS_PROMPT = """\
-You are an SEO strategist for a LOCAL service business. Your seeds will be used
-to discover keyword ideas from a keyword research API — the more specific and
-local your seeds, the more relevant the returned keyword ideas will be.
+You are an SEO strategist for a LOCAL service business. Generate two keyword lists:
+
+1. LOCAL seeds — city/region-specific phrases (these reveal exact local intent)
+2. BROAD seeds — service/condition phrases WITHOUT a city (these have trackable statewide volume
+   and capture people who let Google infer their location)
 
 Business:
 {business_summary}
 
 Return ONLY a JSON object (no markdown, no preamble):
 {{
-  "seeds": [
-    "keyword phrase 1",
-    "keyword phrase 2"
+  "local_seeds": [
+    "speech therapy frisco tx",
+    "pediatric OT mckinney texas",
+    "autism therapy near me"
+  ],
+  "broad_seeds": [
+    "speech therapy for toddlers",
+    "does insurance cover speech therapy",
+    "sensory processing disorder treatment"
   ]
 }}
 
-Rules:
-- 40–60 seed phrases
-- PRIORITIZE local/specific phrases — at least 60% of seeds should include:
-    - City + state (e.g. "speech therapy frisco tx", "OT clinic mckinney texas")
-    - "near me" variants (e.g. "pediatric speech therapy near me")
-    - Condition + location (e.g. "autism therapy frisco", "sensory processing disorder mckinney tx")
-    - Audience + location (e.g. "speech therapy for toddlers frisco")
-- Also include: condition/service terms WITHOUT location (10-15 seeds), question phrases,
-  insurance/cost phrases ("does insurance cover speech therapy"), comparison phrases
+LOCAL seeds rules (25–35 phrases):
+- City + state (e.g. "speech therapy frisco tx", "OT clinic mckinney texas")
+- "near me" variants (e.g. "pediatric speech therapy near me")
+- Condition + location (e.g. "autism therapy frisco", "sensory processing disorder mckinney tx")
+- Audience + location (e.g. "speech therapy for toddlers frisco")
+
+BROAD seeds rules (15–20 phrases):
+- Service/condition terms with NO city modifier
+- Question phrases (e.g. "how long does speech therapy take", "what is occupational therapy for kids")
+- Insurance/cost phrases (e.g. "does insurance cover speech therapy", "how much does OT cost")
+- Comparison phrases (e.g. "speech therapy vs language therapy")
 - Use natural patient/parent language — not clinical jargon
-- Do NOT include job/career terms, salary, certification, or school-related phrases
+
+Both lists: DO NOT include job/career terms, salary, certification, or school-related phrases.
 """
 
 CLUSTER_KEYWORDS_PROMPT = """\
@@ -479,7 +490,8 @@ def _show_preflight(ctx: dict, cfg: dict) -> tuple[str, int, str]:
 
 # ── Step 1: Generate seed keywords via Claude ─────────────────────────────────
 
-async def _generate_seeds(business_summary: str) -> list[str]:
+async def _generate_seeds(business_summary: str) -> tuple[list[str], list[str]]:
+    """Returns (local_seeds, broad_seeds)."""
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     response = await client.messages.create(
         model=settings.anthropic_model,
@@ -491,12 +503,25 @@ async def _generate_seeds(business_summary: str) -> list[str]:
     text = response.content[0].text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-    seeds = json.loads(text).get("seeds", [])
-    print(f"  Generated {len(seeds)} seed keywords")
-    return seeds
+    data = json.loads(text)
+    local_seeds = data.get("local_seeds", [])
+    broad_seeds = data.get("broad_seeds", [])
+    print(f"  Generated {len(local_seeds)} local seeds + {len(broad_seeds)} broad seeds")
+    return local_seeds, broad_seeds
 
 
-# ── Step 2: Fetch keyword ideas + volumes from DataForSEO Labs ────────────────
+def _detect_state_code(location: str) -> tuple[int, str]:
+    """Detect state from location string → DataForSEO location code for state-level queries."""
+    if not location:
+        return 2840, "United States"
+    loc_upper = location.upper()
+    for abbr, (code, label) in STATE_LOCATION_CODES.items():
+        if abbr in loc_upper or label.upper() in loc_upper:
+            return code, label
+    return 2840, "United States"
+
+
+# ── Step 2: Fetch volumes from DataForSEO ────────────────────────────────────
 
 # Job/career terms that aren't client searches — filter these out
 _JOB_TERMS = {"jobs", "job", "salary", "salaries", "hiring", "career",
@@ -509,21 +534,28 @@ def _is_job_term(keyword: str) -> bool:
     return any(term in kw_lower for term in _JOB_TERMS)
 
 
-async def _fetch_volumes(keywords: list[str]) -> list[dict]:
+async def _fetch_volumes(
+    keywords: list[str],
+    location_code: int = 2840,
+    scope: str = "local",
+) -> list[dict]:
     """
     Call DataForSEO Keywords Data search_volume/live.
-    Validates exact volumes + CPC for Claude-generated seed keywords.
-    Returns all keywords including those with null volume (local/niche terms
-    still belong in the DB for strategic value).
-    Batches in groups of 1000 (API max per request).
+    - scope="local"  → city-specific seeds at USA level (volume often null — expected)
+    - scope="statewide" → broad seeds at state level (real volume data)
+    Tags each result with scope for report generation.
     """
+    if not keywords:
+        return []
+    # DataForSEO rejects keywords > 10 words
+    keywords = [k for k in keywords if len(k.split()) <= 10]
     headers = _dfs_headers()
     all_results: list[dict] = []
     seen: set[str] = set()
 
     for i in range(0, len(keywords), 1000):
         batch = keywords[i : i + 1000]
-        payload = [{"keywords": batch, "location_code": 2840, "language_code": "en"}]
+        payload = [{"keywords": batch, "location_code": location_code, "language_code": "en"}]
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(
                 f"{DATAFORSEO_BASE}/keywords_data/google_ads/search_volume/live",
@@ -570,13 +602,14 @@ async def _fetch_volumes(keywords: list[str]) -> list[dict]:
                     "avg_monthly_searches": vol,
                     "cpc":                  cpc,
                     "competition":          comp_level,
+                    "scope":                scope,
                 })
 
     with_vol = sum(1 for r in all_results if r["avg_monthly_searches"] > 0)
     all_results.sort(key=lambda x: x["avg_monthly_searches"], reverse=True)
     print(
-        f"  Got volume for {with_vol}/{len(all_results)} keywords "
-        f"({len(all_results) - with_vol} local/niche have no data — still included)"
+        f"  [{scope}] {with_vol}/{len(all_results)} keywords have volume data"
+        + (f" ({len(all_results) - with_vol} hyper-local — still included)" if scope == "local" else "")
     )
     return all_results
 
@@ -598,10 +631,12 @@ async def _cluster_keywords(ideas: list[dict], business_summary: str) -> list[di
     for batch_num, batch in enumerate(batches, 1):
         kw_lines = []
         for idea in batch:
-            vol = f"{idea['avg_monthly_searches']:,}" if idea["avg_monthly_searches"] else "<10"
+            vol = f"{idea['avg_monthly_searches']:,}" if idea["avg_monthly_searches"] else "—"
             cpc = f"${idea['cpc']:.2f}" if idea["cpc"] else "—"
+            scope = idea.get("scope", "local")
+            scope_label = "[statewide]" if scope == "statewide" else "[local]"
             kw_lines.append(
-                f"- {idea['keyword']} | Volume: {vol}/mo | CPC: {cpc} | Competition: {idea['competition']}"
+                f"- {scope_label} {idea['keyword']} | Volume: {vol}/mo | CPC: {cpc} | Competition: {idea['competition']}"
             )
 
         response = await client.messages.create(
@@ -767,6 +802,214 @@ def _export_csv(keywords: list[dict], client_key: str) -> Path:
     return path
 
 
+# ── Step 6: HTML opportunity report ──────────────────────────────────────────
+
+def _generate_report(
+    keywords: list[dict],
+    client_name: str,
+    client_key: str,
+    sitemap_pages: list[str],
+    state_label: str,
+) -> Path:
+    """
+    Generate a self-contained HTML report that can be shown to clients or account managers.
+    Two tiers: statewide volume (real numbers) + hyper-local targets (competitor territory).
+    """
+    from datetime import date
+
+    # ── Derived data ──────────────────────────────────────────────────────────
+    high_kw   = [k for k in keywords if k.get("priority") == "High"]
+    medium_kw = [k for k in keywords if k.get("priority") == "Medium"]
+    low_kw    = [k for k in keywords if k.get("priority") == "Low"]
+
+    statewide = [k for k in keywords if k.get("scope") == "statewide" and k.get("avg_monthly_searches", 0) > 0]
+    local_kw  = [k for k in keywords if k.get("scope") == "local"]
+
+    total_statewide_vol = sum(k.get("avg_monthly_searches", 0) or 0 for k in statewide)
+
+    # Pages that would need to be built (target_page not in existing sitemap)
+    sitemap_slugs = {p.lower().strip("/").replace(" ", "-") for p in sitemap_pages}
+    gap_pages: dict[str, list[str]] = {}  # slug → keywords targeting it
+    for k in high_kw:
+        tp = (k.get("target_page") or "").strip("/").lower()
+        if tp and tp not in sitemap_slugs and tp not in ("", "/"):
+            gap_pages.setdefault(tp, []).append(k["keyword"])
+
+    # ── HTML helpers ──────────────────────────────────────────────────────────
+    def fmt_vol(v) -> str:
+        v = int(v or 0)
+        return f"{v:,}" if v else "—"
+
+    def kw_row(k: dict, show_scope: bool = False) -> str:
+        vol   = fmt_vol(k.get("avg_monthly_searches"))
+        cpc   = f"${float(k['cpc']):.2f}" if k.get("cpc") else "—"
+        pri   = k.get("priority", "Medium")
+        intent = k.get("intent", "—")
+        page  = k.get("target_page", "—")
+        notes = k.get("notes", "")
+        scope_badge = ""
+        if show_scope:
+            s = k.get("scope", "local")
+            color = "#e8f5e9" if s == "statewide" else "#e3f2fd"
+            scope_badge = f'<span style="background:{color};padding:1px 6px;border-radius:10px;font-size:11px;margin-right:4px">{s}</span>'
+        pri_color = {"High": "#d32f2f", "Medium": "#f57c00", "Low": "#388e3c"}.get(pri, "#666")
+        return (
+            f"<tr>"
+            f"<td>{scope_badge}{k['keyword']}</td>"
+            f"<td style='text-align:center'>{vol}</td>"
+            f"<td style='text-align:center'>{cpc}</td>"
+            f"<td style='text-align:center;color:{pri_color};font-weight:600'>{pri}</td>"
+            f"<td style='text-align:center'>{intent}</td>"
+            f"<td style='color:#555;font-size:12px'>{page}</td>"
+            f"<td style='color:#777;font-size:11px'>{notes}</td>"
+            f"</tr>"
+        )
+
+    def table(rows_html: str, scope_col: bool = False) -> str:
+        scope_th = "<th>Scope</th>" if scope_col else ""
+        return f"""
+        <table>
+          <thead><tr>
+            <th>Keyword</th>
+            <th>Monthly Vol</th>
+            <th>CPC</th>
+            <th>Priority</th>
+            <th>Intent</th>
+            <th>Target Page</th>
+            <th>Notes</th>
+          </tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>"""
+
+    statewide_rows = "".join(kw_row(k) for k in sorted(statewide, key=lambda x: x.get("avg_monthly_searches", 0) or 0, reverse=True))
+    local_rows     = "".join(kw_row(k) for k in local_kw)
+    all_rows       = "".join(kw_row(k, show_scope=True) for k in keywords)
+
+    gap_html = ""
+    if gap_pages:
+        gap_html = "<ul>" + "".join(
+            f"<li><strong>/{slug}</strong> — captures: {', '.join(kws[:3])}{'...' if len(kws) > 3 else ''}</li>"
+            for slug, kws in sorted(gap_pages.items())
+        ) + "</ul>"
+    else:
+        gap_html = "<p style='color:#555'>All high-priority keywords map to existing sitemap pages.</p>"
+
+    today = date.today().strftime("%B %d, %Y")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keyword Opportunity Report — {client_name}</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #222; }}
+  .header {{ background: #1a1a2e; color: white; padding: 40px 48px; }}
+  .header h1 {{ font-size: 28px; font-weight: 700; margin-bottom: 4px; }}
+  .header .sub {{ color: #aaa; font-size: 14px; }}
+  .content {{ max-width: 1100px; margin: 0 auto; padding: 40px 24px; }}
+  .cards {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }}
+  .card {{ background: white; border-radius: 10px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  .card .num {{ font-size: 36px; font-weight: 700; color: #1a1a2e; line-height: 1; }}
+  .card .label {{ font-size: 13px; color: #666; margin-top: 6px; line-height: 1.4; }}
+  .card .sub-num {{ font-size: 13px; color: #999; margin-top: 4px; }}
+  section {{ background: white; border-radius: 10px; padding: 28px; margin-bottom: 28px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  section h2 {{ font-size: 17px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }}
+  section .desc {{ font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.5; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  th {{ background: #f0f0f0; padding: 9px 12px; text-align: left; font-weight: 600; color: #444; border-bottom: 2px solid #ddd; }}
+  td {{ padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }}
+  tr:hover td {{ background: #fafafa; }}
+  .note {{ font-size: 12px; color: #888; margin-top: 12px; font-style: italic; }}
+  .footer {{ text-align: center; color: #aaa; font-size: 12px; padding: 32px; }}
+  @media (max-width: 700px) {{ .cards {{ grid-template-columns: repeat(2, 1fr); }} }}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">RxMedia Agency · Keyword Opportunity Report</div>
+  <h1>{client_name}</h1>
+  <div class="sub">Generated {today} · DataForSEO + Claude AI</div>
+</div>
+
+<div class="content">
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="num">{len(keywords)}</div>
+      <div class="label">Total keyword opportunities identified</div>
+      <div class="sub-num">High: {len(high_kw)} · Medium: {len(medium_kw)} · Low: {len(low_kw)}</div>
+    </div>
+    <div class="card">
+      <div class="num">{len(high_kw)}</div>
+      <div class="label">High-priority targets<br>(local + transactional)</div>
+    </div>
+    <div class="card">
+      <div class="num">{total_statewide_vol:,}</div>
+      <div class="label">Estimated monthly searches<br>({state_label} market)</div>
+      <div class="sub-num">{len(statewide)} tracked terms</div>
+    </div>
+    <div class="card">
+      <div class="num">{len(gap_pages)}</div>
+      <div class="label">Pages to build to capture<br>high-priority opportunities</div>
+    </div>
+  </div>
+
+  <!-- Statewide market -->
+  <section>
+    <h2>📊 Statewide Market — Terms with Tracked Search Volume</h2>
+    <p class="desc">
+      These are service and condition terms people search without typing a city —
+      they let Google infer their location. This is the size of the market your practice operates in.
+      Real monthly search volume from Google Ads data ({state_label}).
+    </p>
+    {table(statewide_rows) if statewide else "<p style='color:#888'>No statewide volume data returned — all seeds were hyper-local. Re-run with broader service terms in Brand Guidelines.</p>"}
+  </section>
+
+  <!-- Hyper-local targets -->
+  <section>
+    <h2>📍 Hyper-Local Targets — Your Competitors' Territory</h2>
+    <p class="desc">
+      These city-specific terms are searched too infrequently for national tools to track —
+      but they represent high-intent searches from people in your exact service area.
+      Your closest competitors are actively targeting these. Your base website currently captures none of them.
+    </p>
+    {table(local_rows)}
+    <p class="note">* Volume shown as — indicates searches are below Google Ads reporting threshold (~10/mo). These terms still drive real appointment requests for local clinics.</p>
+  </section>
+
+  <!-- Gap analysis -->
+  <section>
+    <h2>🔧 Pages to Build — What We'd Create to Capture These Opportunities</h2>
+    <p class="desc">
+      High-priority keywords that map to pages not currently in your sitemap.
+      Each page below would target a cluster of related searches.
+    </p>
+    {gap_html}
+  </section>
+
+  <!-- Full keyword table -->
+  <section>
+    <h2>Full Keyword List</h2>
+    <p class="desc">All {len(keywords)} keywords with volume, CPC, intent, and target page assignments.</p>
+    {table(all_rows, scope_col=False)}
+  </section>
+
+</div>
+<div class="footer">Generated by RxMedia Agency AI Pipeline · {today}</div>
+</body>
+</html>"""
+
+    out_dir = OUTPUT_DIR / client_key
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"keyword_opportunity_report_{datetime.now().strftime('%Y%m%d')}.html"
+    path.write_text(html, encoding="utf-8")
+    return path
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main(
@@ -774,6 +1017,7 @@ async def main(
     export: bool = False,
     force: bool = False,
     yes: bool = False,
+    open_report: bool = False,
 ) -> None:
     cfg = CLIENTS.get(client_key)
     if not cfg:
@@ -805,27 +1049,45 @@ async def main(
 
     business_summary = _build_business_summary(ctx, corrections=corrections)
 
-    # Step 1: Seeds
-    print("Generating seed keywords...")
-    seeds = await _generate_seeds(business_summary)
+    # Detect state for statewide volume pass
+    state_code, state_label = _detect_state_code(ctx.get("location", ""))
 
-    # Step 2: Validate volumes + CPC via DataForSEO search_volume/live
-    print(f"\nFetching volumes + CPC from DataForSEO...")
+    # Step 1: Seeds (two lists — local + broad)
+    print("Generating seed keywords...")
+    local_seeds, broad_seeds = await _generate_seeds(business_summary)
+
+    # Step 2a: Local seeds at USA scope (city-specific, volume often null)
+    print(f"\nFetching volumes from DataForSEO...")
     try:
-        ideas = await _fetch_volumes(seeds)
-        if not ideas:
-            print("  ⚠ DataForSEO returned 0 results — check credentials and account balance")
-            ideas = [{"keyword": s, "avg_monthly_searches": 0, "cpc": 0.0,
-                      "competition": "Unknown"} for s in seeds]
+        local_ideas = await _fetch_volumes(local_seeds, location_code=2840, scope="local")
     except Exception as e:
-        print(f"  ⚠ DataForSEO API error: {e}")
-        print("  Continuing with Claude-only analysis (no volume data)...")
+        print(f"  ⚠ DataForSEO error (local pass): {e}")
+        local_ideas = [{"keyword": s, "avg_monthly_searches": 0, "cpc": 0.0,
+                        "competition": "Unknown", "scope": "local"} for s in local_seeds]
+
+    # Step 2b: Broad seeds at state scope (real trackable volume)
+    print(f"  Fetching statewide volumes ({state_label})...")
+    try:
+        statewide_ideas = await _fetch_volumes(broad_seeds, location_code=state_code, scope="statewide")
+    except Exception as e:
+        print(f"  ⚠ DataForSEO error (statewide pass): {e}")
+        statewide_ideas = [{"keyword": s, "avg_monthly_searches": 0, "cpc": 0.0,
+                            "competition": "Unknown", "scope": "statewide"} for s in broad_seeds]
+
+    ideas = local_ideas + statewide_ideas
+    if not ideas:
+        print("  ⚠ DataForSEO returned 0 results — check credentials and account balance")
         ideas = [{"keyword": s, "avg_monthly_searches": 0, "cpc": 0.0,
-                  "competition": "Unknown"} for s in seeds]
+                  "competition": "Unknown", "scope": "local"} for s in local_seeds + broad_seeds]
 
     # Step 3: Cluster + annotate
     print("\nClustering and prioritizing via Claude...")
     keywords = await _cluster_keywords(ideas, business_summary)
+
+    # Carry scope tag through from ideas → keywords (match by keyword text)
+    scope_map = {r["keyword"]: r.get("scope", "local") for r in ideas}
+    for k in keywords:
+        k.setdefault("scope", scope_map.get(k.get("keyword", "").lower(), "local"))
 
     # Step 4: Write to Notion
     print(f"\nWriting to Notion Keywords DB...")
@@ -837,10 +1099,25 @@ async def main(
         csv_path = _export_csv(keywords, client_key)
         print(f"  ✓ Exported to {csv_path}")
 
+    # Step 6: HTML opportunity report
+    print(f"\nGenerating keyword opportunity report...")
+    report_path = _generate_report(
+        keywords=keywords,
+        client_name=cfg["name"],
+        client_key=client_key,
+        sitemap_pages=ctx.get("sitemap_pages", []),
+        state_label=state_label,
+    )
+    print(f"  ✓ Report saved to {report_path}")
+    if open_report:
+        import subprocess
+        subprocess.Popen(["open", str(report_path)])
+
     # Summary
     high   = sum(1 for k in keywords if k.get("priority") == "High")
     medium = sum(1 for k in keywords if k.get("priority") == "Medium")
     low    = sum(1 for k in keywords if k.get("priority") == "Low")
+    statewide_vol = sum(k.get("avg_monthly_searches", 0) or 0 for k in keywords if k.get("scope") == "statewide" and k.get("avg_monthly_searches"))
     intents: dict[str, int] = {}
     for k in keywords:
         i = k.get("intent", "Other")
@@ -850,12 +1127,14 @@ async def main(
     print(f"  Results — {cfg['name']}")
     print(f"{'─'*60}")
     print(f"  Total: {len(keywords)}  |  High: {high}  Medium: {medium}  Low: {low}")
+    if statewide_vol:
+        print(f"  Statewide market volume: {statewide_vol:,} searches/mo ({state_label})")
     print(f"  By intent:")
     for intent, count in sorted(intents.items()):
         print(f"    {intent}: {count}")
     print(f"\n  Next steps:")
-    print(f"  1. Review Keywords DB in Notion — filter Priority = High")
-    print(f"  2. Adjust target pages and intent as needed")
+    print(f"  1. Open report: output/{client_key}/keyword_opportunity_report_*.html")
+    print(f"  2. Review Keywords DB in Notion — filter Priority = High")
     print(f"  3. make competitor-research CLIENT={client_key}  ← auto-seed Competitors DB from SERPs")
     print(f"  4. make battle-plan CLIENT={client_key}          ← generate SEO strategy")
     if export:
@@ -868,5 +1147,12 @@ if __name__ == "__main__":
     parser.add_argument("--export",  action="store_true", help="Also export CSV")
     parser.add_argument("--force",   action="store_true", help="Overwrite existing rows")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip pre-flight prompt")
+    parser.add_argument("--open",    action="store_true", help="Open HTML report after generating")
     args = parser.parse_args()
-    asyncio.run(main(client_key=args.client, export=args.export, force=args.force, yes=args.yes))
+    asyncio.run(main(
+        client_key=args.client,
+        export=args.export,
+        force=args.force,
+        yes=args.yes,
+        open_report=args.open,
+    ))
