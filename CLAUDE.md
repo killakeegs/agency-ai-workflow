@@ -4,7 +4,7 @@
 
 An AI-driven, automated workflow system for a digital marketing agency. Notion serves as the central knowledge base and relational database. Claude acts as the primary orchestration engine, managing the full client lifecycle — from onboarding through website delivery — with minimal manual intervention.
 
-The system is built to be **client-agnostic from the start** — WellWell is the test client, but every agent, script, and configuration is designed for all future clients. Adding a new client requires only a completed onboarding form; `make onboard` provisions everything automatically.
+The system is built to be **client-agnostic from the start** — Summit Therapy is the reference client, but every agent, script, and configuration is designed for all future clients. Adding a new client requires only a completed onboarding form; `make onboard` provisions everything automatically.
 
 The core goal: a completed onboarding form + meeting transcript should be enough for the system to drive the project forward autonomously, pausing only at human approval gates.
 
@@ -40,10 +40,20 @@ All client configurations live in `config/clients.py` (manual registry) and `con
 ### 6. Agent Data Source: Notion Only
 All agents read client context entirely from Notion at runtime. No client-specific content is hardcoded in agent prompts. This ensures every agent works for every client without modification.
 
-### 7. Service Tiers (Planned)
-- **Express** — Template-driven, fully automated. Claude pushes content/images to Webflow via MCP. ~30 min human time.
-- **Standard** — Current pipeline. AI-generated deliverables with client approval gates at each stage.
-- **Premium** — Full meetings + custom Figma design + developer Webflow build.
+### 7. Webflow Delivery — Template-Based (New Model)
+Instead of Relume wireframes → custom Webflow builds, the agency maintains pre-built Webflow master templates per vertical (addiction treatment, speech pathology, PT). Each client gets a clone of the right template. Content is pushed via Webflow CMS API. This eliminates the wireframe → build translation gap and cuts delivery time significantly.
+
+- Templates are built once per vertical, cloned per client
+- CMS collections: Services, Team Members, Blog Posts, FAQs, Gallery, Substances (Tier 2), Locations (Tier 2)
+- Nav dropdowns are CMS-driven — never hardcoded
+- Tier 1 (Base): Home, Services, About, Team, Blog, FAQs, Gallery, Contact, Privacy, Terms
+- Tier 2 (SEO Add-On): Services by Substance, Areas We Serve (both programmatic CMS)
+- `make webflow-push` — pending developer completing master templates
+
+### 8. Service Tiers
+- **Base Website Build** — Webflow template clone + content push. Standard pipeline.
+- **SEO Add-On** — Keyword research + competitor research + battle plan + monthly reporting + GBP posts.
+- **Care Plan** ($199/mo) — Monthly PageSpeed report + ADA + privacy/terms maintenance.
 
 ---
 
@@ -60,9 +70,11 @@ All agents read client context entirely from Notion at runtime. No client-specif
 | Internal Team Agent | Rex — Python Slack bot deployed on Railway. Reads Notion + ClickUp live. Creates ClickUp tasks. |
 | Hosting (Rex) | Railway (`web-production-956bf.up.railway.app`) — Python backend only. Vercel for frontend projects. |
 | Image Generation | Replicate API (black-forest-labs/flux-schnell) |
-| Design | Figma + Relume (component maps → Webflow-compatible components) |
+| Design | Figma (hi-fi design reference for developer) |
 | Meeting Transcription | Gemini (Google Meet integration) |
-| Website Delivery | Webflow (developer handoff; Webflow MCP integration pending) |
+| Website Delivery | Webflow (template-based clone per client; CMS content push via API) |
+| SEO Data | DataForSEO (keyword volumes, SERP, backlinks), Search Atlas (rank tracker) |
+| Analytics | Google Search Console, Google Analytics 4, Google Business Profile API (OAuth) |
 
 **IMPORTANT — Notion API:** notion-client v3.0.0 broke `databases.create`, `databases.update`, and `databases.query`. All Notion operations use `notion._client.request()` directly (raw HTTP). Never use the high-level notion-client SDK methods for these operations.
 
@@ -117,48 +129,57 @@ Pure state machine — no LLM calls. Reads PipelineState from ClickUp + Notion, 
 |---|---|---|---|
 | Onboarding | `src/agents/onboarding.py` | Built | Reads form submission → provisions all Notion DBs + ClickUp → writes client brief → adds to clients.json |
 | Transcript Parser | `src/agents/transcript_parser.py` | Built | Parses Gemini transcript → decisions, action items, brand preferences → Notion |
-| Mood Board | `src/agents/mood_board.py` | **Deprecated** | Replaced by Relume Style Guide. Code kept for reference but no longer runs in the pipeline. |
-| Sitemap | `src/agents/sitemap.py` | Built | Goals + business type → page hierarchy → Notion |
+| Mood Board | `src/agents/mood_board.py` | **Deprecated** | Replaced by Webflow template model. Code kept for reference. |
+| Sitemap | `src/agents/sitemap.py` | Built | Goals + business type → page hierarchy + section outlines → Notion |
 | Content | `src/agents/content.py` | Built | Sitemap pages → per-page copy + SEO → Notion |
-| Wireframe Spec | `src/agents/wireframe_spec.py` | Built | Sitemap + content → Relume component map → Notion |
+| Wireframe Spec | `src/agents/wireframe_spec.py` | Built | Sitemap + content → Relume component map → Notion (reference only in template model) |
 | Image Generation | `src/agents/image_generation.py` | Built | Brand data → AI images via Replicate (brand batch ~15, page batch ~3/page) → Notion |
-| Hi-Fi Spec | `src/agents/hifi_spec.py` | Stub | Design brief for homepage + mobile → Notion |
-| Approval Handler | `src/agents/approval_handler.py` | Stub | Notifications + meeting agendas at approval gates |
+| Hi-Fi Spec | `src/agents/hifi_spec.py` | Stub | Not required in template model — designer works directly from content |
+| Approval Handler | `src/agents/approval_handler.py` | Stub | Low priority — Rex handles team notifications |
 
 ---
 
 ## Pipeline Flow
 
+### Website Build
 ```
 make onboard          → Provision client (Notion DBs + ClickUp + client brief)
 make transcript       → Parse meeting → brand prefs, decisions, action items
-make sitemap          → Generate page hierarchy
-  [Client approves]
-make keyword-research → Claude generates seeds → DataForSEO validates volumes/CPC → Claude prioritizes → Notion Keywords DB
-  [Team reviews Keywords DB — correct cities, services, priorities before proceeding]
-make competitor-research → SERP analysis on High-priority keywords → auto-seeds Competitors DB
-  [Team reviews Competitors DB — remove directories/aggregators, add any missing local competitors]
-make battle-plan      → SEO strategy document from Keywords + Competitors data → Notion
+make sitemap          → Generate page hierarchy + section outlines
+  [Client approves sitemap]
 make content          → Generate per-page copy + SEO
-  [Client approves]
-make stock-images     → Discovery: Claude queries Pexels → HTML report with 15–20 candidates
-                         Review report, spot photographer series candidates
+  [Client approves content]
+make stock-images     → Discovery: Claude queries Pexels → HTML report
 make stock-images COMMIT=1  → Download chosen images + save to Notion Images DB
-                      → Paste relume_sitemap_core.txt into Relume AI → build sitemap
-                      → Set Relume Style Guide (colors, fonts, spacing)  ← visual direction approval
-                      → Build wireframes in Relume using component map from:
-                         NOTE: Stock images cannot be uploaded to Relume Style Guide.
-                         They are used directly in Webflow after developer handoff.
-make wireframe        → Generate Relume component map → Notion (reference for Relume build)
-  [Client approves wireframe in Relume]
 make images-brand     → Generate ~15 brand images via Replicate
 make images-pages     → Generate ~3 images per page via Replicate
-  → Designer builds hi-fi in Figma following Relume map
-  → Developer builds in Webflow
-  [make webflow-push] → (PENDING — Webflow MCP integration)
+  → Developer clones right Webflow template for this vertical
+  → Developer pushes content to Webflow CMS (webflow-push PENDING)
+  [Client reviews staging site]
+  → Launch
 ```
 
-**Why mood board was removed:** Relume's built-in Style Guide (colors, fonts, spacing) replaces the visual direction step and applies it directly to components — no translation gap. The brand voice and tone data the mood board previously surfaced is already captured by the transcript parser → Brand Guidelines DB → ContentAgent. Mood board is available as an optional step for clients who need early visual alignment before committing, but is no longer a required pipeline stage.
+### SEO Add-On (sold separately)
+```
+make seo-activate     → Activate SEO retainer — adds seo to services, sets GSC/GA4/GBP IDs
+make keyword-research → Claude generates seeds → DataForSEO validates → Notion Keywords DB
+  [Team reviews Keywords DB]
+make competitor-research → SERP analysis → Competitors DB
+  [Team reviews Competitors DB]
+make battle-plan      → SEO strategy from keywords + competitors → Notion
+make seo-baseline     → 90-day baseline report (GSC + GA4 + GBP + authority) → Notion + HTML
+```
+
+### Monthly Recurring
+```
+make gbp-posts        → 3 GBP post drafts from website content → Notion GBP Posts DB
+make seo-report       → Monthly performance report → Notion + HTML
+make care-plan        → PageSpeed + ADA + care plan → Notion Care Plan DB
+```
+
+**Webflow template model:** Agency maintains master templates per vertical (addiction, speech pathology, PT). Developer clones the right template per client, then content is pushed via CMS API. Eliminates custom wireframe → build cycle. Pending developer completing master templates.
+
+**Why mood board was removed:** Replaced by Webflow template model. Visual direction is determined by template selection + brand guidelines, not a separate mood board stage.
 
 **Approval flow:**
 - Each stage auto-sets Notion Stage Status = "Pending Review" + creates ClickUp task
@@ -193,15 +214,13 @@ Image style is driven by the **Image Direction** field in the client's Brand Gui
 ```bash
 make run                    # Interactive menu (easiest)
 
-# Pipeline stages
+# Website build pipeline
 make transcript             # Parse meeting transcript → Notion
-make mood-board             # Generate mood board → Notion
 make sitemap                # Generate sitemap → Notion
 make content                # Generate page copy → Notion
-make wireframe              # Generate Relume component map → Notion
+make wireframe              # Generate component map → Notion (reference for dev)
 
 # Revisions
-make mood-board NOTES="..."
 make sitemap NOTES="..."
 make content NOTES="..."
 make wireframe NOTES="..."
@@ -209,23 +228,14 @@ make wireframe NOTES="..."
 # Image generation
 make images-brand           # Brand creative library (~15 images) → Notion
 make images-pages           # Page-specific images (~3 per page) → Notion
-make images-brand NOTES="Make textures softer"   # Regenerate with feedback
-
-# Visual exports (for Figma plugin)
-make mood-board-visuals     # HTML + JSON
-make sitemap-visuals        # HTML + JSON
-make brand-export           # Brand guidelines JSON
-make relume-export          # Relume AI prompt (paste into relume.io)
-make relume-sitemap         # Compact sitemap for Relume AI import (text paste method)
-make suggest-keywords       # Suggest primary + secondary keywords for all sitemap pages → Notion
-make approve-sitemap        # Bulk-set all sitemap pages to Approved in Notion
+make images-brand NOTES="Make textures softer"
 
 # Stock photography (Pexels)
 make stock-images           # Discovery pass: query Pexels → HTML report
 make stock-images OPEN=1    # Discovery + open report in browser
-make stock-images NOTES="warmer tones, more candid"  # Revised style direction
-make stock-images PHOTOGRAPHER="Cottonbro Studio"    # Lean into one photographer
-make stock-images COMMIT=1  # Download images + save to Notion Images DB
+make stock-images NOTES="warmer tones, more candid"
+make stock-images PHOTOGRAPHER="Name"  # Lean into one photographer
+make stock-images COMMIT=1  # Download approved + save to Notion Images DB
 
 # Client onboarding
 make onboarding-form        # Create Onboarding Submissions DB in Notion (one-time setup)
@@ -236,9 +246,39 @@ make onboard-list           # List pending submissions without processing
 make pipeline-setup         # Add approval fields to existing client's Notion DB
 make mark-pending           # Set Pending Review + create ClickUp task
 make advance                # Check Notion approval → run next stage
+
+# SEO pipeline
+make seo-activate           # Activate SEO retainer — one-time per client
+make seo-activate CLIENT=x GSC_URL="https://example.com/" GA4_ID="123456789" GBP_ID="locations/..."
+make keyword-research       # Generate + validate keywords → Notion Keywords DB
+make competitor-research    # SERP analysis → Competitors DB
+make competitor-research CLIENT=x ENRICH=1  # Enrich existing competitors only
+make battle-plan            # SEO strategy → Notion
+make battle-plan NOTES="..."
+
+# SEO reporting (monthly)
+make seo-baseline           # 90-day baseline report → Notion + HTML (run once at onboarding)
+make seo-report             # Previous month report → Notion + HTML
+make seo-report OPEN=1      # Run + open HTML report in browser
+
+# GBP posts (monthly)
+make gbp-posts              # Generate 3 GBP post drafts → Notion GBP Posts DB
+make gbp-posts NOTES="..."  # Revision run with feedback
+make gbp-posts MONTH="May 2026"
+
+# Care plan (monthly)
+make care-plan              # Run PageSpeed + care plan report → Notion
+make care-plan-init         # Create Care Plan DB for existing client (one-time)
+
+# Visual exports
+make sitemap-visuals        # HTML + JSON sitemap visual
+make brand-export           # Brand guidelines JSON
+make relume-sitemap         # Compact sitemap for Relume AI (text paste method)
+make suggest-keywords       # Suggest primary + secondary keywords for sitemap pages
+make approve-sitemap        # Bulk-set all sitemap pages to Approved
 ```
 
-All commands default to `CLIENT=wellwell`. Override with `CLIENT=client_key`.
+All commands default to `CLIENT=summit_therapy`. Override with `CLIENT=client_key`.
 
 ---
 
@@ -383,7 +423,12 @@ Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any 
 
 **Make.com scenario 4449778** (Rex — RxMedia AI Agent) is deactivated. Railway replaced it entirely.
 
-**Rex's role:** Read-only knowledge + status agent. He answers questions and creates ClickUp tasks. He does NOT write content, copy, or creative material — redirects those requests to Claude.ai or Gemini.
+**Rex's role (v1.3):** Knowledge + status agent AND pipeline trigger. He answers questions, creates ClickUp tasks, and can trigger pipeline stages in the background — posting back to Slack when done. He does NOT write content, copy, or creative material.
+
+**Triggerable stages:** `keyword_research`, `competitor_research`, `battle_plan`, `gbp_posts`, `care_plan`
+- Team speaks naturally: "Rex, run keyword research for Summit" or "Rex, regenerate GBP posts for Summit — make them warmer"
+- Rex confirms, runs in background, posts result when done
+- DM Rex "what can you do?" for a plain-English capability list
 
 **Tools Rex has:**
 
@@ -393,11 +438,16 @@ Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any 
 | `get_pipeline_status` | Current pipeline stage from Notion Client Info DB |
 | `get_sitemap` | All sitemap pages with sections from Notion |
 | `get_page_content` | Page copy, title tag, H1, meta from Notion Content DB |
+| `get_keywords` | Keywords DB — filter by priority |
+| `get_competitors` | Competitors DB — filter by threat level |
+| `get_gbp_posts` | GBP Posts DB — filter by status |
 | `get_action_items` | Open action items from Notion, filterable by assignee |
+| `get_care_plan_status` | Latest care plan scores + ADA + hours used |
 | `get_clickup_tasks` | Live tasks from ClickUp, with overdue filter |
 | `list_clickup_workspace` | Full space/folder/list hierarchy with IDs |
 | `get_clickup_members` | Team members with user IDs (for task assignment) |
 | `create_clickup_task` | Creates a task — requires list, due date, assignee |
+| `run_pipeline_stage` | Triggers a pipeline stage in background, posts back when done |
 
 **Task creation flow:** Rex always confirms space/list, due date, and assignee before creating. Thread history is enabled so multi-turn conversations work naturally within a Slack thread.
 
@@ -453,12 +503,12 @@ make care-plan                  # Run for all care plan clients
 
 ## Pending / Upcoming
 
-- **Webflow MCP integration** — Webflow launched official MCP server (Feb 2026) that works with Claude Code. Enables programmatic content push to Webflow templates. User needs to get Webflow account access. Setup: `claude mcp add-json "webflow" '{"command":"npx","args":["mcp-remote","https://mcp.webflow.com/sse"]}'`
-- **Express tier (`make express`)** — Fully automated pipeline: form → Webflow live site with no design/dev bottleneck. Requires Webflow MCP + template library.
-- **Hi-Fi Spec agent** — Currently a stub. Design brief for homepage + mobile.
-- **Approval Handler agent** — Currently a stub. Slack/email notifications at approval gates.
-- **SEO sub-agent** — Decided to build later.
-- **End-to-end test** — Full pipeline run with WellWell from transcript through wireframe.
+- **Webflow master templates** — Developer building per-vertical templates (addiction, speech pathology, PT). Each cloned per client. Template determines page structure; content pushed via CMS API. Blocked on developer (out week of Apr 14, 2026).
+- **`make webflow-push`** — CMS content injection script. Reads Content DB → maps to Webflow CMS fields → pushes via API. Build after master templates are finalized and CMS schema is locked.
+- **Google OAuth re-run** — Current refresh token only covers GBP. Re-run `python3 scripts/google_auth.py` to get a token covering GBP + GSC + GA4 in one flow. Required before `make seo-baseline` works.
+- **SEO report validation** — `scripts/seo_report.py` is built but untested. Validate with first client that has GSC/GA4/GBP access granted.
+- **Approval Handler agent** — Low priority. Rex handles team notifications; formal approval handler can wait.
+- **Hi-Fi Spec agent** — Not needed in template model. Designer works from content DB directly.
 
 ---
 
@@ -472,6 +522,16 @@ CLICKUP_API_KEY            # ClickUp API
 CLICKUP_WORKSPACE_ID       # ClickUp workspace
 CLICKUP_DEFAULT_SPACE_ID   # Space where client folders are created (required for make onboard)
 REPLICATE_API_KEY          # Image generation (Replicate)
+PEXELS_API_KEY             # Stock photography
+GOOGLE_API_KEY             # PageSpeed Insights + Google Places API
+GOOGLE_CLIENT_ID           # OAuth 2.0 Desktop client (RxMedia Keyword Planner)
+GOOGLE_CLIENT_SECRET       # OAuth 2.0 client secret
+GOOGLE_REFRESH_TOKEN       # Set by: python3 scripts/google_auth.py — covers GBP + GSC + GA4
+DATAFORSEO_LOGIN           # keegan@rxmedia.io
+DATAFORSEO_PASSWORD        # DataForSEO API password (not account password)
+SEARCH_ATLAS_API_KEY       # Search Atlas rank tracker API
+SLACK_BOT_TOKEN            # Rex Slack bot
+SLACK_SIGNING_SECRET       # Rex Slack signing secret
 ```
 
 ---

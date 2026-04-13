@@ -147,7 +147,10 @@ seo-report:
 # Activate full SEO retainer for a client (creates SEO Metrics DB, sets gbp_location_id)
 seo-activate:
 	@$(PYTHON) scripts/seo_activate.py --client $(CLIENT) \
-	  $(if $(GBP_ID),--gbp-location-id "$(GBP_ID)",)
+	  $(if $(GBP_ID),--gbp-location-id "$(GBP_ID)",) \
+	  $(if $(GSC_URL),--gsc-site-url "$(GSC_URL)",) \
+	  $(if $(GA4_ID),--ga4-property-id "$(GA4_ID)",) \
+	  $(if $(SA_PROJECT),--search-atlas-project-id "$(SA_PROJECT)",)
 
 onboarding-form:
 	@$(PYTHON) scripts/setup_onboarding_form.py
@@ -221,7 +224,7 @@ help:
 	@echo "  make battle-plan-init     Create Battle Plan Input page in Notion (team fills before running)"
 	@echo "  make battle-plan          Generate SEO Battle Plan → Notion"
 	@echo "  make battle-plan NOTES=\"focus on LGBTQ+ keywords\"  Regenerate with team notes"
-	@echo "  make seo-activate GBP_ID=\"...\"  Activate full SEO retainer (creates SEO Metrics DB)"
+	@echo "  make seo-activate GBP_ID=\"...\" GSC_URL=\"...\" GA4_ID=\"...\"  Activate SEO retainer + set reporting credentials"
 	@echo "  make gbp-posts                Generate 3 GBP post drafts from website content → Notion"
 	@echo "  make gbp-posts NOTES=\"...\"    Regenerate with revision feedback"
 	@echo "  make gbp-posts MONTH=\"May 2026\"  Generate for a specific month"
