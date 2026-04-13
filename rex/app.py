@@ -1,7 +1,8 @@
 """
 Rex — RxMedia's AI Slack agent.
 
-Powered by Claude (claude-sonnet-4-6). Reads live data from Notion.
+Powered by Claude (claude-sonnet-4-6). Reads live data from Notion and ClickUp.
+Can trigger pipeline stages in the background and post results back to Slack.
 Handles Slack DMs and @mentions.
 
 Deploy to Railway:
@@ -14,6 +15,7 @@ Deploy to Railway:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import sys
@@ -69,37 +71,58 @@ def _build_system_prompt() -> str:
 Today's date is {today}. Use this when calculating due dates from relative terms like "tomorrow", "next Friday", "end of week", etc. Always convert to the correct absolute date before creating a task.
 
 ━━ YOUR ROLE ━━
-You are a read-only status and knowledge agent. Your job is to help the team quickly find information: where things are in the pipeline, what's been built, what's pending, how the workflow operates.
+You are the internal operations agent for RxMedia. You help the team find information AND trigger pipeline stages on demand. You are the control center for the agency's AI workflow.
 
 You are NOT a creative tool. Do not write website copy, generate content ideas, draft emails, brainstorm, or produce any creative material — even if asked nicely. For that, the team should use Claude.ai or Gemini directly. If someone asks you to create content, decline and redirect them: "For content creation, use Claude.ai or Gemini — I'm focused on project status and workflow questions."
 
 ━━ WHAT YOU DO ━━
 • Answer questions about pipeline status, client projects, and where things stand
 • Look up live data from Notion and ClickUp using tools
+• Trigger pipeline stages (keyword research, competitor research, GBP posts, etc.)
+• Accept revision notes and re-run stages with feedback
+• Post back results when stages complete
 • Explain how the agency workflow and pipeline works
-• Help the team understand what stage a client is in and what comes next
+
+━━ TRIGGERABLE STAGES ━━
+Use run_pipeline_stage to trigger these. Always confirm the client and stage before running.
+• keyword_research — generate keyword list from sitemap → Notion Keywords DB
+• competitor_research — enrich existing competitors with backlinks + AI mentions data
+• battle_plan — generate SEO battle plan from keywords + competitors → Notion
+• gbp_posts — generate 3 GBP post drafts from website content → Notion GBP Posts DB
+• care_plan — run monthly PageSpeed + care plan report → Notion Care Plan DB
+
+Stages that require notes (revision feedback):
+• "Rex, run gbp_posts for Summit with notes: make post 2 warmer"
+• "Rex, run keyword_research for Summit with notes: focus on pediatric feeding therapy"
+
+Stages you CANNOT trigger (require developer or complex setup not available here):
+• sitemap, content, wireframe, images — use Claude Code locally for these
 
 ━━ AGENCY PIPELINE ━━
 Each client goes through these stages in order:
 1. Onboarding — Notion DBs + ClickUp provisioned automatically
 2. Kickoff Meeting — transcript parsed, brand preferences extracted
 3. Sitemap — page hierarchy built, client approves before proceeding
-4. Content — per-page copy + SEO written, client approves
-5. Stock Photos — Pexels images curated and approved
-6. Wireframe — Relume component map built, client approves
-7. Webflow Build — developer builds in Webflow
-8. Live — launched
+4. Keyword Research — Claude generates seeds → DataForSEO validates → Notion Keywords DB
+5. Competitor Research — SERP analysis on High-priority keywords → Notion Competitors DB
+6. Battle Plan — SEO strategy from keywords + competitors → Notion
+7. Content — per-page copy + SEO written, client approves
+8. Stock Photos — Pexels images curated and approved
+9. Webflow Build — developer builds from template
+10. Live — launched
+
+Ongoing (monthly): GBP Posts, Care Plan report, SEO Report
 
 Approval gates exist between stages. The pipeline never auto-advances without a logged client approval.
 
 ━━ KEY TOOLS & INTEGRATIONS ━━
 • Notion — central knowledge base (all client data lives here)
 • ClickUp — pipeline state + tasks
-• Relume — AI component library for wireframes → Webflow
-• Replicate (Flux Schnell) — AI image generation
+• DataForSEO — keyword volumes, SERP data, backlinks
 • Pexels — stock photography (CC0)
-• Webflow — final website delivery
+• Webflow — final website delivery (template-based, clone per client)
 • Claude (Anthropic) — AI orchestration engine for all agents
+• Replicate (Flux Schnell) — AI image generation
 
 ━━ CLIENTS ━━
 {client_lines}
@@ -260,6 +283,59 @@ TOOLS = [
         },
     },
     {
+        "name": "get_keywords",
+        "description": "Get keywords from a client's Keywords DB in Notion. Shows keyword, cluster, monthly search volume, CPC, priority, and intent.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "priority": {"type": "string", "description": "Optional: filter by priority — 'High', 'Medium', or 'Low'"},
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
+        "name": "get_competitors",
+        "description": "Get competitors from a client's Competitors DB in Notion. Shows name, type, threat level, review count, rating, authority score, and notes.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "threat": {"type": "string", "description": "Optional: filter by threat level — 'High', 'Medium', or 'Low'"},
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
+        "name": "get_gbp_posts",
+        "description": "Get GBP post drafts from a client's GBP Posts DB in Notion. Shows post title, type, status, CTA, and body.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "status": {"type": "string", "description": "Optional: filter by status — 'Draft', 'Approved', 'Scheduled', 'Published'"},
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
+        "name": "run_pipeline_stage",
+        "description": "Trigger a pipeline stage for a client. Runs in the background and posts back when complete. Always confirm with the user before running. Stages: keyword_research, competitor_research, battle_plan, gbp_posts, care_plan.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "stage": {
+                    "type": "string",
+                    "enum": ["keyword_research", "competitor_research", "battle_plan", "gbp_posts", "care_plan"],
+                    "description": "Which pipeline stage to run",
+                },
+                "notes": {"type": "string", "description": "Optional revision notes or instructions for this run"},
+            },
+            "required": ["client_key", "stage"],
+        },
+    },
+    {
         "name": "get_clickup_tasks",
         "description": "Get tasks from ClickUp across the agency workspace. Use this for questions about what's in progress, what's overdue, or what tasks are assigned to someone.",
         "input_schema": {
@@ -278,6 +354,75 @@ TOOLS = [
         },
     },
 ]
+
+
+# ── Background stage runner ───────────────────────────────────────────────────
+
+PROJECT_ROOT = Path(__file__).parent.parent
+
+# Stage → command template. {client} replaced at runtime.
+STAGE_COMMANDS: dict[str, list[str]] = {
+    "keyword_research":   ["python3", "scripts/keyword_research.py", "--client", "{client}", "--yes"],
+    "competitor_research":["python3", "scripts/competitor_research.py", "--client", "{client}", "--enrich-only"],
+    "battle_plan":        ["python3", "scripts/battle_plan.py", "--client", "{client}"],
+    "gbp_posts":          ["python3", "scripts/gbp_posts.py", "--client", "{client}"],
+    "care_plan":          ["python3", "scripts/care_plan_report.py", "--client", "{client}"],
+}
+
+# Human-readable stage names for messages
+STAGE_LABELS: dict[str, str] = {
+    "keyword_research":   "Keyword Research",
+    "competitor_research":"Competitor Enrichment",
+    "battle_plan":        "Battle Plan",
+    "gbp_posts":          "GBP Posts",
+    "care_plan":          "Care Plan Report",
+}
+
+# Current event context — set before each tool loop so background tasks can post back
+_event_context: dict = {}
+
+
+async def _run_stage_background(
+    channel: str,
+    thread_ts: str | None,
+    client_key: str,
+    stage: str,
+    notes: str,
+) -> None:
+    """Run a pipeline stage subprocess and post the result back to Slack."""
+    label = STAGE_LABELS.get(stage, stage)
+    client_name = CLIENTS.get(client_key, {}).get("name", client_key)
+
+    cmd = [c.replace("{client}", client_key) for c in STAGE_COMMANDS[stage]]
+    if notes and "--notes" not in cmd:
+        cmd += ["--notes", notes]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(PROJECT_ROOT),
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+
+        if proc.returncode == 0:
+            msg = f"✓ *{label}* for *{client_name}* completed. Check Notion for results."
+        else:
+            err = stderr.decode(errors="replace")[-600:]
+            msg = f"✗ *{label}* for *{client_name}* failed:\n```{err}```"
+    except asyncio.TimeoutError:
+        msg = f"✗ *{label}* for *{client_name}* timed out after 10 minutes."
+    except Exception as e:
+        msg = f"✗ *{label}* for *{client_name}* error: {e}"
+
+    post_kwargs: dict = {"channel": channel, "text": msg}
+    if thread_ts:
+        post_kwargs["thread_ts"] = thread_ts
+    try:
+        await slack_app.client.chat_postMessage(**post_kwargs)
+    except Exception:
+        pass  # best-effort
 
 
 # ── Tool execution ────────────────────────────────────────────────────────────
@@ -583,6 +728,128 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
             task = r.json()
             return f"Task created: *{task.get('name')}* (id: {task.get('id')}) — {task.get('url', '')}"
 
+        elif name == "get_keywords":
+            client_key = tool_input["client_key"]
+            priority_filter = tool_input.get("priority", "").strip()
+            if client_key not in CLIENTS:
+                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
+            cfg = CLIENTS[client_key]
+            db_id = cfg.get("keywords_db_id", "")
+            if not db_id:
+                return f"No Keywords DB configured for {client_key}."
+            filter_payload = None
+            if priority_filter:
+                filter_payload = {"property": "Priority", "select": {"equals": priority_filter}}
+            entries = await notion.query_database(db_id, filter_payload=filter_payload)
+            if not entries:
+                return f"No keywords found{' with priority ' + priority_filter if priority_filter else ''}. Run: make keyword-research CLIENT={client_key}"
+            lines = [f"Keywords — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} results):\n"]
+            for e in entries[:30]:  # cap at 30
+                pp = e["properties"]
+                kw       = _title(pp.get("Keyword", {}))
+                cluster  = _text(pp.get("Cluster", {}))
+                volume   = _text(pp.get("Monthly Search Volume", {}))
+                priority = _select(pp.get("Priority", {}))
+                intent   = _select(pp.get("Intent", {}))
+                lines.append(f"• *{kw}* [{priority}] — {volume}/mo | {intent} | {cluster}")
+            return "\n".join(lines)
+
+        elif name == "get_competitors":
+            client_key = tool_input["client_key"]
+            threat_filter = tool_input.get("threat", "").strip()
+            if client_key not in CLIENTS:
+                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
+            cfg = CLIENTS[client_key]
+            db_id = cfg.get("competitors_db_id", "")
+            if not db_id:
+                return f"No Competitors DB configured for {client_key}."
+            filter_payload = None
+            if threat_filter:
+                filter_payload = {"property": "Threat", "select": {"equals": threat_filter}}
+            entries = await notion.query_database(db_id, filter_payload=filter_payload)
+            if not entries:
+                return f"No competitors found{' with threat ' + threat_filter if threat_filter else ''}. Run: make competitor-research CLIENT={client_key}"
+            lines = [f"Competitors — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} total):\n"]
+            for e in entries:
+                pp = e["properties"]
+                comp_name = _title(pp.get("Competitor Name", {}))
+                threat    = _select(pp.get("Threat", {}))
+                ctype     = _select(pp.get("Type", {}))
+                reviews   = pp.get("Review Count", {}).get("number", "")
+                rating    = pp.get("Review Rating", {}).get("number", "")
+                authority = pp.get("Authority Score", {}).get("number", "")
+                multi     = pp.get("Multi-Location", {}).get("checkbox", False)
+                notes_val = _text(pp.get("Notes", {}))[:80]
+                chain_str = " 🔗 Multi-location" if multi else ""
+                lines.append(
+                    f"• *{comp_name}* [{threat} threat]{chain_str} — {ctype} | "
+                    f"⭐ {rating} ({reviews} reviews) | Auth: {authority}"
+                    + (f"\n  _{notes_val}_" if notes_val else "")
+                )
+            return "\n".join(lines)
+
+        elif name == "get_gbp_posts":
+            client_key = tool_input["client_key"]
+            status_filter = tool_input.get("status", "").strip()
+            if client_key not in CLIENTS:
+                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
+            cfg = CLIENTS[client_key]
+            db_id = cfg.get("gbp_posts_db_id", "")
+            if not db_id:
+                return f"No GBP Posts DB configured for {client_key}. Run: make gbp-posts CLIENT={client_key}"
+            filter_payload = None
+            if status_filter:
+                filter_payload = {"property": "Status", "select": {"equals": status_filter}}
+            entries = await notion.query_database(db_id, filter_payload=filter_payload)
+            if not entries:
+                return f"No GBP posts found{' with status ' + status_filter if status_filter else ''}."
+            lines = [f"GBP Posts — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} posts):\n"]
+            for e in entries[:10]:
+                pp = e["properties"]
+                post_title  = _title(pp.get("Post Title", {}))
+                post_type   = _select(pp.get("Post Type", {}))
+                status_val  = _select(pp.get("Status", {}))
+                cta         = _select(pp.get("CTA Button", {}))
+                month       = _text(pp.get("Month", {}))
+                source_page = _text(pp.get("Source Page", {}))
+                char_count  = pp.get("Char Count", {}).get("number", "")
+                lines.append(
+                    f"• *{post_title}* [{status_val}] — {post_type} | {month} | "
+                    f"CTA: {cta} | {char_count} chars\n  Source: {source_page}"
+                )
+            return "\n".join(lines)
+
+        elif name == "run_pipeline_stage":
+            client_key = tool_input["client_key"]
+            stage      = tool_input["stage"]
+            notes      = tool_input.get("notes", "")
+
+            if client_key not in CLIENTS:
+                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
+            if stage not in STAGE_COMMANDS:
+                return f"Unknown stage '{stage}'. Available: {', '.join(STAGE_COMMANDS)}"
+
+            client_name = CLIENTS[client_key].get("name", client_key)
+            label       = STAGE_LABELS.get(stage, stage)
+
+            # Grab current event context for the background task to post back
+            channel   = _event_context.get("channel", "")
+            thread_ts = _event_context.get("thread_ts")
+
+            if not channel:
+                return f"Could not determine Slack channel for follow-up. Try again."
+
+            # Spawn background task — returns immediately
+            asyncio.create_task(
+                _run_stage_background(channel, thread_ts, client_key, stage, notes)
+            )
+
+            notes_str = f" with notes: _{notes}_" if notes else ""
+            return (
+                f"Starting *{label}* for *{client_name}*{notes_str}.\n"
+                f"This runs in the background — I'll post here when it's done."
+            )
+
         else:
             return f"Unknown tool: {name}"
 
@@ -667,6 +934,11 @@ async def _process(event: dict, client, thread: bool = False) -> None:
     text = re.sub(r"<@\w+>", "", event.get("text", "")).strip()
     if not text:
         return
+
+    # Set event context so background stage runners can post back to the right place
+    _event_context["channel"]   = event["channel"]
+    _event_context["thread_ts"] = event.get("thread_ts") or (event.get("ts") if thread else None)
+
     messages = await _build_messages(event, client, text)
     reply = await ask_rex(messages)
     kwargs = {"channel": event["channel"], "text": reply}
@@ -705,7 +977,7 @@ async def slack_events(req: Request):
 
 @api.get("/health")
 async def health():
-    return {"status": "ok", "agent": "Rex", "version": "1.2"}
+    return {"status": "ok", "agent": "Rex", "version": "1.3"}
 
 
 if __name__ == "__main__":
