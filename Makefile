@@ -135,6 +135,15 @@ gbp-posts:
 	  $(if $(MONTH),--month "$(MONTH)",) \
 	  $(if $(NOTES),--notes "$(NOTES)",)
 
+seo-baseline:
+	@$(PYTHON) scripts/seo_report.py --client $(CLIENT) --baseline \
+	  $(if $(OPEN),--open,)
+
+seo-report:
+	@$(PYTHON) scripts/seo_report.py --client $(CLIENT) --monthly \
+	  $(if $(MONTH),--month "$(MONTH)",) \
+	  $(if $(OPEN),--open,)
+
 # Activate full SEO retainer for a client (creates SEO Metrics DB, sets gbp_location_id)
 seo-activate:
 	@$(PYTHON) scripts/seo_activate.py --client $(CLIENT) \
@@ -216,6 +225,9 @@ help:
 	@echo "  make gbp-posts                Generate 3 GBP post drafts from website content → Notion"
 	@echo "  make gbp-posts NOTES=\"...\"    Regenerate with revision feedback"
 	@echo "  make gbp-posts MONTH=\"May 2026\"  Generate for a specific month"
+	@echo "  make seo-baseline             90-day baseline report → Notion + HTML"
+	@echo "  make seo-report               Previous month report → Notion + HTML"
+	@echo "  make seo-report OPEN=1        Run + open HTML report in browser"
 	@echo ""
 
 .PHONY: run transcript mood-board sitemap content wireframe \
@@ -224,4 +236,5 @@ help:
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup \
         keyword-research competitor-research suggest-keywords \
         seo-init battle-plan-init battle-plan seo-activate gbp-posts \
+        seo-baseline seo-report \
         care-plan care-plan-init help

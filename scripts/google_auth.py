@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-google_auth.py — One-time OAuth flow for Google Business Profile API
+google_auth.py — One-time OAuth flow for Google APIs
 
 Run this once to authorize rxmediamanager@gmail.com and save a refresh token.
+Covers three APIs in a single auth flow:
+  - Google Business Profile (business.manage)
+  - Google Search Console (webmasters.readonly)
+  - Google Analytics 4 (analytics.readonly)
+
 The refresh token is stored in .env as GOOGLE_REFRESH_TOKEN and used by all
-subsequent Business Profile API calls without requiring re-authorization.
+subsequent API calls without requiring re-authorization.
 
 Usage:
     python3 scripts/google_auth.py
@@ -12,7 +17,7 @@ Usage:
 What happens:
   1. Starts a local HTTP server on port 8080 to catch the OAuth redirect
   2. Opens a browser window to Google's OAuth consent screen
-  3. You log in as rxmediamanager@gmail.com and approve access
+  3. You log in as rxmediamanager@gmail.com and approve all scopes
   4. Browser redirects to localhost:8080 — script catches the auth code automatically
   5. Refresh token is written to .env automatically
 """
@@ -35,7 +40,9 @@ CLIENT_ID     = settings.google_client_id
 CLIENT_SECRET = settings.google_client_secret
 
 SCOPES = [
-    "https://www.googleapis.com/auth/business.manage",
+    "https://www.googleapis.com/auth/business.manage",       # GBP performance data
+    "https://www.googleapis.com/auth/webmasters.readonly",   # Google Search Console
+    "https://www.googleapis.com/auth/analytics.readonly",    # Google Analytics 4
 ]
 
 PORT = 8080
@@ -102,10 +109,12 @@ def main() -> None:
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 
     print("\n" + "="*60)
-    print("  Google Business Profile — OAuth Authorization")
+    print("  Google APIs — OAuth Authorization")
+    print("  (GBP + Search Console + Analytics)")
     print("="*60)
     print(f"\nLocal redirect server listening on port {PORT}.")
-    print("Opening browser. Log in as: rxmediamanager@gmail.com\n")
+    print("Opening browser. Log in as: rxmediamanager@gmail.com")
+    print("Approve ALL scopes shown — GBP, Search Console, Analytics\n")
 
     webbrowser.open(auth_url)
 

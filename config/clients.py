@@ -45,7 +45,12 @@ _MANUAL: dict[str, dict] = {
     #     "competitors_db_id":       "",
     #     "keywords_db_id":          "",
     #     "seo_metrics_db_id":       "",
-    #     "gbp_location_id":         "",  # Google Business Profile location ID
+    #     "gbp_posts_db_id":         "",  # auto-created on first make gbp-posts run
+    #     # ── SEO Reporting (required for seo-report) ───────────────────────────
+    #     "gbp_location_id":         "",  # GBP location ID (e.g. "locations/1234567890")
+    #     "gsc_site_url":            "",  # exact URL in Search Console (e.g. "https://example.com/")
+    #     "ga4_property_id":         "",  # numeric GA4 property ID (e.g. "123456789")
+    #     "search_atlas_project_id": "",  # rank tracker project ID (optional)
     #     # ── Pipeline ──────────────────────────────────────────────────────────
     #     "meeting_notes_entry_id":  "",
     #     "clickup_review_list_id":  "",
