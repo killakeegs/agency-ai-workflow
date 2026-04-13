@@ -408,7 +408,7 @@ def _fetch_place(query: str, fallback_query: str | None = None) -> dict:
     """
     Look up a business via Google Places findplacefromtext.
     Retries with fallback_query (e.g. name + city) if first attempt returns no results.
-    Returns {place_id, name, rating, review_count, photo_count} or {}.
+    Returns {place_id, name, rating, review_count} or {}.
     """
     api_key = getattr(settings, "google_api_key", "")
     if not api_key:
@@ -421,7 +421,7 @@ def _fetch_place(query: str, fallback_query: str | None = None) -> dict:
                 params={
                     "input": attempt_query,
                     "inputtype": "textquery",
-                    "fields": "place_id,name,rating,user_ratings_total,photos",
+                    "fields": "place_id,name,rating,user_ratings_total",
                     "key": api_key,
                 },
                 timeout=10,
@@ -434,7 +434,6 @@ def _fetch_place(query: str, fallback_query: str | None = None) -> dict:
                     "name":         c.get("name", ""),
                     "rating":       c.get("rating"),
                     "review_count": c.get("user_ratings_total"),
-                    "photo_count":  len(c.get("photos", [])),
                 }
         except Exception:
             pass
@@ -581,6 +580,8 @@ async def _ensure_keyword_count_field(notion: NotionClient, competitors_db_id: s
             updates["AI Mentions"] = {"number": {"format": "number"}}
         if "Multi-Location" not in existing_props:
             updates["Multi-Location"] = {"checkbox": {}}
+        if "Professional Quality Images" not in existing_props:
+            updates["Professional Quality Images"] = {"checkbox": {}}
         if "GBP URL" not in existing_props:
             updates["GBP URL"] = {"url": {}}
         if updates:
@@ -1044,8 +1045,6 @@ async def enrich_only(client_key: str) -> None:
             updates["Review Rating"] = {"number": place["rating"]}
         if place.get("review_count") is not None:
             updates["Review Count"] = {"number": place["review_count"]}
-        if place.get("photo_count") is not None:
-            updates["Photo Count"] = {"number": place["photo_count"]}
         if place.get("place_id"):
             updates["GBP URL"] = {"url": f"https://www.google.com/maps/place/?q=place_id:{place['place_id']}"}
 

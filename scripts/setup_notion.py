@@ -377,9 +377,8 @@ def competitors_schema() -> dict:
     from the SEO Battle Plan workbook. One row per competitor per client.
     """
     return {
+        # ── Identity (primary view columns) ──────────────────────────────────
         "Competitor Name": {"title": {}},
-        "Website": {"url": {}},
-        "GBP URL": {"url": {}},
         "Type": {
             "select": {
                 "options": [
@@ -389,36 +388,43 @@ def competitors_schema() -> dict:
                 ]
             }
         },
-        "Primary Category": {"rich_text": {}},
-        # ── GBP / Local signals ───────────────────────────────────────────────
-        "Review Count":          {"number": {}},
-        "Review Rating":         {"number": {}},
-        "Review Velocity":       {"rich_text": {}},  # e.g. "< 5/month", "1/week"
-        "Reviews Last 30 Days":  {"number": {}},     # manual — count from GBP
-        "Photo Count":           {"number": {}},
-        "Last Photo Added":      {"rich_text": {}},  # e.g. "1 year ago", "2 months ago"
-        "Photo Quality": {
+        "Website":         {"url": {}},
+        "Threat": {
             "select": {
                 "options": [
-                    {"name": "Excellent", "color": "green"},
-                    {"name": "Good",      "color": "blue"},
-                    {"name": "Fair",      "color": "yellow"},
-                    {"name": "Poor",      "color": "red"},
+                    {"name": "High",   "color": "red"},
+                    {"name": "Medium", "color": "yellow"},
+                    {"name": "Low",    "color": "green"},
                 ]
             }
         },
-        "Has Posts":              {"checkbox": {}},
-        "Service Menu Complete":  {"checkbox": {}},
-        "Network Presence":       {"rich_text": {}},  # list of directories
-        # ── Authority / backlink data (Search Atlas export) ───────────────────
+        "Multi-Location":  {"checkbox": {}},
+        # ── GBP signals ───────────────────────────────────────────────────────
+        "GBP URL":                    {"url": {}},
+        "Review Count":               {"number": {}},
+        "Review Rating":              {"number": {}},
+        "Review Velocity":            {"rich_text": {}},  # e.g. "< 5/month", "1/week"
+        "Professional Quality Images":{"checkbox": {}},   # manually checked by team
+        # ── SERP performance ──────────────────────────────────────────────────
+        "Keyword Count":   {"number": {}},
+        "Avg Position":    {"number": {}},
+        "AI Mentions":     {"number": {}},
+        # ── Authority / backlink data ─────────────────────────────────────────
         "Authority Score":    {"number": {}},
         "Referring Domains":  {"number": {}},
+        "Backlinks":          {"number": {}},
         "Local Backlinks":    {"rich_text": {}},  # notes on local/civic links
         "Industry Links":     {"rich_text": {}},  # notes on industry links
         "Link Gap Notes":     {"rich_text": {}},  # gap analysis narrative
+        # ── GBP detail (manual) ───────────────────────────────────────────────
+        "Reviews Last 30 Days":  {"number": {}},   # manual — count from GBP
+        "Last Photo Added":      {"rich_text": {}}, # e.g. "1 year ago", "2 months ago"
+        "Has Posts":             {"checkbox": {}},
+        "Service Menu Complete": {"checkbox": {}},
+        "Network Presence":      {"rich_text": {}}, # list of directories
         # ── Organic page analysis ─────────────────────────────────────────────
         "Top Ranking Page":  {"url": {}},
-        "Target Cluster":    {"rich_text": {}},  # what content cluster they're targeting
+        "Target Cluster":    {"rich_text": {}},
         "Content Depth": {
             "select": {
                 "options": [
@@ -429,12 +435,14 @@ def competitors_schema() -> dict:
                 ]
             }
         },
-        "Uses FAQs":      {"checkbox": {}},
-        "Uses Schema":    {"rich_text": {}},  # which schema types
-        "EEAT Signals":   {"rich_text": {}},
-        "Strengths":      {"rich_text": {}},
-        "Weaknesses":     {"rich_text": {}},
-        "Notes":          {"rich_text": {}},
+        "Uses FAQs":    {"checkbox": {}},
+        "Uses Schema":  {"rich_text": {}},  # which schema types
+        "EEAT Signals": {"rich_text": {}},
+        "Page Type":    {"rich_text": {}},
+        # ── Analysis ─────────────────────────────────────────────────────────
+        "Strengths":  {"rich_text": {}},
+        "Weaknesses": {"rich_text": {}},
+        "Notes":      {"rich_text": {}},
     }
 
 

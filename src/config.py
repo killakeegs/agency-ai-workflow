@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # ── Google ────────────────────────────────────────────────────────────────
     google_api_key: str | None = None
     google_service_account_json_path: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_refresh_token: str | None = None
 
     # ── DataForSEO ────────────────────────────────────────────────────────────
     dataforseo_login: str | None = None
