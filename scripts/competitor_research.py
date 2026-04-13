@@ -84,7 +84,8 @@ Return ONLY a JSON object (no markdown, no preamble):
       "name": "Business Name (if you know it, else leave blank)",
       "type": "Local | Organic | Both",
       "threat": "High | Medium | Low",
-      "notes": "one-line note — e.g. dominant local competitor in Frisco, national chain with local branch, regional content site"
+      "is_chain": true,
+      "notes": "one-line note — e.g. dominant local competitor in Frisco, multi-location DFW chain, national ABA chain with local branch, regional content site"
     }}
   ]
 }}
@@ -96,8 +97,15 @@ Type definitions:
 
 Threat definitions (for a local business):
   High   = keyword_count >= 5 AND avg_position <= 4  (eating your lunch today)
+           OR is_chain = true AND keyword_count >= 3  (multi-location scale amplifies threat)
   Medium = keyword_count >= 3 OR avg_position <= 5    (visible, beatable)
   Low    = keyword_count < 3 AND avg_position > 5     (worth watching, not urgent)
+
+is_chain = true if the business has multiple physical locations (regional chain, national chain,
+  or franchise with 2+ DFW locations). Single-location independents = false.
+  Flag chains explicitly in notes — e.g. "8-location DFW chain" or "national ABA franchise".
+  Multi-location chains are more dangerous than keyword data alone suggests because they
+  have multiple GBP listings competing in map pack across every city the client serves.
 
 Include ALL domains from the input. Order by threat (High first), then keyword_count descending.
 """
@@ -394,6 +402,45 @@ async def _fetch_ai_mentions(
     return dict(competitor_ai), dict(client_ai_count)
 
 
+# ── Google Places API ────────────────────────────────────────────────────────
+
+def _fetch_place(query: str, fallback_query: str | None = None) -> dict:
+    """
+    Look up a business via Google Places findplacefromtext.
+    Retries with fallback_query (e.g. name + city) if first attempt returns no results.
+    Returns {place_id, name, rating, review_count, photo_count} or {}.
+    """
+    api_key = getattr(settings, "google_api_key", "")
+    if not api_key:
+        return {}
+
+    for attempt_query in [q for q in [query, fallback_query] if q]:
+        try:
+            resp = httpx.get(
+                "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                params={
+                    "input": attempt_query,
+                    "inputtype": "textquery",
+                    "fields": "place_id,name,rating,user_ratings_total,photos",
+                    "key": api_key,
+                },
+                timeout=10,
+            )
+            data = resp.json()
+            if data.get("status") == "OK" and data.get("candidates"):
+                c = data["candidates"][0]
+                return {
+                    "place_id":     c.get("place_id", ""),
+                    "name":         c.get("name", ""),
+                    "rating":       c.get("rating"),
+                    "review_count": c.get("user_ratings_total"),
+                    "photo_count":  len(c.get("photos", [])),
+                }
+        except Exception:
+            pass
+    return {}
+
+
 # ── Backlink data via DataForSEO ─────────────────────────────────────────────
 
 async def _fetch_backlink_summaries(domains: list[str]) -> dict[str, dict]:
@@ -532,6 +579,10 @@ async def _ensure_keyword_count_field(notion: NotionClient, competitors_db_id: s
             updates["Backlinks"] = {"number": {"format": "number"}}
         if "AI Mentions" not in existing_props:
             updates["AI Mentions"] = {"number": {"format": "number"}}
+        if "Is Chain" not in existing_props:
+            updates["Is Chain"] = {"checkbox": {}}
+        if "GBP URL" not in existing_props:
+            updates["GBP URL"] = {"url": {}}
         if updates:
             await notion._client.request(
                 path=f"databases/{competitors_db_id}",
@@ -623,6 +674,8 @@ async def _write_competitors(
             properties["Backlinks"] = {"number": comp["backlinks"]}
         if comp.get("ai_mentions"):
             properties["AI Mentions"] = {"number": comp["ai_mentions"]}
+        if comp.get("is_chain"):
+            properties["Is Chain"] = {"checkbox": True}
 
         try:
             if force and lookup_key in existing:
@@ -886,7 +939,7 @@ async def enrich_only(client_key: str) -> None:
 
     print(f"\n{'='*60}")
     print(f"  Competitor Enrichment — {cfg['name']}")
-    print(f"  (backlinks + AI mentions only — no SERP re-run)")
+    print(f"  (backlinks + AI mentions + GBP data — no SERP re-run)")
     print(f"{'='*60}\n")
 
     # Load existing competitor entries
@@ -900,6 +953,9 @@ async def enrich_only(client_key: str) -> None:
         print("No competitors found in DB. Run make competitor-research first.")
         sys.exit(1)
 
+    # Ensure schema has all fields
+    await _ensure_keyword_count_field(notion, competitors_db_id)
+
     # Build domain → page_id map
     domain_page: list[dict] = []
     for e in entries:
@@ -908,10 +964,39 @@ async def enrich_only(client_key: str) -> None:
         name_parts = (props.get("Competitor Name") or {}).get("title", [])
         name = name_parts[0].get("plain_text", "") if name_parts else ""
         domain = re.sub(r"^https?://(www\.)?", "", site.lower().rstrip("/"))
+        existing_gbp = (props.get("GBP URL") or {}).get("url") or ""
         if domain:
-            domain_page.append({"page_id": e["id"], "domain": domain, "name": name})
+            domain_page.append({
+                "page_id": e["id"],
+                "domain": domain,
+                "name": name,
+                "has_gbp_url": bool(existing_gbp),
+            })
 
     print(f"  Found {len(domain_page)} competitors to enrich\n")
+
+    # ── Google Places (review count, rating, photo count, GBP URL) ─────────────
+    has_google_key = bool(getattr(settings, "google_api_key", ""))
+    places_data: dict[str, dict] = {}
+    if has_google_key:
+        print("Fetching Google Places data...")
+        needs_gbp = [e for e in domain_page if not e["has_gbp_url"]]
+        for entry in needs_gbp:
+            name = entry["name"]
+            domain_root = entry["domain"].split(".")[0]
+            place = _fetch_place(
+                query=f"{name}",
+                fallback_query=f"{name} Frisco TX",
+            )
+            if place and place.get("place_id"):
+                places_data[entry["domain"]] = place
+                print(f"  ✓ {name}: {place.get('rating')}★ · {place.get('review_count')} reviews")
+            else:
+                print(f"  — {name}: not found on Google Maps")
+            import time; time.sleep(0.2)
+        print(f"  Got Places data for {len(places_data)}/{len(needs_gbp)} competitors\n")
+    else:
+        print("  ⚠ GOOGLE_API_KEY not set — skipping Places data\n")
 
     # ── Backlinks ──────────────────────────────────────────────────────────────
     print("Fetching backlink data...")
@@ -944,8 +1029,9 @@ async def enrich_only(client_key: str) -> None:
         page_id = entry["page_id"]
         domain = entry["domain"]
 
-        bl = backlink_data.get(domain, {})
-        ai = ai_competitor_data.get(domain, {})
+        bl    = backlink_data.get(domain, {})
+        ai    = ai_competitor_data.get(domain, {})
+        place = places_data.get(domain, {})
 
         updates: dict = {}
         if bl.get("authority_score", 0) > 0:
@@ -954,6 +1040,14 @@ async def enrich_only(client_key: str) -> None:
             updates["Backlinks"]         = {"number": bl["backlinks"]}
         if ai.get("ai_mentions", 0) > 0:
             updates["AI Mentions"] = {"number": ai["ai_mentions"]}
+        if place.get("rating") is not None:
+            updates["Review Rating"] = {"number": place["rating"]}
+        if place.get("review_count") is not None:
+            updates["Review Count"] = {"number": place["review_count"]}
+        if place.get("photo_count") is not None:
+            updates["Photo Count"] = {"number": place["photo_count"]}
+        if place.get("place_id"):
+            updates["GBP URL"] = {"url": f"https://www.google.com/maps/place/?q=place_id:{place['place_id']}"}
 
         if not updates:
             continue
@@ -964,10 +1058,11 @@ async def enrich_only(client_key: str) -> None:
                 method="PATCH",
                 body={"properties": updates},
             )
-            bl_str = f"DA {bl.get('authority_score','?')} / {bl.get('referring_domains','?')} ref domains" if bl else ""
-            ai_str = f"{ai.get('ai_mentions','?')} AI mentions" if ai.get("ai_mentions") else ""
-            info = " · ".join(p for p in [bl_str, ai_str] if p)
-            print(f"  ✓ {entry['name'] or domain} — {info}")
+            parts = []
+            if bl.get("authority_score"): parts.append(f"DA {bl['authority_score']}")
+            if ai.get("ai_mentions"):     parts.append(f"{ai['ai_mentions']} AI")
+            if place.get("review_count"): parts.append(f"{place['review_count']} reviews ({place.get('rating')}★)")
+            print(f"  ✓ {entry['name'] or domain} — {' · '.join(parts)}")
             patched += 1
         except Exception as ex:
             print(f"  ⚠ Failed to patch {domain}: {ex}")
