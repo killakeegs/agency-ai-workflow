@@ -2,7 +2,10 @@
   "summit_therapy": {
     "client_id": "summit_therapy",
     "name": "Summit Therapy",
-    "services": ["website_build", "care_plan"],
+    "services": [
+      "website_build",
+      "care_plan"
+    ],
     "intake_submission_ids": [
       "33bf7f45-333e-81e3-b962-dc5f7d5873ca",
       "33bf7f45-333e-8194-9159-ef1692d9fea2"
@@ -20,8 +23,8 @@
     "meeting_notes_entry_id": "33bf7f45-333e-81d2-8842-d50e795d681e",
     "clickup_review_list_id": "",
     "care_plan_db_id": "33ef7f45-333e-8187-ba68-efc21a3f904b",
-    "competitors_db_id": "",
-    "keywords_db_id": "",
+    "competitors_db_id": "33ef7f45-333e-81ba-acc8-dd0ca90d2493",
+    "keywords_db_id": "33ef7f45-333e-81ba-a3c8-c681dcd9965a",
     "seo_metrics_db_id": "",
     "gbp_location_id": ""
   }

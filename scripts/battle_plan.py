@@ -41,6 +41,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -186,12 +187,17 @@ async def _load_client_context(notion: NotionClient, cfg: dict) -> dict:
                 {
                     "name": _get_title_text(r["properties"].get("Competitor Name", {})),
                     "website": _get_url_val(r["properties"].get("Website", {})),
-                    "review_count": _get_num(r["properties"].get("Review Count", {})),
-                    "rating": _get_num(r["properties"].get("Review Rating", {})),
+                    "type": _get_select(r["properties"].get("Type", {})),
+                    "threat": _get_select(r["properties"].get("Threat", {})),
+                    "keyword_count": _get_num(r["properties"].get("Keyword Count", {})),
+                    "avg_position": _get_num(r["properties"].get("Avg Position", {})),
                     "authority_score": _get_num(r["properties"].get("Authority Score", {})),
                     "referring_domains": _get_num(r["properties"].get("Referring Domains", {})),
-                    "strengths": _get_rt(r["properties"].get("Strengths", {})),
-                    "weaknesses": _get_rt(r["properties"].get("Weaknesses", {})),
+                    "backlinks": _get_num(r["properties"].get("Backlinks", {})),
+                    "ai_mentions": _get_num(r["properties"].get("AI Mentions", {})),
+                    "review_count": _get_num(r["properties"].get("Review Count", {})),
+                    "rating": _get_num(r["properties"].get("Review Rating", {})),
+                    "notes": _get_rt(r["properties"].get("Notes", {})),
                 }
                 for r in rows
                 if _get_title_text(r["properties"].get("Competitor Name", {}))
@@ -199,16 +205,24 @@ async def _load_client_context(notion: NotionClient, cfg: dict) -> dict:
         except Exception as e:
             log.warning(f"Could not load Competitors: {e}")
 
-    # Existing keywords
+    # Existing keywords — High priority only, capped at 60
     keywords_db_id = cfg.get("keywords_db_id", "")
     if keywords_db_id:
         try:
-            rows = await notion.query_database(keywords_db_id)
+            result = await notion._client.request(
+                path=f"databases/{keywords_db_id}/query",
+                method="POST",
+                body={
+                    "filter": {"property": "Priority", "select": {"equals": "High"}},
+                    "sorts": [{"property": "Monthly Search Volume", "direction": "descending"}],
+                    "page_size": 40,
+                },
+            )
+            rows = result.get("results", [])
             ctx["existing_keywords"] = [
                 {
                     "keyword": _get_title_text(r["properties"].get("Keyword", {})),
-                    "cluster": _get_rt(r["properties"].get("Cluster", {})),
-                    "volume": _get_rt(r["properties"].get("Monthly Search Volume", {})),
+                    "volume": _get_num(r["properties"].get("Monthly Search Volume", {})),
                     "intent": _get_select(r["properties"].get("Intent", {})),
                     "our_position": _get_rt(r["properties"].get("Our Position", {})),
                     "priority": _get_select(r["properties"].get("Priority", {})),
@@ -235,6 +249,18 @@ provided. Reference actual competitor names, keyword terms, and metrics.
 Do not write generic advice. Every recommendation must tie to a specific gap
 or opportunity visible in the data.
 
+DATA SOURCES — understand these before writing:
+- "Authority Score" / "DA" in the competitor data = DataForSEO Rank, a 0-1000
+  logarithmic scale (higher = more authoritative). 200-400 = mid-tier. 400+ = strong.
+  Do NOT treat these as Moz DA (0-100) or flag them as errors.
+- Keyword volumes marked "local intent (no volume data)" = hyper-local city-specific
+  terms that DataForSEO doesn't track at that granularity. This is expected and
+  intentional — do NOT flag these as missing data or suggest pulling from other tools.
+- All keyword research and backlink data comes from DataForSEO. Do not suggest
+  using Moz, Ahrefs, or Semrush — they are not in the stack.
+- Review count and rating come from Google Places API (live data).
+- PageSpeed scores come from Google PageSpeed Insights API (live data).
+
 The Battle Plan has four sections:
 
 1. EXECUTIVE SUMMARY — 2–3 paragraphs. Who the client is, what their current
@@ -255,6 +281,8 @@ The Battle Plan has four sections:
    - Search Visibility & Rankings (specific keywords + target positions)
    - Digital Authority & Trust (E-E-A-T improvements, link targets)
    - Conversions & Business Impact (traffic %, DA growth, conversion rate)
+
+Be concise — each text field should be 2–4 sentences maximum. Do not pad with generic advice.
 
 Return ONLY this JSON structure — no markdown wrapping:
 {
@@ -304,24 +332,38 @@ async def _generate_battle_plan(ctx: dict, notes: str = "") -> dict:
     if ctx.get("existing_competitors"):
         comp_lines = []
         for c in ctx["existing_competitors"]:
-            line = f"- {c['name']} | {c['website']}"
-            if c.get("review_count"):
-                line += f" | Reviews: {c['review_count']} ({c['rating']}★)"
+            threat = c.get("threat") or "?"
+            kw_count = c.get("keyword_count") or 0
+            avg_pos = c.get("avg_position") or "?"
+            line = "- [{}] {} | {} kws | pos {} ".format(threat, c['name'], kw_count, avg_pos)
+            parts = []
             if c.get("authority_score"):
-                line += f" | DA: {c['authority_score']} | RD: {c['referring_domains']}"
-            if c.get("strengths"):
-                line += f"\n  Strengths: {c['strengths'][:300]}"
-            if c.get("weaknesses"):
-                line += f"\n  Weaknesses: {c['weaknesses'][:300]}"
+                parts.append("DA {}".format(c["authority_score"]))
+            if c.get("referring_domains"):
+                parts.append("{} RD".format(c["referring_domains"]))
+            if c.get("ai_mentions"):
+                parts.append("{} AI".format(c["ai_mentions"]))
+            if c.get("review_count"):
+                parts.append("{} reviews ({}★)".format(c["review_count"], c.get("rating", "?")))
+            if parts:
+                line += "| " + " · ".join(parts)
+            # Include top-ranked keywords only (first 120 chars of notes)
+            if c.get("notes"):
+                line += "\n  " + c["notes"][:120]
             comp_lines.append(line)
         context_parts.append("COMPETITORS:\n" + "\n".join(comp_lines))
 
     if ctx.get("existing_keywords"):
         kw_lines = []
         for k in ctx["existing_keywords"]:
-            line = f"- [{k['cluster']}] {k['keyword']} | Vol: {k['volume']} | Intent: {k['intent']} | Our rank: {k['our_position'] or '—'}"
+            vol = k.get("volume")
+            vol_str = "{:,}/mo".format(int(vol)) if vol else "local intent (no volume data)"
+            rank_str = k.get("our_position") or "not ranking"
+            line = "- [{}] {} | Vol: {} | Intent: {} | Rank: {}".format(
+                k["priority"], k["keyword"], vol_str, k["intent"] or "—", rank_str
+            )
             kw_lines.append(line)
-        context_parts.append("TARGET KEYWORDS:\n" + "\n".join(kw_lines))
+        context_parts.append("TARGET KEYWORDS (High priority only):\n" + "\n".join(kw_lines))
 
     if notes:
         context_parts.append(f"STRATEGIC NOTES FROM TEAM:\n{notes}")
@@ -330,19 +372,25 @@ async def _generate_battle_plan(ctx: dict, notes: str = "") -> dict:
 
     response = await _anthropic.messages.create(
         model=settings.anthropic_model,
-        max_tokens=4096,
+        max_tokens=8000,
         system=BATTLE_PLAN_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context_str}],
     )
 
     raw = response.content[0].text if response.content else "{}"
     try:
-        import re
-        clean = re.sub(r"```(?:json)?\n?", "", raw).strip().rstrip("```")
+        # Strip markdown code fences if present
+        clean = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+        clean = re.sub(r"\s*```$", "", clean).strip()
+        # Find the outermost JSON object
+        start = clean.find("{")
+        end = clean.rfind("}") + 1
+        if start >= 0 and end > start:
+            clean = clean[start:end]
         return json.loads(clean)
-    except json.JSONDecodeError:
-        log.warning("Battle plan JSON parse failed — returning raw")
-        return {"executive_summary": raw[:1000], "review_flags": ["JSON parse failed — review raw output"]}
+    except json.JSONDecodeError as e:
+        log.warning(f"Battle plan JSON parse failed ({e}) — returning raw")
+        return {"executive_summary": raw[:2000], "review_flags": ["JSON parse failed — review raw output in Notion"]}
 
 
 # ── Notion write ───────────────────────────────────────────────────────────────

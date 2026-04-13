@@ -42,7 +42,8 @@ competitor-research:
 	@$(PYTHON) scripts/competitor_research.py --client $(CLIENT) \
 	  $(if $(LIMIT),--limit $(LIMIT),) \
 	  $(if $(FORCE),--force,) \
-	  $(if $(YES),--yes,)
+	  $(if $(YES),--yes,) \
+	  $(if $(ENRICH),--enrich-only,)
 
 suggest-keywords:
 	@$(PYTHON) scripts/suggest_keywords.py --client $(CLIENT) \

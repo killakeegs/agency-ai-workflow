@@ -869,19 +869,146 @@ async def main(
     print(f"  3. make battle-plan CLIENT={client_key}  ← generate full SEO strategy")
 
 
+async def enrich_only(client_key: str) -> None:
+    """
+    --enrich-only mode: read existing Competitors DB entries, fetch fresh
+    backlink + AI mentions data, and PATCH each entry in-place.
+    Does NOT re-run SERP analysis or create new entries.
+    """
+    cfg = CLIENTS.get(client_key)
+    if not cfg:
+        print(f"Client '{client_key}' not found")
+        sys.exit(1)
+
+    notion = NotionClient(settings.notion_api_key)
+    competitors_db_id = cfg.get("competitors_db_id", "")
+    keywords_db_id = cfg.get("keywords_db_id", "")
+
+    print(f"\n{'='*60}")
+    print(f"  Competitor Enrichment — {cfg['name']}")
+    print(f"  (backlinks + AI mentions only — no SERP re-run)")
+    print(f"{'='*60}\n")
+
+    # Load existing competitor entries
+    result = await notion._client.request(
+        path=f"databases/{competitors_db_id}/query",
+        method="POST",
+        body={"page_size": 100},
+    )
+    entries = result.get("results", [])
+    if not entries:
+        print("No competitors found in DB. Run make competitor-research first.")
+        sys.exit(1)
+
+    # Build domain → page_id map
+    domain_page: list[dict] = []
+    for e in entries:
+        props = e.get("properties", {})
+        site = (props.get("Website") or {}).get("url") or ""
+        name_parts = (props.get("Competitor Name") or {}).get("title", [])
+        name = name_parts[0].get("plain_text", "") if name_parts else ""
+        domain = re.sub(r"^https?://(www\.)?", "", site.lower().rstrip("/"))
+        if domain:
+            domain_page.append({"page_id": e["id"], "domain": domain, "name": name})
+
+    print(f"  Found {len(domain_page)} competitors to enrich\n")
+
+    # ── Backlinks ──────────────────────────────────────────────────────────────
+    print("Fetching backlink data...")
+    domains = [d["domain"] for d in domain_page]
+    backlink_data = await _fetch_backlink_summaries(domains)
+    with_bl = sum(1 for d in domains if d in backlink_data and backlink_data[d].get("authority_score", 0) > 0)
+    print(f"  Got backlink data for {with_bl}/{len(domains)} competitors")
+
+    # ── AI mentions ────────────────────────────────────────────────────────────
+    _, own_domains = await _load_business_summary(notion, cfg)
+
+    keywords: list[dict] = []
+    if keywords_db_id:
+        keywords = await _load_target_keywords(notion, keywords_db_id, limit=20)
+        print(f"\nFetching AI Overview mentions ({len(keywords)} keywords)...")
+    else:
+        print("\n  ⚠ No keywords_db_id — skipping AI mentions")
+
+    ai_competitor_data: dict = {}
+    client_ai_data: dict = {}
+    if keywords:
+        ai_competitor_data, client_ai_data = await _fetch_ai_mentions(keywords, own_domains)
+        with_ai = sum(1 for d in domains if d in ai_competitor_data and ai_competitor_data[d].get("ai_mentions", 0) > 0)
+        print(f"  Got AI mention data for {with_ai}/{len(domains)} competitors with mentions")
+
+    # ── Patch each Notion entry ────────────────────────────────────────────────
+    print("\nPatching Notion entries...")
+    patched = 0
+    for entry in domain_page:
+        page_id = entry["page_id"]
+        domain = entry["domain"]
+
+        bl = backlink_data.get(domain, {})
+        ai = ai_competitor_data.get(domain, {})
+
+        updates: dict = {}
+        if bl.get("authority_score", 0) > 0:
+            updates["Authority Score"]   = {"number": bl["authority_score"]}
+            updates["Referring Domains"] = {"number": bl["referring_domains"]}
+            updates["Backlinks"]         = {"number": bl["backlinks"]}
+        if ai.get("ai_mentions", 0) > 0:
+            updates["AI Mentions"] = {"number": ai["ai_mentions"]}
+
+        if not updates:
+            continue
+
+        try:
+            await notion._client.request(
+                path=f"pages/{page_id}",
+                method="PATCH",
+                body={"properties": updates},
+            )
+            bl_str = f"DA {bl.get('authority_score','?')} / {bl.get('referring_domains','?')} ref domains" if bl else ""
+            ai_str = f"{ai.get('ai_mentions','?')} AI mentions" if ai.get("ai_mentions") else ""
+            info = " · ".join(p for p in [bl_str, ai_str] if p)
+            print(f"  ✓ {entry['name'] or domain} — {info}")
+            patched += 1
+        except Exception as ex:
+            print(f"  ⚠ Failed to patch {domain}: {ex}")
+
+    print(f"\n  ✓ Enriched {patched} competitors")
+
+    # Summary
+    if client_ai_data:
+        total = sum(client_ai_data.values())
+        print(f"\n  🤖 Client AI visibility: appears in AI Overviews for {total} keyword(s)")
+    else:
+        print(f"\n  🤖 Client AI visibility: not appearing in AI Overviews for any target keywords yet")
+        ai_leaders = sorted(
+            [(d["name"] or d["domain"], ai_competitor_data[d["domain"]]["ai_mentions"])
+             for d in domain_page if ai_competitor_data.get(d["domain"], {}).get("ai_mentions", 0) > 0],
+            key=lambda x: x[1], reverse=True,
+        )[:3]
+        if ai_leaders:
+            leaders_str = ", ".join("{} ({})".format(n, m) for n, m in ai_leaders)
+            print(f"     Competitors in AI results: {leaders_str}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auto-seed Competitors DB from SERP analysis")
     parser.add_argument("--client",  required=True)
     parser.add_argument("--limit",   type=int, default=20, help="Max keywords to run SERPs for")
     parser.add_argument("--force",   action="store_true", help="Overwrite existing rows")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip pre-flight prompts")
+    parser.add_argument("--enrich-only", action="store_true",
+                        help="Fetch backlinks + AI mentions for existing entries; skip SERP re-run")
     parser.add_argument("--min-appearances", type=int, default=2,
                         help="Minimum keyword appearances to include a domain (default: 2)")
     args = parser.parse_args()
-    asyncio.run(main(
-        client_key=args.client,
-        limit=args.limit,
-        force=args.force,
-        yes=args.yes,
-        min_appearances=args.min_appearances,
-    ))
+
+    if args.enrich_only:
+        asyncio.run(enrich_only(client_key=args.client))
+    else:
+        asyncio.run(main(
+            client_key=args.client,
+            limit=args.limit,
+            force=args.force,
+            yes=args.yes,
+            min_appearances=args.min_appearances,
+        ))
