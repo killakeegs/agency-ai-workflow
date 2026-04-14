@@ -106,6 +106,24 @@ relume-sitemap:
 relume-export:
 	@$(PYTHON) scripts/export_relume_prompt.py --client $(CLIENT) --open
 
+# ── Blog pipeline ─────────────────────────────────────────────────────────────
+
+blog-setup:
+	@$(PYTHON) scripts/blog_setup.py --client $(CLIENT)
+
+blog-ideas:
+	@$(PYTHON) scripts/blog_ideas.py --client $(CLIENT) \
+	  $(if $(FORCE),--force,)
+
+blog-write:
+	@$(PYTHON) scripts/blog_write.py --client $(CLIENT) \
+	  $(if $(NOTES),--notes "$(NOTES)",)
+
+blog-publish:
+	@$(PYTHON) scripts/blog_publish.py --client $(CLIENT) \
+	  $(if $(COMMIT),--commit,) \
+	  $(if $(ALL),--all,)
+
 # ── Care plan ─────────────────────────────────────────────────────────────────
 
 care-plan:
@@ -219,6 +237,16 @@ help:
 	@echo "  make mark-pending         After a manual stage run — sets Pending Review + creates ClickUp task"
 	@echo "  make advance              Check Notion for approval and run the next pipeline stage"
 	@echo ""
+	@echo "  BLOG PIPELINE"
+	@echo "  make blog-setup            Create Blog Voice & Author Setup page in Notion (one-time per client)"
+	@echo "  make blog-ideas            Generate 20 ideas for 3 months → Blog Posts DB (Status: Idea)"
+	@echo "  make blog-ideas FORCE=1    Regenerate ideas even if some already exist"
+	@echo "  make blog-write            Write all Approved ideas → full posts (Status: Draft)"
+	@echo "  make blog-write NOTES=\"warmer tone, fewer clinical terms\"  Regenerate with feedback"
+	@echo "  make blog-publish          Dry run: show what would publish today"
+	@echo "  make blog-publish COMMIT=1  Actually push Scheduled posts to Webflow CMS"
+	@echo "  make blog-publish ALL=1 COMMIT=1  Publish all Scheduled regardless of date"
+	@echo ""
 	@echo "  SEO"
 	@echo "  make seo-init             Create Competitors + Keywords DBs for an existing client (one-time)"
 	@echo "  make battle-plan-init     Create Battle Plan Input page in Notion (team fills before running)"
@@ -240,4 +268,6 @@ help:
         keyword-research competitor-research suggest-keywords \
         seo-init battle-plan-init battle-plan seo-activate gbp-posts \
         seo-baseline seo-report \
-        care-plan care-plan-init help
+        care-plan care-plan-init \
+        blog-setup blog-ideas blog-write blog-publish \
+        help

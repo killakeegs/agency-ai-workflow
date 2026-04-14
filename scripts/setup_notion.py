@@ -584,6 +584,55 @@ def action_items_schema() -> dict:
     }
 
 
+def blog_posts_schema() -> dict:
+    """
+    Schema for the Blog Posts DB.
+    One row per blog post — covers the full lifecycle from idea to published.
+    Created automatically by `make blog-ideas` if it doesn't exist.
+    """
+    return {
+        "Title":                    {"title": {}},
+        "Status": {
+            "select": {
+                "options": [
+                    {"name": "Idea",         "color": "gray"},
+                    {"name": "Approved",     "color": "green"},
+                    {"name": "Draft",        "color": "blue"},
+                    {"name": "Under Review", "color": "yellow"},
+                    {"name": "Image Needed", "color": "orange"},
+                    {"name": "Scheduled",    "color": "purple"},
+                    {"name": "Published",    "color": "pink"},
+                ]
+            }
+        },
+        "Target Keyword":           {"rich_text": {}},
+        "Search Intent":            {"rich_text": {}},
+        "Internal Link Target":     {"rich_text": {}},
+        "Publish Month": {
+            "select": {
+                "options": [
+                    {"name": "Month 1", "color": "blue"},
+                    {"name": "Month 2", "color": "green"},
+                    {"name": "Month 3", "color": "yellow"},
+                ]
+            }
+        },
+        "Suggested Publish Date":   {"date": {}},
+        "Author Name":              {"rich_text": {}},
+        "Reviewer Name":            {"rich_text": {}},
+        "Reviewer Credentials":     {"rich_text": {}},
+        "Review Date":              {"date": {}},
+        "Published URL":            {"url": {}},
+        "Cross-Client Link Suggestion": {"rich_text": {}},
+        "Word Count":               {"number": {}},
+        "Title Tag":                {"rich_text": {}},
+        "Meta Description":         {"rich_text": {}},
+        "H1":                       {"rich_text": {}},
+        "Primary Keyword":          {"rich_text": {}},
+        "Feedback":                 {"rich_text": {}},
+    }
+
+
 def _stage_color(stage: PipelineStage) -> str:
     colors = ["gray", "blue", "green", "yellow", "orange", "purple", "red", "pink"]
     stages = list(PipelineStage)

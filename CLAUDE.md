@@ -94,6 +94,7 @@ Each client has a master page under the workspace root with 9 linked databases (
 - **High-Fidelity Design** — Figma desktop/mobile URLs, client feedback
 - **Action Items** — tasks from meetings, assigned to Agency or Client, due dates, ClickUp task IDs
 - **Images** — AI-generated images (Replicate), batch type, category, page association, image URLs
+- **Blog Posts** — full blog lifecycle: idea → approved → draft → scheduled → published. One row per post. Auto-created by `make blog-ideas` if missing.
 
 ---
 
@@ -112,9 +113,12 @@ Manual entries take precedence over auto-generated ones. Never edit `clients.jso
 
 Each client entry contains:
 - `client_id`, `name`
-- All 9 Notion database IDs
-- `meeting_notes_entry_id`
-- `clickup_review_list_id`
+- All Notion database IDs (client_info, meeting_notes, brand_guidelines, sitemap, content, wireframes, hifi, action_items, images, care_plan, competitors, keywords, seo_metrics, gbp_posts, blog_posts)
+- `meeting_notes_entry_id`, `clickup_review_list_id`
+- `blog_voice_setup_page_id` — Notion page ID for the Blog Voice & Author Setup page (created by `make blog-setup`)
+- `vertical` — client industry vertical for cross-client blog link discovery (e.g. `speech_pathology`, `addiction_treatment`, `physical_therapy`). Optional but enables cross-client linking suggestions.
+- SEO fields: `gbp_location_id`, `gsc_site_url`, `ga4_property_id`, `search_atlas_project_id`
+- Webflow fields: `webflow_site_id`, `webflow_blog_collection_id` (auto-detected by blog-publish)
 
 ---
 
@@ -168,6 +172,17 @@ make competitor-research → SERP analysis → Competitors DB
   [Team reviews Competitors DB]
 make battle-plan      → SEO strategy from keywords + competitors → Notion
 make seo-baseline     → 90-day baseline report (GSC + GA4 + GBP + authority) → Notion + HTML
+```
+
+### Blog Pipeline (quarterly batch per client)
+```
+make blog-setup       → Create Blog Voice & Author Setup page in Notion (one-time per client)
+  [Team fills with client: author name/bio, writing samples, voice, audience, passion topics]
+make blog-ideas       → Synthesize Style Brief + generate 20 ideas → Blog Posts DB (Status: Idea)
+  [Team reviews, flips wanted ideas to Approved]
+make blog-write       → Write full posts for all Approved ideas (Status: Draft)
+  [Team reviews, selects imagery, sets Suggested Publish Date → Status: Scheduled]
+make blog-publish COMMIT=1  → Push Scheduled posts to Webflow Blog CMS (dry run without COMMIT=1)
 ```
 
 ### Monthly Recurring
@@ -269,6 +284,16 @@ make gbp-posts MONTH="May 2026"
 # Care plan (monthly)
 make care-plan              # Run PageSpeed + care plan report → Notion
 make care-plan-init         # Create Care Plan DB for existing client (one-time)
+
+# Blog pipeline (quarterly batch)
+make blog-setup             # Create Blog Voice & Author Setup page (one-time per client)
+make blog-ideas             # Generate 20 ideas → Blog Posts DB (Status: Idea)
+make blog-ideas FORCE=1     # Regenerate even if ideas exist
+make blog-write             # Write all Approved ideas into full posts (Status: Draft)
+make blog-write NOTES="warmer tone, fewer clinical terms"
+make blog-publish           # Dry run: show what would publish today
+make blog-publish COMMIT=1  # Push Scheduled posts to Webflow Blog CMS
+make blog-publish ALL=1 COMMIT=1  # Publish all Scheduled regardless of date
 
 # Visual exports
 make sitemap-visuals        # HTML + JSON sitemap visual
@@ -407,6 +432,67 @@ Every home page must include a "How to Get Started" section, positioned after Te
 
 ---
 
+## Blog Pipeline
+
+### Overview
+Blog posts are a separate content track from website copy — different voice, different standards, different approval flow. They target informational search queries that service pages can't rank for, support service pages via internal links, and are published directly to Webflow CMS.
+
+**Scripts:**
+- `scripts/blog_setup.py` — Creates Blog Voice & Author Setup page in Notion (one-time per client)
+- `scripts/blog_ideas.py` — Synthesizes Style Brief + generates 20 ideas → Blog Posts DB
+- `scripts/blog_write.py` — Writes full posts for all Approved ideas
+- `scripts/blog_publish.py` — Pushes Scheduled posts to Webflow Blog CMS collection
+
+### Blog Voice & Author Setup Page (one-time per client)
+`make blog-setup` creates a structured Notion page with 8 guided sections the team fills out with the client:
+1. Author Name & Credentials — full name + role (e.g. "Sarah Chen, M.S., CCC-SLP, Founder")
+2. Author Bio — 2–3 sentences in first person, used as author card on posts
+3. Writing Samples They Admire — 3–5 URLs or excerpts + what they like about each (most important section)
+4. Voice in 5 Words — specific adjectives (not "professional and engaging")
+5. Primary Audience — specific description of the reader and what brought them to Google
+6. What They Refuse to Sound Like — tones, phrases, styles that don't fit
+7. Passion Topics — what the author would write about if unpaid
+8. Stance on Clinical Language — use and define, avoid, or mix
+
+Section 9 (Style Brief) is left blank — Claude synthesizes it from sections 1–8 before the first `make blog-ideas` run. Team reviews and can edit the brief in Notion before writing begins.
+
+`make blog-ideas` gates on: setup page exists + sections 1, 4, 5, 7 are filled + section 9 is present (or generates it).
+
+### Blog Writing Standards
+
+**Blog voice vs. website voice:**
+- Website copy speaks as the practice ("We help families...") — tight, conversion-focused, no opinions
+- Blog posts speak as the individual clinician ("I've worked with hundreds of kids...") — first-person, point of view, can take a stance
+
+**Writing restrictions — enforced in every blog post prompt:**
+- No em dashes (—) — use comma, period, or restructure
+- No AI opener phrases: "In today's world," "It's worth noting," "Let's explore," "In conclusion," "At the end of the day"
+- No filler words: "delve," "navigate," "comprehensive," "foster," "holistic," "multifaceted," "groundbreaking," "robust," "leverage," "utilize"
+- No hedge-stacking: "It's important to note that research suggests that..."
+- Paragraphs: max 3 sentences each
+- Lead with something real — a question, observation, moment — never a definition
+- One clear opinion per post — blogs take a stance, website copy doesn't
+- ~900–1,100 words per post
+
+**Medical reviewer attribution — required on every post:**
+Healthcare blog content is YMYL. E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) is what makes posts rank. Every post ends with a "Medically reviewed by [Name], [Credentials]" attribution block. Reviewer info lives in Brand Guidelines DB (self-healed by `blog_write.py` if fields don't exist): `Blog Reviewer Name`, `Blog Reviewer Credentials`, `Blog Reviewer Bio`.
+
+**Cross-client linking — NEVER auto-include:**
+Agency manages multiple clients in the same verticals. The blog pipeline can detect published posts from sister clients and surface them as potential external links. These are flagged in the `Cross-Client Link Suggestion` field with a `⚠️ TEAM REVIEW REQUIRED` prefix — they never appear in the post body automatically. A team member must manually decide to include the link. Agency has lost a client over cross-linking without explicit approval.
+
+### Blog Posts DB Fields
+Status flow: `Idea` → `Approved` → `Draft` → `Under Review` → `Image Needed` → `Scheduled` → `Published`
+
+Key fields: Title, Status, Target Keyword, Search Intent, Internal Link Target, Publish Month (Month 1/2/3), Suggested Publish Date, Author Name, Reviewer Name, Reviewer Credentials, Review Date, Published URL, Cross-Client Link Suggestion, Word Count, Title Tag, Meta Description, H1, Primary Keyword, Feedback.
+
+### Blog Publishing to Webflow
+`make blog-publish` checks for `Scheduled` posts with `Suggested Publish Date` ≤ today and pushes to the Webflow Blog CMS collection. Default is dry run — use `COMMIT=1` to actually publish. Requires `webflow_site_id` in clients.json and `WEBFLOW_API_TOKEN` in `.env`. Blog CMS collection auto-detected by name if `webflow_blog_collection_id` not set.
+
+Webflow CMS field names expected (developer must match these in the template):
+`name`, `slug`, `post-body`, `post-summary`, `meta-title`, `meta-description`, `author-name`, `reviewer-name`, `reviewer-credentials`, `published-date`
+
+---
+
 ## Rex — Internal Team AI Agent
 
 Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any channel to get instant answers about client status, pipeline, and agency workflow. He can also create ClickUp tasks on request.
@@ -505,8 +591,10 @@ make care-plan                  # Run for all care plan clients
 
 - **Webflow master templates** — Developer building per-vertical templates (addiction, speech pathology, PT). Each cloned per client. Template determines page structure; content pushed via CMS API. Blocked on developer (out week of Apr 14, 2026).
 - **`make webflow-push`** — CMS content injection script. Reads Content DB → maps to Webflow CMS fields → pushes via API. Build after master templates are finalized and CMS schema is locked.
-- **Google OAuth re-run** — Current refresh token only covers GBP. Re-run `python3 scripts/google_auth.py` to get a token covering GBP + GSC + GA4 in one flow. Required before `make seo-baseline` works.
-- **SEO report validation** — `scripts/seo_report.py` is built but untested. Validate with first client that has GSC/GA4/GBP access granted.
+- **`make blog-publish`** — Built and ready but untested. Requires developer to create the Blog CMS collection in the Webflow template first. Webflow field names must match what's in `blog_publish.py → fields dict`.
+- **SEO report validation** — `scripts/seo_report.py` is built but untested. Validate with first client that has GSC/GA4/GBP access granted. Google OAuth refresh token now covers all three (re-run completed Apr 2026).
+- **Blog pipeline kickoff for Summit** — Run `make blog-setup CLIENT=summit_therapy` once developer is back and Webflow template is live. Fill setup page with client before generating ideas.
+- **`vertical` field for Summit** — Add `"vertical": "speech_pathology"` to Summit's clients.json entry to enable cross-client link discovery when other speech pathology clients are onboarded.
 - **Approval Handler agent** — Low priority. Rex handles team notifications; formal approval handler can wait.
 - **Hi-Fi Spec agent** — Not needed in template model. Designer works from content DB directly.
 
@@ -544,3 +632,7 @@ SLACK_SIGNING_SECRET       # Rex Slack signing secret
 - All agents must work for ANY client — never hardcode client-specific content in prompts
 - All Notion API calls use `notion._client.request()` directly (notion-client v3 high-level methods are broken)
 - When recommending external tools or APIs, search for current capabilities first — do not rely solely on training data for fast-moving tools
+- Blog posts use a different voice and different standards than website copy — website is tight and conversion-focused; blogs are first-person, opinionated, human. Never apply website copy rules to blog posts and vice versa.
+- Cross-client links in blog posts are NEVER auto-included. They surface as a suggestion field only. The team decides. Agency has lost a client over this.
+- Medical reviewer attribution is required on every blog post — it's an E-E-A-T signal, not optional boilerplate.
+- The `vertical` field in clients.json enables cross-client blog link discovery — always check if it's set before attempting cross-client lookups.
