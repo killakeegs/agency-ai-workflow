@@ -111,6 +111,8 @@ cfg = CLIENTS["wellwell"]
 
 Manual entries take precedence over auto-generated ones. Never edit `clients.json` by hand.
 
+**Merge conflict warning:** `clients.json` is auto-generated and committed to the repo. If two team members run `make onboard` at the same time on different machines, they will produce conflicting versions of this file. Rule: only one person runs `make onboard` per new client, and they commit + push the result immediately before anyone else pulls.
+
 Each client entry contains:
 - `client_id`, `name`
 - All Notion database IDs (client_info, meeting_notes, brand_guidelines, sitemap, content, wireframes, hifi, action_items, images, care_plan, competitors, keywords, seo_metrics, gbp_posts, blog_posts)

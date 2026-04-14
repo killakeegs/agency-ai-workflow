@@ -183,6 +183,12 @@ seo-activate:
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 
+check-env:
+	@$(PYTHON) scripts/setup/check_env.py
+
+check-env-seo:
+	@$(PYTHON) scripts/setup/check_env.py --service seo
+
 onboarding-form:
 	@$(PYTHON) scripts/onboarding/setup_onboarding_form.py
 
@@ -262,6 +268,10 @@ help:
 	@echo "  make seo-baseline         90-day baseline report → Notion + HTML"
 	@echo "  make seo-report           Previous month report → Notion + HTML"
 	@echo ""
+	@echo "  SETUP & VALIDATION"
+	@echo "  make check-env            Validate all .env variables (run when onboarding a new team member)"
+	@echo "  make check-env-seo        Check SEO-specific keys only"
+	@echo ""
 	@echo "  ONBOARDING"
 	@echo "  make onboarding-form      Create Onboarding Submissions DB in Notion (one-time)"
 	@echo "  make onboard              Process new form submissions → provision client"
@@ -284,7 +294,7 @@ help:
 	@echo "  make advance              Check Notion approval → run next stage"
 	@echo ""
 
-.PHONY: run transcript mood-board sitemap content wireframe \
+.PHONY: run transcript mood-board sitemap content wireframe check-env check-env-seo \
         social-posts linkedin-posts \
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-sitemap relume-export \
