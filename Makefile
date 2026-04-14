@@ -152,6 +152,10 @@ gbp-posts:
 	  $(if $(MONTH),--month "$(MONTH)",) \
 	  $(if $(NOTES),--notes "$(NOTES)",)
 
+gbp-reviews:
+	@$(PYTHON) scripts/seo/gbp_reviews.py --client $(CLIENT) \
+	  $(if $(DRY_RUN),--dry-run,)
+
 # ── Social media pipeline ──────────────────────────────────────────────────────
 
 social-posts:
@@ -265,6 +269,8 @@ help:
 	@echo "  make competitor-research  SERP analysis → Competitors DB"
 	@echo "  make gbp-posts            3 GBP post drafts → Notion"
 	@echo "  make gbp-posts MONTH=\"May 2026\""
+	@echo "  make gbp-reviews              Respond to unanswered GBP reviews (auto positive, flag negative)"
+	@echo "  make gbp-reviews DRY_RUN=1    Preview responses without posting"
 	@echo "  make seo-baseline         90-day baseline report → Notion + HTML"
 	@echo "  make seo-report           Previous month report → Notion + HTML"
 	@echo ""
@@ -294,7 +300,7 @@ help:
 	@echo "  make advance              Check Notion approval → run next stage"
 	@echo ""
 
-.PHONY: run transcript mood-board sitemap content wireframe check-env check-env-seo \
+.PHONY: run transcript mood-board sitemap content wireframe check-env check-env-seo gbp-reviews \
         social-posts linkedin-posts \
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-sitemap relume-export \

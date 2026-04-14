@@ -26,9 +26,32 @@ _MANUAL: dict[str, dict] = {
     # "new_client": {
     #     "client_id":   "new_client",
     #     "name":        "Client Name",
-    #     # ── Services active for this client ───────────────────────────────────
-    #     # Options: "website_build", "care_plan", "seo", "social_media", "paid_ads"
-    #     "services": ["website_build", "care_plan"],
+    #
+    #     # ── Active services ───────────────────────────────────────────────────
+    #     # List only what this client is paying for. Scripts + Rex read this
+    #     # to know what pipelines apply. Rex answers "what services is X on?"
+    #     #
+    #     # Available service keys:
+    #     #   website_build     — full pipeline: sitemap → content → images → Webflow
+    #     #   care_plan         — monthly PageSpeed + ADA report
+    #     #   seo               — keyword research, competitor analysis, battle plan
+    #     #   gbp_management    — GBP posts + review responses
+    #     #   blog              — blog ideas → write → publish
+    #     #   social_media      — Instagram/Facebook + LinkedIn posts
+    #     #   newsletter        — monthly email newsletter (future)
+    #     #   paid_ads          — paid ads management (future)
+    #     "services": {
+    #         "website_build":   False,
+    #         "care_plan":       False,
+    #         "seo":             False,
+    #         "gbp_management":  False,
+    #         "blog":            False,
+    #         "blog_posts_per_month": 0,   # 1–12; ignored if blog is False
+    #         "social_media":    False,
+    #         "newsletter":      False,
+    #         "paid_ads":        False,
+    #     },
+    #
     #     # ── Notion DB IDs ─────────────────────────────────────────────────────
     #     "client_info_db_id":       "",
     #     "meeting_notes_db_id":     "",
@@ -46,6 +69,11 @@ _MANUAL: dict[str, dict] = {
     #     "keywords_db_id":          "",
     #     "seo_metrics_db_id":       "",
     #     "gbp_posts_db_id":         "",  # auto-created on first make gbp-posts run
+    #     # ── Blog (if blog in services) ────────────────────────────────────────
+    #     "blog_posts_db_id":        "",  # auto-created on first make blog-ideas run
+    #     "blog_voice_setup_page_id":"",  # set by make blog-setup
+    #     # ── Social (if social_media in services) ──────────────────────────────
+    #     "social_posts_db_id":      "",  # auto-created on first make social-posts run
     #     # ── SEO Reporting (required for seo-report) ───────────────────────────
     #     "gbp_location_id":         "",  # GBP location ID (e.g. "locations/1234567890")
     #     "gsc_site_url":            "",  # exact URL in Search Console (e.g. "https://example.com/")
@@ -54,6 +82,8 @@ _MANUAL: dict[str, dict] = {
     #     # ── Pipeline ──────────────────────────────────────────────────────────
     #     "meeting_notes_entry_id":  "",
     #     "clickup_review_list_id":  "",
+    #     # ── Cross-client linking (blog) ───────────────────────────────────────
+    #     "vertical":                "",  # e.g. "speech_pathology", "addiction_treatment"
     # },
 }
 

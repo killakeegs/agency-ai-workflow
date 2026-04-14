@@ -22,6 +22,7 @@ def _select(prop: dict) -> str:
 
 NOTION_TOOL_NAMES = {
     "list_clients",
+    "get_client_services",
     "get_pipeline_status",
     "get_sitemap",
     "get_page_content",
@@ -37,13 +38,54 @@ async def execute_notion_tool(name: str, tool_input: dict, clients: dict, notion
     """Dispatch a Notion tool call and return a formatted result string."""
 
     if name == "list_clients":
-        lines = [f"{key} — {cfg.get('name', key)}" for key, cfg in clients.items()]
+        lines = []
+        for key, cfg in clients.items():
+            services = cfg.get("services", {})
+            if isinstance(services, dict):
+                active = [k for k, v in services.items()
+                          if v is True or (k == "blog_posts_per_month" and isinstance(v, int) and v > 0)]
+                svc_str = ", ".join(active) if active else "no services configured"
+            elif isinstance(services, list):
+                svc_str = ", ".join(services) if services else "no services configured"
+            else:
+                svc_str = "no services configured"
+            lines.append(f"{key} — {cfg.get('name', key)} | Services: {svc_str}")
         return "\n".join(lines)
 
     client_key = tool_input.get("client_key", "")
     if client_key not in clients:
         return f"Unknown client '{client_key}'. Available: {', '.join(clients)}"
     cfg = clients[client_key]
+
+    if name == "get_client_services":
+        services = cfg.get("services", {})
+        name_str = cfg.get("name", client_key)
+        if not services:
+            return f"{name_str}: no services configured yet."
+        if isinstance(services, list):
+            return f"{name_str} services: {', '.join(services)}"
+        lines = [f"Services — {name_str}:"]
+        service_labels = {
+            "website_build":        "Website Build",
+            "care_plan":            "Care Plan ($199/mo — PageSpeed + ADA)",
+            "seo":                  "SEO Retainer",
+            "gbp_management":       "GBP Management (posts + review responses)",
+            "blog":                 "Blog Pipeline",
+            "blog_posts_per_month": "Blog posts/month",
+            "social_media":         "Social Media (IG/FB + LinkedIn)",
+            "newsletter":           "Monthly Newsletter",
+            "paid_ads":             "Paid Ads Management",
+        }
+        for key, val in services.items():
+            label = service_labels.get(key, key)
+            if key == "blog_posts_per_month":
+                if isinstance(val, int) and val > 0:
+                    lines.append(f"  • {label}: {val}")
+            elif val is True:
+                lines.append(f"  • {label}: active")
+            elif val is False:
+                lines.append(f"  – {label}: not active")
+        return "\n".join(lines)
 
     if name == "get_pipeline_status":
         entries = await notion.query_database(cfg["client_info_db_id"])

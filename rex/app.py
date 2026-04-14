@@ -213,6 +213,17 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
+        "name": "get_client_services",
+        "description": "Get the active services for a client — what they're paying for (care plan, SEO, blog, social, etc.) and how many blog posts per month.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
         "name": "get_pipeline_status",
         "description": "Get the current pipeline stage and status for a client from Notion.",
         "input_schema": {

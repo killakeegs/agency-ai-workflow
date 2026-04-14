@@ -410,6 +410,7 @@ def _build_ideas_prompt(
     existing_titles: list[str],
     cross_client: list[dict],
     vertical: str,
+    idea_count: int = 20,
 ) -> str:
     # Build the 3-month date windows
     today = date.today()
@@ -441,7 +442,7 @@ PUBLISHED POSTS FROM SISTER CLIENTS IN THE SAME VERTICAL ({vertical}):
 {lines}
 """
 
-    return f"""Generate 20 blog post ideas for {client_name} — spread across 3 months.
+    return f"""Generate {idea_count} blog post ideas for {client_name} — spread across 3 months.
 
 STYLE BRIEF (defines the writing voice for all posts):
 {style_brief}
@@ -584,11 +585,20 @@ async def run(client_key: str, force: bool = False) -> None:
     else:
         print("  (no sister clients in same vertical, or none with published posts)")
 
+    # Determine idea count from services config (3 months × posts/month, capped at 36)
+    services = cfg.get("services", {})
+    posts_per_month = 4  # default
+    if isinstance(services, dict):
+        posts_per_month = int(services.get("blog_posts_per_month", 4) or 4)
+    posts_per_month = max(1, min(12, posts_per_month))  # clamp 1–12
+    idea_count = min(posts_per_month * 3, 36)  # 3-month batch, max 36
+
     # Generate ideas
-    print("\nGenerating 20 blog ideas with Claude...")
+    print(f"\nGenerating {idea_count} blog ideas ({posts_per_month}/month × 3 months) with Claude...")
     prompt = _build_ideas_prompt(
         client_name, style_brief, keywords, sitemap_pages,
         existing_titles, cross_client, vertical,
+        idea_count=idea_count,
     )
 
     response = ai_client.messages.create(
