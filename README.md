@@ -175,7 +175,7 @@ Content Draft     → team reviews → client approves → Stock Photos / Images
 
 | Command | What it does |
 |---|---|
-| `make gbp-posts` | 3 GBP post drafts → Notion GBP Posts DB |
+| `make gbp-posts` | 8 GBP post drafts → Notion GBP Posts DB |
 | `make seo-report` | Monthly performance report → Notion + HTML |
 | `make care-plan` | PageSpeed + ADA report → Notion Care Plan DB |
 
@@ -187,6 +187,13 @@ Content Draft     → team reviews → client approves → Stock Photos / Images
 | `make blog-ideas` | Generate 20 ideas → Blog Posts DB (Status: Idea) |
 | `make blog-write` | Write full posts for Approved ideas (Status: Draft) |
 | `make blog-publish COMMIT=1` | Push Scheduled posts → Webflow Blog CMS collection |
+
+### Social Media Pipeline
+
+| Command | What it does |
+|---|---|
+| `make social-posts` | 8 Instagram/Facebook drafts → Notion Social Posts DB |
+| `make linkedin-posts` | 2 LinkedIn thought leadership drafts → Notion Social Posts DB |
 
 ---
 
