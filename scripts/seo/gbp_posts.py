@@ -352,13 +352,18 @@ def _build_prompt(
     notes_block = f"\nRevision notes from team: {notes}\n" if notes else ""
 
     return f"""\
-Generate 3 Google Business Profile post drafts for {month}.
+Generate 8 Google Business Profile post drafts for {month}.
 
 {brand_block}{notes_block}
-One post per page below. Assign each post a type:
-- Post 1 → Service (focus on what the service is and who it helps)
+One post per page below. Assign post types in this order:
+- Post 1 → Service (what the service is, who it helps)
 - Post 2 → Educational (teach something useful from the page)
-- Post 3 → Community (connect the service to local life or a seasonal moment)
+- Post 3 → Service
+- Post 4 → Community (connect the service to local life or a seasonal moment)
+- Post 5 → Service
+- Post 6 → Educational
+- Post 7 → Community
+- Post 8 → Service or Offer (highlight value, seasonal offer, or awareness month tie-in)
 
 SOURCE PAGES:
 {pages_text}
@@ -500,8 +505,8 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print("\n⚠ No content pages found. Run 'make content' first to generate page copy.")
         sys.exit(1)
 
-    # 3. Pick 3 pages
-    selected = _pick_pages(all_pages, count=3)
+    # 3. Pick 8 pages
+    selected = _pick_pages(all_pages, count=8)
     print(f"\nSelected pages for this month's posts:")
     for p in selected:
         print(f"  • {p['page_name']} ({p.get('primary_keyword', 'no keyword')})")
@@ -516,7 +521,7 @@ async def run(client_key: str, month: str, notes: str) -> None:
 
     response = client.messages.create(
         model=settings.anthropic_model,
-        max_tokens=4000,
+        max_tokens=6000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )

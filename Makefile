@@ -152,6 +152,18 @@ gbp-posts:
 	  $(if $(MONTH),--month "$(MONTH)",) \
 	  $(if $(NOTES),--notes "$(NOTES)",)
 
+# ── Social media pipeline ──────────────────────────────────────────────────────
+
+social-posts:
+	@$(PYTHON) scripts/social/social_posts.py --client $(CLIENT) \
+	  $(if $(MONTH),--month "$(MONTH)",) \
+	  $(if $(NOTES),--notes "$(NOTES)",)
+
+linkedin-posts:
+	@$(PYTHON) scripts/social/linkedin_posts.py --client $(CLIENT) \
+	  $(if $(MONTH),--month "$(MONTH)",) \
+	  $(if $(NOTES),--notes "$(NOTES)",)
+
 seo-baseline:
 	@$(PYTHON) scripts/seo/seo_report.py --client $(CLIENT) --baseline \
 	  $(if $(OPEN),--open,)
@@ -255,6 +267,13 @@ help:
 	@echo "  make onboard              Process new form submissions → provision client"
 	@echo "  make onboard-list         List pending submissions"
 	@echo ""
+	@echo "  SOCIAL MEDIA"
+	@echo "  make social-posts              8 Instagram/Facebook drafts → Notion Social Posts DB"
+	@echo "  make social-posts NOTES=\"...\"  Re-run with feedback"
+	@echo "  make social-posts MONTH=\"May 2026\""
+	@echo "  make linkedin-posts            2 LinkedIn thought leadership drafts → Notion"
+	@echo "  make linkedin-posts NOTES=\"...\"  Re-run with feedback"
+	@echo ""
 	@echo "  CARE PLAN"
 	@echo "  make care-plan-init       Create Care Plan DB for existing client (one-time)"
 	@echo "  make care-plan            Run monthly PageSpeed report → Notion"
@@ -266,6 +285,7 @@ help:
 	@echo ""
 
 .PHONY: run transcript mood-board sitemap content wireframe \
+        social-posts linkedin-posts \
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-sitemap relume-export \
         onboarding-form onboard onboard-list advance mark-pending pipeline-setup approve-sitemap \
