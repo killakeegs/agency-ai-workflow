@@ -321,6 +321,7 @@ def _build_prompt(
     pages: list[dict],
     month: str,
     notes: str,
+    post_count: int = 8,
 ) -> str:
     business = brand.get("business_name", "the business")
     website  = brand.get("website_url", "").rstrip("/")
@@ -351,19 +352,20 @@ def _build_prompt(
 
     notes_block = f"\nRevision notes from team: {notes}\n" if notes else ""
 
+    distribution_lines = []
+    types_cycle = ["Service", "Educational", "Service", "Community",
+                   "Service", "Educational", "Community", "Service or Offer"]
+    for i in range(1, post_count + 1):
+        ptype = types_cycle[(i - 1) % len(types_cycle)]
+        distribution_lines.append(f"- Post {i} → {ptype}")
+    distribution = "\n".join(distribution_lines)
+
     return f"""\
-Generate 8 Google Business Profile post drafts for {month}.
+Generate {post_count} Google Business Profile post drafts for {month}.
 
 {brand_block}{notes_block}
 One post per page below. Assign post types in this order:
-- Post 1 → Service (what the service is, who it helps)
-- Post 2 → Educational (teach something useful from the page)
-- Post 3 → Service
-- Post 4 → Community (connect the service to local life or a seasonal moment)
-- Post 5 → Service
-- Post 6 → Educational
-- Post 7 → Community
-- Post 8 → Service or Offer (highlight value, seasonal offer, or awareness month tie-in)
+{distribution}
 
 SOURCE PAGES:
 {pages_text}
@@ -505,19 +507,23 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print("\n⚠ No content pages found. Run 'make content' first to generate page copy.")
         sys.exit(1)
 
-    # 3. Pick 8 pages
-    selected = _pick_pages(all_pages, count=8)
-    print(f"\nSelected pages for this month's posts:")
+    # 3. Pick pages based on configured count
+    services   = cfg.get("services", {})
+    gbp_count  = int(services.get("gbp_posts_per_month", 8) or 8)
+    gbp_count  = max(1, min(16, gbp_count))  # clamp 1–16
+
+    selected = _pick_pages(all_pages, count=gbp_count)
+    print(f"\nSelected pages for this month's {gbp_count} posts:")
     for p in selected:
         print(f"  • {p['page_name']} ({p.get('primary_keyword', 'no keyword')})")
 
     # 4. Generate posts
-    print("\nGenerating posts with Claude...")
+    print(f"\nGenerating {gbp_count} posts with Claude...")
     if notes:
         print(f"  Revision notes: {notes}")
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt = _build_prompt(brand, selected, month, notes)
+    prompt = _build_prompt(brand, selected, month, notes, post_count=gbp_count)
 
     response = client.messages.create(
         model=settings.anthropic_model,

@@ -7,9 +7,12 @@
             "care_plan": true,
             "seo": false,
             "gbp_management": false,
+            "gbp_posts_per_month": 8,
             "blog": false,
             "blog_posts_per_month": 0,
             "social_media": false,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
             "newsletter": false,
             "paid_ads": false
         },

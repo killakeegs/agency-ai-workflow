@@ -41,15 +41,18 @@ _MANUAL: dict[str, dict] = {
     #     #   newsletter        — monthly email newsletter (future)
     #     #   paid_ads          — paid ads management (future)
     #     "services": {
-    #         "website_build":   False,
-    #         "care_plan":       False,
-    #         "seo":             False,
-    #         "gbp_management":  False,
-    #         "blog":            False,
-    #         "blog_posts_per_month": 0,   # 1–12; ignored if blog is False
-    #         "social_media":    False,
-    #         "newsletter":      False,
-    #         "paid_ads":        False,
+    #         "website_build":          False,
+    #         "care_plan":              False,
+    #         "seo":                    False,
+    #         "gbp_management":         False,
+    #         "gbp_posts_per_month":    8,    # how many GBP posts to generate each month
+    #         "blog":                   False,
+    #         "blog_posts_per_month":   0,    # contracted posts/month (1–12); drives idea batch size
+    #         "social_media":           False,
+    #         "social_posts_per_month": 8,    # IG/FB posts per month
+    #         "linkedin_posts_per_month": 2,  # LinkedIn posts per month
+    #         "newsletter":             False,
+    #         "paid_ads":               False,
     #     },
     #
     #     # ── Notion DB IDs ─────────────────────────────────────────────────────

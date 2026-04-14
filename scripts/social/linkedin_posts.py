@@ -255,6 +255,7 @@ def _build_prompt(
     blog_posts: list[dict],
     month: str,
     notes: str,
+    post_count: int = 2,
 ) -> str:
     business    = brand.get("business_name", "the practice")
     author      = brand.get("author_name", "the founder")
@@ -279,13 +280,21 @@ def _build_prompt(
 
     notes_block = f"\nRevision notes from team: {notes}\n" if notes else ""
 
+    # Build post requirements based on count
+    post_reqs = []
+    for i in range(1, post_count + 1):
+        if i == 1:
+            post_reqs.append("- Post 1: tied directly to an upcoming blog post — tease the core insight, link to the post")
+        else:
+            post_reqs.append(f"- Post {i}: original thought leadership — a clinical observation, professional opinion, or honest reflection from practice")
+    post_requirements = "\n".join(post_reqs)
+
     return f"""\
-Generate 2 LinkedIn post drafts for {month}.
+Generate {post_count} LinkedIn post draft{"s" if post_count != 1 else ""} for {month}.
 
 {brand_block}{notes_block}
 POST REQUIREMENTS:
-- Post 1: tied directly to an upcoming blog post — tease the core insight, link to the post
-- Post 2: original thought leadership — a clinical observation, professional opinion, or honest reflection from practice. Not tied to a specific post.
+{post_requirements}
 
 {blog_block}
 
@@ -385,12 +394,16 @@ async def run(client_key: str, month: str, notes: str) -> None:
     blog_posts = await _load_upcoming_blog_posts(notion, cfg)
     print(f"  Found {len(blog_posts)} upcoming blog posts")
 
-    print("\nGenerating 2 LinkedIn posts with Claude...")
+    services       = cfg.get("services", {})
+    linkedin_count = int(services.get("linkedin_posts_per_month", 2) or 2)
+    linkedin_count = max(1, min(8, linkedin_count))  # clamp 1–8
+
+    print(f"\nGenerating {linkedin_count} LinkedIn post{'s' if linkedin_count != 1 else ''} with Claude...")
     if notes:
         print(f"  Notes: {notes}")
 
     ai_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt    = _build_prompt(brand, blog_posts, month, notes)
+    prompt    = _build_prompt(brand, blog_posts, month, notes, post_count=linkedin_count)
 
     response = ai_client.messages.create(
         model=settings.anthropic_model,
@@ -412,7 +425,7 @@ async def run(client_key: str, month: str, notes: str) -> None:
     print("Writing to Notion Social Posts DB...")
     await _write_posts(notion, db_id, posts, month)
 
-    print(f"\n✓ Done. {len(posts)} LinkedIn drafts in Notion → Social Posts DB.")
+    print(f"\n✓ Done. {len(posts)} of {linkedin_count} LinkedIn drafts in Notion → Social Posts DB.")
     print("  Filter by Platform = LinkedIn to find them.")
     print("  Next: founder reviews, attaches any image/banner → flip Status to Scheduled.")
 

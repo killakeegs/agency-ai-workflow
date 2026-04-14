@@ -321,6 +321,7 @@ def _build_prompt(
     content_pages: list[dict],
     month: str,
     notes: str,
+    post_count: int = 8,
 ) -> str:
     business = brand.get("business_name", "the practice")
     voice    = brand.get("voice", "") or brand.get("tone_desc", "")
@@ -354,16 +355,25 @@ def _build_prompt(
 
     notes_block = f"\nRevision notes from team: {notes}\n" if notes else ""
 
+    # Build proportional distribution based on post_count
+    blog_count      = max(1, round(post_count * 0.25))
+    edu_count       = max(1, round(post_count * 0.25))
+    service_count   = max(1, round(post_count * 0.25))
+    seasonal_count  = max(1, post_count - blog_count - edu_count - service_count)
+    dist_block = (
+        f"POST TYPE DISTRIBUTION (total {post_count} posts):\n"
+        f"- {blog_count} Blog Tie-In: tease upcoming blog posts, drive curiosity\n"
+        f"- {edu_count} Educational: teach one useful thing from a service page (tip, myth-bust, FAQ)\n"
+        f"- {service_count} Service: highlight a specific service and who it helps, with a soft CTA\n"
+        f"- {seasonal_count} Seasonal/Community: tie to {month} (awareness month, local school calendar, season)\n"
+        "Mix the types throughout — don't group all of one type together."
+    )
+
     return f"""\
-Generate 8 Instagram/Facebook social post drafts for {month}.
+Generate {post_count} Instagram/Facebook social post drafts for {month}.
 
 {brand_block}{notes_block}
-POST TYPE DISTRIBUTION:
-- Posts 1-2: Blog Tie-In — tease upcoming blog posts, drive curiosity (don't spoil the full post)
-- Posts 3-4: Educational — teach one useful thing from a service page (tip, myth-bust, FAQ)
-- Posts 5-6: Service — highlight a specific service and who it helps, with a soft CTA
-- Post 7: Seasonal/Community — tie to {month} (awareness month, local school calendar, season)
-- Post 8: Educational or Blog Tie-In — your pick based on what fits best
+{dist_block}
 
 {blog_block}{page_block}
 
@@ -471,12 +481,16 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print("  Run 'make content' to generate page copy, and 'make blog-ideas' to create blog posts.")
         sys.exit(1)
 
-    print("\nGenerating 8 social posts with Claude...")
+    services      = cfg.get("services", {})
+    social_count  = int(services.get("social_posts_per_month", 8) or 8)
+    social_count  = max(1, min(20, social_count))  # clamp 1–20
+
+    print(f"\nGenerating {social_count} social posts with Claude...")
     if notes:
         print(f"  Notes: {notes}")
 
     ai_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt    = _build_prompt(brand, blog_posts, content_pages, month, notes)
+    prompt    = _build_prompt(brand, blog_posts, content_pages, month, notes, post_count=social_count)
 
     response = ai_client.messages.create(
         model=settings.anthropic_model,
@@ -498,7 +512,7 @@ async def run(client_key: str, month: str, notes: str) -> None:
     print("Writing to Notion Social Posts DB...")
     await _write_posts(notion, db_id, posts, month)
 
-    print(f"\n✓ Done. {len(posts)} Instagram/Facebook drafts in Notion → Social Posts DB.")
+    print(f"\n✓ Done. {len(posts)} of {social_count} Instagram/Facebook drafts in Notion → Social Posts DB.")
     print("  Next: team attaches creatives → flip Status to Scheduled.")
 
 
