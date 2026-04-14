@@ -47,3 +47,20 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Generated output (reports, exports, downloaded images)
+output/
+
+# Playwright MCP session artifacts
+.playwright-mcp/
+
+# Google OAuth token (written by scripts/setup/google_auth.py)
+google_token.json
+token.json
+
+# Loose screenshots and images in project root
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp

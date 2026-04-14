@@ -12,10 +12,14 @@ Deploy to Railway:
      CLICKUP_WORKSPACE_ID
   3. Railway auto-runs: uvicorn rex.app:api --host 0.0.0.0 --port $PORT
   4. Update Slack Event Subscriptions URL to: https://<your-railway-url>/slack/events
+
+Tool modules:
+  rex/tools/notion_tools.py   — Notion data lookups (pipeline, sitemap, content, SEO)
+  rex/tools/clickup_tools.py  — ClickUp workspace, members, task creation
+  rex/tools/pipeline_tools.py — Background stage runner (keyword research, GBP posts, etc.)
 """
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import sys
@@ -25,13 +29,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-import httpx
 from fastapi import FastAPI, Request
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
 
 from config.clients import CLIENTS
 from src.integrations.notion import NotionClient
+from rex.tools import (
+    execute_notion_tool, NOTION_TOOL_NAMES,
+    execute_clickup_tool, CLICKUP_TOOL_NAMES,
+    execute_pipeline_tool, PIPELINE_TOOL_NAMES,
+    STAGE_COMMANDS, STAGE_LABELS,
+)
 
 
 # ── Initialize clients (read directly from os.environ — no pydantic Settings) ─
@@ -43,18 +52,8 @@ slack_app = AsyncApp(
 claude = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"].strip())
 notion = NotionClient(os.environ["NOTION_API_KEY"].strip())
 
-
-# ── Notion property helpers ───────────────────────────────────────────────────
-
-def _text(prop: dict) -> str:
-    return "".join(p.get("text", {}).get("content", "") for p in prop.get("rich_text", []))
-
-def _title(prop: dict) -> str:
-    return "".join(p.get("text", {}).get("content", "") for p in prop.get("title", []))
-
-def _select(prop: dict) -> str:
-    sel = prop.get("select")
-    return sel.get("name", "") if sel else ""
+# Current event context — set before each tool loop so background tasks can post back
+_event_context: dict = {}
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -211,11 +210,7 @@ TOOLS = [
     {
         "name": "list_clients",
         "description": "List all agency clients with their names and client keys. Use this to find the right client_key before calling other tools.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "get_pipeline_status",
@@ -223,10 +218,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_key": {
-                    "type": "string",
-                    "description": "The client identifier, e.g. 'summit_therapy'",
-                },
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
             },
             "required": ["client_key"],
         },
@@ -237,10 +229,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_key": {
-                    "type": "string",
-                    "description": "The client identifier, e.g. 'summit_therapy'",
-                },
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
             },
             "required": ["client_key"],
         },
@@ -251,14 +240,8 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_key": {
-                    "type": "string",
-                    "description": "The client identifier, e.g. 'summit_therapy'",
-                },
-                "page_name": {
-                    "type": "string",
-                    "description": "Optional: filter to a specific page, e.g. 'Home', 'About Us'",
-                },
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "page_name": {"type": "string", "description": "Optional: filter to a specific page, e.g. 'Home', 'About Us'"},
             },
             "required": ["client_key"],
         },
@@ -269,14 +252,8 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_key": {
-                    "type": "string",
-                    "description": "The client identifier, e.g. 'summit_therapy'",
-                },
-                "assignee": {
-                    "type": "string",
-                    "description": "Optional: 'Agency' or 'Client' to filter by assignee",
-                },
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "assignee": {"type": "string", "description": "Optional: 'Agency' or 'Client' to filter by assignee"},
             },
             "required": ["client_key"],
         },
@@ -316,10 +293,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_key": {
-                    "type": "string",
-                    "description": "The client identifier, e.g. 'summit_therapy'",
-                },
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
             },
             "required": ["client_key"],
         },
@@ -383,14 +357,8 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "include_closed": {
-                    "type": "boolean",
-                    "description": "Whether to include completed/closed tasks. Default false.",
-                },
-                "overdue_only": {
-                    "type": "boolean",
-                    "description": "If true, only return tasks past their due date.",
-                },
+                "include_closed": {"type": "boolean", "description": "Whether to include completed/closed tasks. Default false."},
+                "overdue_only": {"type": "boolean", "description": "If true, only return tasks past their due date."},
             },
             "required": [],
         },
@@ -398,503 +366,20 @@ TOOLS = [
 ]
 
 
-# ── Background stage runner ───────────────────────────────────────────────────
-
-PROJECT_ROOT = Path(__file__).parent.parent
-
-# Stage → command template. {client} replaced at runtime.
-STAGE_COMMANDS: dict[str, list[str]] = {
-    "keyword_research":   ["python3", "scripts/keyword_research.py", "--client", "{client}", "--yes"],
-    "competitor_research":["python3", "scripts/competitor_research.py", "--client", "{client}", "--enrich-only"],
-    "battle_plan":        ["python3", "scripts/battle_plan.py", "--client", "{client}"],
-    "gbp_posts":          ["python3", "scripts/gbp_posts.py", "--client", "{client}"],
-    "care_plan":          ["python3", "scripts/care_plan_report.py", "--client", "{client}"],
-}
-
-# Human-readable stage names for messages
-STAGE_LABELS: dict[str, str] = {
-    "keyword_research":   "Keyword Research",
-    "competitor_research":"Competitor Enrichment",
-    "battle_plan":        "Battle Plan",
-    "gbp_posts":          "GBP Posts",
-    "care_plan":          "Care Plan Report",
-}
-
-# Current event context — set before each tool loop so background tasks can post back
-_event_context: dict = {}
-
-
-async def _run_stage_background(
-    channel: str,
-    thread_ts: str | None,
-    client_key: str,
-    stage: str,
-    notes: str,
-) -> None:
-    """Run a pipeline stage subprocess and post the result back to Slack."""
-    label = STAGE_LABELS.get(stage, stage)
-    client_name = CLIENTS.get(client_key, {}).get("name", client_key)
-
-    cmd = [c.replace("{client}", client_key) for c in STAGE_COMMANDS[stage]]
-    if notes and "--notes" not in cmd:
-        cmd += ["--notes", notes]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(PROJECT_ROOT),
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-
-        if proc.returncode == 0:
-            msg = f"✓ *{label}* for *{client_name}* completed. Check Notion for results."
-        else:
-            err = stderr.decode(errors="replace")[-600:]
-            msg = f"✗ *{label}* for *{client_name}* failed:\n```{err}```"
-    except asyncio.TimeoutError:
-        msg = f"✗ *{label}* for *{client_name}* timed out after 10 minutes."
-    except Exception as e:
-        msg = f"✗ *{label}* for *{client_name}* error: {e}"
-
-    post_kwargs: dict = {"channel": channel, "text": msg}
-    if thread_ts:
-        post_kwargs["thread_ts"] = thread_ts
-    try:
-        await slack_app.client.chat_postMessage(**post_kwargs)
-    except Exception:
-        pass  # best-effort
-
-
-# ── Tool execution ────────────────────────────────────────────────────────────
+# ── Tool dispatch ─────────────────────────────────────────────────────────────
 
 async def _execute_tool(name: str, tool_input: dict) -> str:
     try:
-        if name == "list_clients":
-            lines = [f"{key} — {cfg.get('name', key)}" for key, cfg in CLIENTS.items()]
-            return "\n".join(lines)
-
-        elif name == "get_pipeline_status":
-            client_key = tool_input["client_key"]
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            entries = await notion.query_database(cfg["client_info_db_id"])
-            if not entries:
-                return "No client info found in Notion."
-            pp = entries[0]["properties"]
-            stage = _select(pp.get("Pipeline Stage", {}))
-            status = _select(pp.get("Stage Status", {}))
-            notes = _text(pp.get("Revision Notes", {}))
-            return (
-                f"Client: {cfg.get('name', client_key)}\n"
-                f"Stage: {stage or 'Not set'}\n"
-                f"Status: {status or 'Not set'}\n"
-                f"Notes: {notes or 'None'}"
+        if name in NOTION_TOOL_NAMES:
+            return await execute_notion_tool(name, tool_input, CLIENTS, notion)
+        elif name in CLICKUP_TOOL_NAMES:
+            return await execute_clickup_tool(name, tool_input)
+        elif name in PIPELINE_TOOL_NAMES:
+            return await execute_pipeline_tool(
+                name, tool_input, CLIENTS, _event_context, slack_app.client
             )
-
-        elif name == "get_sitemap":
-            client_key = tool_input["client_key"]
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            entries = await notion.query_database(
-                cfg["sitemap_db_id"],
-                sorts=[{"property": "Order", "direction": "ascending"}],
-            )
-            if not entries:
-                return "No sitemap pages found."
-            lines = [f"Sitemap: {cfg.get('name', client_key)} ({len(entries)} pages)\n"]
-            for e in entries:
-                pp = e["properties"]
-                title = (_title(pp.get("Page Title", {}))
-                         or _title(pp.get("Name", {}))
-                         or "Untitled")
-                parent = _text(pp.get("Parent Page", {}))
-                slug = _text(pp.get("Slug", {}))
-                page_type = _select(pp.get("Page Type", {}))
-                raw_sections = _text(pp.get("Key Sections", {}))
-                sections = ", ".join(
-                    l.strip().lstrip("•–- ").strip()
-                    for l in raw_sections.split("\n") if l.strip()
-                )
-                parent_str = f" › {parent}" if parent else ""
-                type_str = f" [{page_type}]" if page_type else ""
-                sec_str = f"\n    {sections}" if sections else ""
-                lines.append(f"• {title}{parent_str}{type_str} /{slug}{sec_str}")
-            return "\n".join(lines)
-
-        elif name == "get_page_content":
-            client_key = tool_input["client_key"]
-            page_filter = tool_input.get("page_name", "").strip().lower()
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            entries = await notion.query_database(cfg["content_db_id"])
-            results = []
-            for e in entries:
-                pp = e["properties"]
-                page_name = (
-                    _title(pp.get("Page Name", {}))
-                    or _title(pp.get("Name", {}))
-                )
-                if page_filter and page_filter not in page_name.lower():
-                    continue
-                title_tag = _text(pp.get("Title Tag", {}))
-                meta = _text(pp.get("Meta Description", {}))
-                h1 = _text(pp.get("H1", {}))
-                body = _text(pp.get("Body Copy", {}))
-                body_preview = body[:400] + ("..." if len(body) > 400 else "")
-                results.append(
-                    f"PAGE: {page_name}\n"
-                    f"  Title tag: {title_tag}\n"
-                    f"  Meta: {meta}\n"
-                    f"  H1: {h1}\n"
-                    f"  Body: {body_preview}"
-                )
-            if not results:
-                msg = f"No content found"
-                if page_filter:
-                    msg += f" for page matching '{page_filter}'"
-                return msg + "."
-            return "\n\n".join(results[:5])  # cap at 5 pages to keep response manageable
-
-        elif name == "get_action_items":
-            client_key = tool_input["client_key"]
-            assignee = tool_input.get("assignee", "").strip()
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            filter_payload = None
-            if assignee:
-                filter_payload = {
-                    "property": "Assigned To",
-                    "select": {"equals": assignee},
-                }
-            entries = await notion.query_database(
-                cfg["action_items_db_id"],
-                filter_payload=filter_payload,
-            )
-            if not entries:
-                return f"No action items found{' for ' + assignee if assignee else ''}."
-            lines = []
-            for e in entries:
-                pp = e["properties"]
-                task = _title(pp.get("Task", {})) or _title(pp.get("Name", {}))
-                assigned = _select(pp.get("Assigned To", {}))
-                status_val = _select(pp.get("Status", {}))
-                due_obj = pp.get("Due Date", {}).get("date") or {}
-                due = due_obj.get("start", "no due date")
-                lines.append(f"• {task} [{assigned}] — {status_val} (due: {due})")
-            return "\n".join(lines)
-
-        elif name == "get_care_plan_status":
-            client_key = tool_input["client_key"]
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            db_id = cfg.get("care_plan_db_id", "")
-            if not db_id:
-                return f"No care plan configured for {client_key}. Run: python scripts/care_plan_report.py --init --client {client_key}"
-            entries = await notion.query_database(
-                db_id,
-                sorts=[{"property": "Report Date", "direction": "descending"}],
-            )
-            if not entries:
-                return f"No care plan reports found for {client_key}. Run: make care-plan CLIENT={client_key}"
-            latest = entries[0]["properties"]
-            def _text(p): return "".join(x.get("text", {}).get("content", "") for x in p.get("rich_text", []))
-            def _title(p): return "".join(x.get("text", {}).get("content", "") for x in p.get("title", []))
-            def _sel(p): s = p.get("select"); return s.get("name", "") if s else ""
-            def _num(p): return p.get("number", "N/A")
-            def _date(p): d = p.get("date"); return d.get("start", "N/A") if d else "N/A"
-            name_val = _title(latest.get("Name", {}))
-            report_date = _date(latest.get("Report Date", {}))
-            mobile = _num(latest.get("Mobile Score", {}))
-            desktop = _num(latest.get("Desktop Score", {}))
-            mobile_rating = _sel(latest.get("Mobile Rating", {}))
-            desktop_rating = _sel(latest.get("Desktop Rating", {}))
-            top_opp = _text(latest.get("Top Opportunity", {}))
-            ada = latest.get("ADA Widget", {}).get("checkbox", None)
-            privacy = _sel(latest.get("Privacy Policy", {}))
-            tos = _sel(latest.get("Terms of Service", {}))
-            hours = _num(latest.get("Hours Used", {}))
-            ada_str = "✓ Installed" if ada else ("✗ Not installed" if ada is False else "Not recorded")
-            return (
-                f"Care Plan: {name_val}\n"
-                f"Report date: {report_date}\n"
-                f"Mobile: {mobile}/100 ({mobile_rating})\n"
-                f"Desktop: {desktop}/100 ({desktop_rating})\n"
-                f"Top opportunity: {top_opp or 'N/A'}\n"
-                f"ADA widget: {ada_str}\n"
-                f"Privacy policy: {privacy or 'Not recorded'}\n"
-                f"Terms of service: {tos or 'Not recorded'}\n"
-                f"Hours used this month: {hours}"
-            )
-
-        elif name == "get_clickup_tasks":
-            include_closed = tool_input.get("include_closed", False)
-            overdue_only = tool_input.get("overdue_only", False)
-            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
-            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
-            if not workspace_id or not clickup_key:
-                return "ClickUp credentials not configured."
-
-            params = {
-                "include_closed": str(include_closed).lower(),
-                "order_by": "due_date",
-                "reverse": "false",
-                "subtasks": "true",
-                "limit": "50",
-            }
-            if overdue_only:
-                import time
-                params["due_date_lt"] = str(int(time.time() * 1000))
-
-            async with httpx.AsyncClient() as http:
-                r = await http.get(
-                    f"https://api.clickup.com/api/v2/team/{workspace_id}/task",
-                    headers={"Authorization": clickup_key},
-                    params=params,
-                    timeout=15,
-                )
-            if r.status_code != 200:
-                return f"ClickUp API error: {r.status_code}"
-
-            tasks = r.json().get("tasks", [])
-            if not tasks:
-                return "No tasks found."
-
-            lines = []
-            for t in tasks[:20]:  # cap at 20
-                name_val = t.get("name", "Untitled")
-                status = t.get("status", {}).get("status", "unknown")
-                due = t.get("due_date")
-                due_str = ""
-                if due:
-                    import datetime
-                    due_str = f" — due {datetime.datetime.fromtimestamp(int(due)/1000).strftime('%b %d')}"
-                assignees = ", ".join(a.get("username", "") for a in t.get("assignees", []))
-                assignee_str = f" [{assignees}]" if assignees else ""
-                lines.append(f"• {name_val} ({status}){assignee_str}{due_str}")
-            return f"ClickUp tasks ({len(tasks)} total):\n" + "\n".join(lines)
-
-        elif name == "list_clickup_workspace":
-            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
-            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
-            if not workspace_id or not clickup_key:
-                return "ClickUp credentials not configured."
-            async with httpx.AsyncClient() as http:
-                r = await http.get(
-                    f"https://api.clickup.com/api/v2/team/{workspace_id}/space",
-                    headers={"Authorization": clickup_key},
-                    params={"archived": "false"},
-                    timeout=15,
-                )
-            if r.status_code != 200:
-                return f"ClickUp API error {r.status_code}: {r.text[:200]}"
-            spaces = r.json().get("spaces", [])
-            lines = []
-            for space in spaces:
-                lines.append(f"Space: {space['name']} (id: {space['id']})")
-                async with httpx.AsyncClient() as http:
-                    fr = await http.get(
-                        f"https://api.clickup.com/api/v2/space/{space['id']}/folder",
-                        headers={"Authorization": clickup_key},
-                        params={"archived": "false"},
-                        timeout=15,
-                    )
-                if fr.status_code == 200:
-                    for folder in fr.json().get("folders", []):
-                        lines.append(f"  Folder: {folder['name']} (id: {folder['id']})")
-                        for lst in folder.get("lists", []):
-                            lines.append(f"    List: {lst['name']} (id: {lst['id']})")
-                async with httpx.AsyncClient() as http:
-                    lr = await http.get(
-                        f"https://api.clickup.com/api/v2/space/{space['id']}/list",
-                        headers={"Authorization": clickup_key},
-                        params={"archived": "false"},
-                        timeout=15,
-                    )
-                if lr.status_code == 200:
-                    for lst in lr.json().get("lists", []):
-                        lines.append(f"  List: {lst['name']} (id: {lst['id']})")
-            return "\n".join(lines) if lines else "No spaces found."
-
-        elif name == "get_clickup_members":
-            workspace_id = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
-            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
-            if not workspace_id or not clickup_key:
-                return "ClickUp credentials not configured."
-            async with httpx.AsyncClient() as http:
-                r = await http.get(
-                    f"https://api.clickup.com/api/v2/team/{workspace_id}",
-                    headers={"Authorization": clickup_key},
-                    timeout=15,
-                )
-            if r.status_code != 200:
-                return f"ClickUp API error {r.status_code}: {r.text[:200]}"
-            members = r.json().get("team", {}).get("members", [])
-            lines = []
-            for m in members:
-                u = m.get("user", {})
-                lines.append(f"• {u.get('username', '')} — {u.get('email', '')} (id: {u.get('id', '')})")
-            return "\n".join(lines) if lines else "No members found."
-
-        elif name == "create_clickup_task":
-            clickup_key = os.environ.get("CLICKUP_API_KEY", "").strip()
-            list_id = tool_input["list_id"]
-            task_name = tool_input["name"]
-            due_date_ms = tool_input.get("due_date_ms")
-            assignee_ids = tool_input.get("assignee_ids", [])
-            description = tool_input.get("description", "")
-
-            body: dict = {"name": task_name}
-            if due_date_ms:
-                body["due_date"] = due_date_ms
-            if assignee_ids:
-                body["assignees"] = assignee_ids
-            if description:
-                body["description"] = description
-
-            async with httpx.AsyncClient() as http:
-                r = await http.post(
-                    f"https://api.clickup.com/api/v2/list/{list_id}/task",
-                    headers={"Authorization": clickup_key, "Content-Type": "application/json"},
-                    json=body,
-                    timeout=15,
-                )
-            if r.status_code not in (200, 201):
-                return f"Failed to create task: {r.status_code} — {r.text[:200]}"
-            task = r.json()
-            return f"Task created: *{task.get('name')}* (id: {task.get('id')}) — {task.get('url', '')}"
-
-        elif name == "get_keywords":
-            client_key = tool_input["client_key"]
-            priority_filter = tool_input.get("priority", "").strip()
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            db_id = cfg.get("keywords_db_id", "")
-            if not db_id:
-                return f"No Keywords DB configured for {client_key}."
-            filter_payload = None
-            if priority_filter:
-                filter_payload = {"property": "Priority", "select": {"equals": priority_filter}}
-            entries = await notion.query_database(db_id, filter_payload=filter_payload)
-            if not entries:
-                return f"No keywords found{' with priority ' + priority_filter if priority_filter else ''}. Run: make keyword-research CLIENT={client_key}"
-            lines = [f"Keywords — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} results):\n"]
-            for e in entries[:30]:  # cap at 30
-                pp = e["properties"]
-                kw       = _title(pp.get("Keyword", {}))
-                cluster  = _text(pp.get("Cluster", {}))
-                volume   = _text(pp.get("Monthly Search Volume", {}))
-                priority = _select(pp.get("Priority", {}))
-                intent   = _select(pp.get("Intent", {}))
-                lines.append(f"• *{kw}* [{priority}] — {volume}/mo | {intent} | {cluster}")
-            return "\n".join(lines)
-
-        elif name == "get_competitors":
-            client_key = tool_input["client_key"]
-            threat_filter = tool_input.get("threat", "").strip()
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            db_id = cfg.get("competitors_db_id", "")
-            if not db_id:
-                return f"No Competitors DB configured for {client_key}."
-            filter_payload = None
-            if threat_filter:
-                filter_payload = {"property": "Threat", "select": {"equals": threat_filter}}
-            entries = await notion.query_database(db_id, filter_payload=filter_payload)
-            if not entries:
-                return f"No competitors found{' with threat ' + threat_filter if threat_filter else ''}. Run: make competitor-research CLIENT={client_key}"
-            lines = [f"Competitors — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} total):\n"]
-            for e in entries:
-                pp = e["properties"]
-                comp_name = _title(pp.get("Competitor Name", {}))
-                threat    = _select(pp.get("Threat", {}))
-                ctype     = _select(pp.get("Type", {}))
-                reviews   = pp.get("Review Count", {}).get("number", "")
-                rating    = pp.get("Review Rating", {}).get("number", "")
-                authority = pp.get("Authority Score", {}).get("number", "")
-                multi     = pp.get("Multi-Location", {}).get("checkbox", False)
-                notes_val = _text(pp.get("Notes", {}))[:80]
-                chain_str = " 🔗 Multi-location" if multi else ""
-                lines.append(
-                    f"• *{comp_name}* [{threat} threat]{chain_str} — {ctype} | "
-                    f"⭐ {rating} ({reviews} reviews) | Auth: {authority}"
-                    + (f"\n  _{notes_val}_" if notes_val else "")
-                )
-            return "\n".join(lines)
-
-        elif name == "get_gbp_posts":
-            client_key = tool_input["client_key"]
-            status_filter = tool_input.get("status", "").strip()
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            cfg = CLIENTS[client_key]
-            db_id = cfg.get("gbp_posts_db_id", "")
-            if not db_id:
-                return f"No GBP Posts DB configured for {client_key}. Run: make gbp-posts CLIENT={client_key}"
-            filter_payload = None
-            if status_filter:
-                filter_payload = {"property": "Status", "select": {"equals": status_filter}}
-            entries = await notion.query_database(db_id, filter_payload=filter_payload)
-            if not entries:
-                return f"No GBP posts found{' with status ' + status_filter if status_filter else ''}."
-            lines = [f"GBP Posts — {CLIENTS[client_key].get('name', client_key)} ({len(entries)} posts):\n"]
-            for e in entries[:10]:
-                pp = e["properties"]
-                post_title  = _title(pp.get("Post Title", {}))
-                post_type   = _select(pp.get("Post Type", {}))
-                status_val  = _select(pp.get("Status", {}))
-                cta         = _select(pp.get("CTA Button", {}))
-                month       = _text(pp.get("Month", {}))
-                source_page = _text(pp.get("Source Page", {}))
-                char_count  = pp.get("Char Count", {}).get("number", "")
-                lines.append(
-                    f"• *{post_title}* [{status_val}] — {post_type} | {month} | "
-                    f"CTA: {cta} | {char_count} chars\n  Source: {source_page}"
-                )
-            return "\n".join(lines)
-
-        elif name == "run_pipeline_stage":
-            client_key = tool_input["client_key"]
-            stage      = tool_input["stage"]
-            notes      = tool_input.get("notes", "")
-
-            if client_key not in CLIENTS:
-                return f"Unknown client '{client_key}'. Available: {', '.join(CLIENTS)}"
-            if stage not in STAGE_COMMANDS:
-                return f"Unknown stage '{stage}'. Available: {', '.join(STAGE_COMMANDS)}"
-
-            client_name = CLIENTS[client_key].get("name", client_key)
-            label       = STAGE_LABELS.get(stage, stage)
-
-            # Grab current event context for the background task to post back
-            channel   = _event_context.get("channel", "")
-            thread_ts = _event_context.get("thread_ts")
-
-            if not channel:
-                return f"Could not determine Slack channel for follow-up. Try again."
-
-            # Spawn background task — returns immediately
-            asyncio.create_task(
-                _run_stage_background(channel, thread_ts, client_key, stage, notes)
-            )
-
-            notes_str = f" with notes: _{notes}_" if notes else ""
-            return (
-                f"Starting *{label}* for *{client_name}*{notes_str}.\n"
-                f"This runs in the background — I'll post here when it's done."
-            )
-
         else:
             return f"Unknown tool: {name}"
-
     except Exception as exc:
         return f"Error running tool '{name}': {exc}"
 
@@ -946,7 +431,7 @@ async def _build_messages(event: dict, client, current_text: str) -> list[dict]:
     """
     messages: list[dict] = []
     thread_ts = event.get("thread_ts")
-    channel = event.get("channel")
+    channel   = event.get("channel")
 
     if thread_ts and thread_ts != event.get("ts"):
         try:
@@ -982,8 +467,8 @@ async def _process(event: dict, client, thread: bool = False) -> None:
     _event_context["thread_ts"] = event.get("thread_ts") or (event.get("ts") if thread else None)
 
     messages = await _build_messages(event, client, text)
-    reply = await ask_rex(messages)
-    kwargs = {"channel": event["channel"], "text": reply}
+    reply    = await ask_rex(messages)
+    kwargs   = {"channel": event["channel"], "text": reply}
     if thread:
         kwargs["thread_ts"] = event.get("ts")
     await client.chat_postMessage(**kwargs)

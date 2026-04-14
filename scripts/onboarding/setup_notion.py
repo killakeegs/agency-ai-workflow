@@ -115,12 +115,17 @@ def brand_guidelines_schema() -> dict:
         "Image Direction": {"rich_text": {}},
         "Photography Style": {"rich_text": {}},
         # ── Content Style Guide ───────────────────────────────────────────────
-        "Voice & Tone": {"rich_text": {}},
-        "Reading Level": {"rich_text": {}},
-        "Power Words": {"rich_text": {}},
+        "Voice & Tone":   {"rich_text": {}},
+        "Reading Level":  {"rich_text": {}},
+        "Power Words":    {"rich_text": {}},
         "Words to Avoid": {"rich_text": {}},
-        "CTA Style": {"rich_text": {}},
-        "POV Notes": {"rich_text": {}},
+        "CTA Style":      {"rich_text": {}},
+        "POV Notes":      {"rich_text": {}},
+        # ── Blog Voice & Reviewer (used by blog pipeline) ─────────────────────
+        "Blog Voice":                {"rich_text": {}},  # synthesized style brief from blog_setup
+        "Blog Reviewer Name":        {"rich_text": {}},  # e.g. "Sarah Chen"
+        "Blog Reviewer Credentials": {"rich_text": {}},  # e.g. "M.S., CCC-SLP"
+        "Blog Reviewer Bio":         {"rich_text": {}},  # 2–3 sentence bio for post footer
     }
 
 

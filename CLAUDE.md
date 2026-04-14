@@ -82,7 +82,7 @@ Instead of Relume wireframes → custom Webflow builds, the agency maintains pre
 
 ## Notion Database Structure (Per Client)
 
-Each client has a master page under the workspace root with 9 linked databases (created automatically by `make onboard` or `scripts/setup_notion.py`):
+Each client has a master page under the workspace root with 9 linked databases (created automatically by `make onboard` or `scripts/onboarding/setup_notion.py`):
 
 - **Client Info** — pipeline stage, stage status, revision notes, ClickUp folder ID, timeline
 - **Meeting Notes & Transcripts** — raw transcripts, parsed decisions, action item counts
@@ -311,7 +311,7 @@ All commands default to `CLIENT=summit_therapy`. Override with `CLIENT=client_ke
 
 Stock images are sourced via Pexels API (free, CC0 — no attribution required on client deliverables). Runs after content approval, before Relume wireframe build.
 
-**Script:** `scripts/fetch_stock_images.py`
+**Script:** `scripts/visual/fetch_stock_images.py`
 **Make commands:**
 ```bash
 make stock-images CLIENT=x OPEN=1               # Discovery → HTML report (click Keep/Skip)
@@ -438,10 +438,10 @@ Every home page must include a "How to Get Started" section, positioned after Te
 Blog posts are a separate content track from website copy — different voice, different standards, different approval flow. They target informational search queries that service pages can't rank for, support service pages via internal links, and are published directly to Webflow CMS.
 
 **Scripts:**
-- `scripts/blog_setup.py` — Creates Blog Voice & Author Setup page in Notion (one-time per client)
-- `scripts/blog_ideas.py` — Synthesizes Style Brief + generates 20 ideas → Blog Posts DB
-- `scripts/blog_write.py` — Writes full posts for all Approved ideas
-- `scripts/blog_publish.py` — Pushes Scheduled posts to Webflow Blog CMS collection
+- `scripts/blog/blog_setup.py` — Creates Blog Voice & Author Setup page in Notion (one-time per client)
+- `scripts/blog/blog_ideas.py` — Synthesizes Style Brief + generates 20 ideas → Blog Posts DB
+- `scripts/blog/blog_write.py` — Writes full posts for all Approved ideas
+- `scripts/blog/blog_publish.py` — Pushes Scheduled posts to Webflow Blog CMS collection
 
 ### Blog Voice & Author Setup Page (one-time per client)
 `make blog-setup` creates a structured Notion page with 8 guided sections the team fills out with the client:
@@ -498,8 +498,9 @@ Webflow CMS field names expected (developer must match these in the template):
 Rex is RxMedia's internal Slack agent. The team DMs Rex or @mentions him in any channel to get instant answers about client status, pipeline, and agency workflow. He can also create ClickUp tasks on request.
 
 **Deployment:** Railway — `web-production-956bf.up.railway.app`
-**Entry point:** `rex/app.py` (FastAPI + slack-bolt async)
-**Code changes:** Edit `rex/app.py` → commit → push → Railway auto-deploys (~30s)
+**Entry point:** `rex/app.py` (FastAPI + slack-bolt async; thin dispatcher)
+**Tool modules:** `rex/tools/notion_tools.py`, `rex/tools/clickup_tools.py`, `rex/tools/pipeline_tools.py`
+**Code changes:** Edit relevant `rex/` file → commit → push → Railway auto-deploys (~30s)
 
 **Slack app:** Rex (App ID: A0ARX6MR3K8)
 - Bot token: in `.env` as `SLACK_BOT_TOKEN`
@@ -560,7 +561,7 @@ $199/month recurring service. Automatically provisioned for every client at laun
 
 **Notion DB:** `Care Plan` — one entry per monthly report per client. Tracks mobile/desktop scores, ADA widget status, privacy/terms status, hours used. History is preserved — each month creates a new row, never overwrites.
 
-**Script:** `scripts/care_plan_report.py`
+**Script:** `scripts/care/care_plan_report.py`
 **Make commands:**
 ```bash
 make care-plan-init CLIENT=x    # Create Care Plan DB for an existing client (one-time)
@@ -583,7 +584,7 @@ make care-plan                  # Run for all care plan clients
 
 **PageSpeed API:** Uses Google PageSpeed Insights API (free). Requires `GOOGLE_API_KEY` in `.env`. API key lives in Google Cloud project "RxMedia Agency". Takes 60–90 seconds per run — normal, it runs a full Lighthouse audit. Script retries up to 3 times with backoff. If it still fails, just run again.
 
-**Monthly automation:** Railway cron service "Care Plan Cron" in the Rex project. Schedule: `0 9 1 * *` (9am UTC / 4am Central on the 1st). Start command: `python scripts/care_plan_report.py`. Uses Railway shared variables — all 7 keys shared across Rex and Care Plan Cron services.
+**Monthly automation:** Railway cron service "Care Plan Cron" in the Rex project. Schedule: `0 9 1 * *` (9am UTC / 4am Central on the 1st). Start command: `python scripts/care/care_plan_report.py`. Uses Railway shared variables — all 7 keys shared across Rex and Care Plan Cron services.
 
 ---
 
@@ -592,7 +593,7 @@ make care-plan                  # Run for all care plan clients
 - **Webflow master templates** — Developer building per-vertical templates (addiction, speech pathology, PT). Each cloned per client. Template determines page structure; content pushed via CMS API. Blocked on developer (out week of Apr 14, 2026).
 - **`make webflow-push`** — CMS content injection script. Reads Content DB → maps to Webflow CMS fields → pushes via API. Build after master templates are finalized and CMS schema is locked.
 - **`make blog-publish`** — Built and ready but untested. Requires developer to create the Blog CMS collection in the Webflow template first. Webflow field names must match what's in `blog_publish.py → fields dict`.
-- **SEO report validation** — `scripts/seo_report.py` is built but untested. Validate with first client that has GSC/GA4/GBP access granted. Google OAuth refresh token now covers all three (re-run completed Apr 2026).
+- **SEO report validation** — `scripts/seo/seo_report.py` is built but untested. Validate with first client that has GSC/GA4/GBP access granted. Google OAuth refresh token now covers all three (re-run completed Apr 2026).
 - **Blog pipeline kickoff for Summit** — Run `make blog-setup CLIENT=summit_therapy` once developer is back and Webflow template is live. Fill setup page with client before generating ideas.
 - **`vertical` field for Summit** — Add `"vertical": "speech_pathology"` to Summit's clients.json entry to enable cross-client link discovery when other speech pathology clients are onboarded.
 - **Approval Handler agent** — Low priority. Rex handles team notifications; formal approval handler can wait.
@@ -614,7 +615,7 @@ PEXELS_API_KEY             # Stock photography
 GOOGLE_API_KEY             # PageSpeed Insights + Google Places API
 GOOGLE_CLIENT_ID           # OAuth 2.0 Desktop client (RxMedia Keyword Planner)
 GOOGLE_CLIENT_SECRET       # OAuth 2.0 client secret
-GOOGLE_REFRESH_TOKEN       # Set by: python3 scripts/google_auth.py — covers GBP + GSC + GA4
+GOOGLE_REFRESH_TOKEN       # Set by: python3 scripts/setup/google_auth.py — covers GBP + GSC + GA4
 DATAFORSEO_LOGIN           # keegan@rxmedia.io
 DATAFORSEO_PASSWORD        # DataForSEO API password (not account password)
 SEARCH_ATLAS_API_KEY       # Search Atlas rank tracker API
