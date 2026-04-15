@@ -16,13 +16,17 @@
             "newsletter": false,
             "paid_ads": false
         },
-        "vertical": ["speech_pathology", "occupational_therapy", "physical_therapy"],
+        "vertical": [
+            "speech_pathology",
+            "occupational_therapy",
+            "physical_therapy"
+        ],
         "intake_submission_ids": [
             "33bf7f45-333e-81e3-b962-dc5f7d5873ca",
             "33bf7f45-333e-8194-9159-ef1692d9fea2"
         ],
         "client_info_db_id": "33bf7f45-333e-8183-8ecc-cfcfa7386ce9",
-        "client_log_db_id": "",
+        "client_log_db_id": "343f7f45-333e-81cb-a3c0-f74302995a9b",
         "brand_guidelines_db_id": "33bf7f45-333e-8178-b83d-dca28ae7a1ef",
         "care_plan_db_id": "33ef7f45-333e-8187-ba68-efc21a3f904b",
         "business_profile_page_id": "343f7f45-333e-818a-81b0-d94ac08f1bfb",
