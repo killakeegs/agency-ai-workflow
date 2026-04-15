@@ -33,6 +33,7 @@ import anthropic
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations.business_profile import load_business_profile
 
 CLIENTS_JSON_PATH = Path(__file__).parent.parent / "config" / "clients.json"
 
@@ -410,6 +411,7 @@ def _build_ideas_prompt(
     existing_titles: list[str],
     cross_client: list[dict],
     vertical: str,
+    business_profile: str = "",
     idea_count: int = 20,
 ) -> str:
     # Build the 3-month date windows
@@ -442,10 +444,20 @@ PUBLISHED POSTS FROM SISTER CLIENTS IN THE SAME VERTICAL ({vertical}):
 {lines}
 """
 
+    profile_block = ""
+    if business_profile:
+        profile_block = f"""
+BUSINESS PROFILE (deep knowledge about this client — use this to generate ideas that are
+genuinely relevant to their services, specialized populations, treatment philosophy, and
+language rules. Do NOT generate ideas that contradict or ignore anything here):
+{business_profile[:12000]}
+"""
+
     return f"""Generate {idea_count} blog post ideas for {client_name} — spread across 3 months.
 
 STYLE BRIEF (defines the writing voice for all posts):
 {style_brief}
+{profile_block}
 
 VALIDATED KEYWORDS (informational intent — these are the best blog targets):
 {keywords_block}
@@ -593,11 +605,20 @@ async def run(client_key: str, force: bool = False) -> None:
     posts_per_month = max(1, min(12, posts_per_month))  # clamp 1–12
     idea_count = min(posts_per_month * 3, 36)  # 3-month batch, max 36
 
+    # Load Business Profile for deep client context (new)
+    print("Loading Business Profile...")
+    business_profile = await load_business_profile(notion, cfg)
+    if business_profile:
+        print(f"  ✓ {len(business_profile):,} chars of structured client knowledge loaded")
+    else:
+        print("  (no Business Profile page found — continuing without it)")
+
     # Generate ideas
     print(f"\nGenerating {idea_count} blog ideas ({posts_per_month}/month × 3 months) with Claude...")
     prompt = _build_ideas_prompt(
         client_name, style_brief, keywords, sitemap_pages,
         existing_titles, cross_client, vertical,
+        business_profile=business_profile,
         idea_count=idea_count,
     )
 

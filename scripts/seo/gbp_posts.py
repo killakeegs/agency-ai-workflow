@@ -35,6 +35,7 @@ import anthropic
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations.business_profile import load_business_profile
 
 CLIENTS_JSON_PATH = Path(__file__).parent.parent / "config" / "clients.json"
 
@@ -322,6 +323,7 @@ def _build_prompt(
     month: str,
     notes: str,
     post_count: int = 8,
+    business_profile: str = "",
 ) -> str:
     business = brand.get("business_name", "the business")
     website  = brand.get("website_url", "").rstrip("/")
@@ -329,6 +331,14 @@ def _build_prompt(
     power    = brand.get("power_words", "")
     avoid    = brand.get("avoid_words", "")
     cta_style= brand.get("cta_style", "")
+
+    profile_block = ""
+    if business_profile:
+        profile_block = f"""
+BUSINESS PROFILE (use this deep client knowledge to ground posts in the
+client's actual services, populations, and language rules — never contradict):
+{business_profile[:8000]}
+"""
 
     page_blocks = []
     for i, p in enumerate(pages, 1):
@@ -363,7 +373,7 @@ def _build_prompt(
     return f"""\
 Generate {post_count} Google Business Profile post drafts for {month}.
 
-{brand_block}{notes_block}
+{brand_block}{profile_block}{notes_block}
 One post per page below. Assign post types in this order:
 {distribution}
 
@@ -523,7 +533,18 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print(f"  Revision notes: {notes}")
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt = _build_prompt(brand, selected, month, notes, post_count=gbp_count)
+    print("Loading Business Profile...")
+    business_profile = await load_business_profile(notion, cfg)
+    if business_profile:
+        print(f"  ✓ {len(business_profile):,} chars loaded")
+    else:
+        print("  (no Business Profile — continuing without it)")
+
+    prompt = _build_prompt(
+        brand, selected, month, notes,
+        post_count=gbp_count,
+        business_profile=business_profile,
+    )
 
     response = client.messages.create(
         model=settings.anthropic_model,

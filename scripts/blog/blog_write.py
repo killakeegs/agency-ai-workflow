@@ -33,6 +33,7 @@ import anthropic
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations.business_profile import load_business_profile
 
 # ── Notion helpers ─────────────────────────────────────────────────────────────
 
@@ -330,6 +331,7 @@ def _build_write_prompt(
     style_brief: str,
     notes: str,
     website_url: str,
+    business_profile: str = "",
 ) -> str:
     title       = idea["title"]
     keyword     = idea["target_keyword"]
@@ -374,9 +376,16 @@ Medically reviewed by {reviewer}{', ' + reviewer_creds if reviewer_creds else ''
     if cross_link and "⚠️ TEAM REVIEW REQUIRED" in cross_link:
         cross_block = f"\n(Cross-client link suggestion on file — do NOT include it; team decides separately)\n"
 
-    return f"""Write a full blog post for {business}.
+    profile_block = ""
+    if business_profile:
+        profile_block = f"""
+BUSINESS PROFILE (deep knowledge about {business} — reference accurately, never contradict):
+{business_profile[:12000]}
 
-TITLE (use verbatim as H1): {title}
+"""
+
+    return f"""Write a full blog post for {business}.
+{profile_block}TITLE (use verbatim as H1): {title}
 
 TARGET KEYWORD: {keyword}
 (Use naturally throughout — lead paragraph and 2–3 H2 sections. Not stuffed.)
@@ -507,6 +516,14 @@ async def run(client_key: str, notes: str = "") -> None:
 
     print(f"  {len(ideas)} approved ideas ready to write\n")
 
+    # Load Business Profile once for all posts (deep client context)
+    print("Loading Business Profile...")
+    business_profile = await load_business_profile(notion, cfg)
+    if business_profile:
+        print(f"  ✓ {len(business_profile):,} chars of structured client knowledge loaded\n")
+    else:
+        print("  (no Business Profile page — continuing without it)\n")
+
     website_url = brand.get("website_url", "").rstrip("/")
 
     for i, idea in enumerate(ideas, 1):
@@ -514,7 +531,10 @@ async def run(client_key: str, notes: str = "") -> None:
         keyword = idea["target_keyword"]
         print(f"[{i}/{len(ideas)}] Writing: {title}")
 
-        prompt = _build_write_prompt(idea, brand, style_brief, notes, website_url)
+        prompt = _build_write_prompt(
+            idea, brand, style_brief, notes, website_url,
+            business_profile=business_profile,
+        )
 
         response = ai_client.messages.create(
             model=settings.anthropic_model,

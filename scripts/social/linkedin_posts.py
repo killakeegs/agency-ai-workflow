@@ -30,6 +30,7 @@ import anthropic
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations.business_profile import load_business_profile
 
 CLIENTS_JSON_PATH = Path(__file__).parent.parent.parent / "config" / "clients.json"
 
@@ -256,6 +257,7 @@ def _build_prompt(
     month: str,
     notes: str,
     post_count: int = 2,
+    business_profile: str = "",
 ) -> str:
     business    = brand.get("business_name", "the practice")
     author      = brand.get("author_name", "the founder")
@@ -267,6 +269,15 @@ def _build_prompt(
     if blog_voice:  brand_block += f"Author voice: {blog_voice}\n"
     if avoid:       brand_block += f"Words to avoid: {avoid}\n"
     if website:     brand_block += f"Blog URL base: {website}/blog\n"
+
+    profile_block = ""
+    if business_profile:
+        profile_block = f"""
+BUSINESS PROFILE (deep clinical/business knowledge — use for credible
+thought-leadership posts; reference actual specialties, populations, and
+treatment philosophy. Never contradict):
+{business_profile[:10000]}
+"""
 
     blog_block = ""
     if blog_posts:
@@ -292,7 +303,7 @@ def _build_prompt(
     return f"""\
 Generate {post_count} LinkedIn post draft{"s" if post_count != 1 else ""} for {month}.
 
-{brand_block}{notes_block}
+{brand_block}{profile_block}{notes_block}
 POST REQUIREMENTS:
 {post_requirements}
 
@@ -403,7 +414,18 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print(f"  Notes: {notes}")
 
     ai_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt    = _build_prompt(brand, blog_posts, month, notes, post_count=linkedin_count)
+    print("Loading Business Profile...")
+    business_profile = await load_business_profile(notion, cfg)
+    if business_profile:
+        print(f"  ✓ {len(business_profile):,} chars loaded")
+    else:
+        print("  (no Business Profile — continuing without it)")
+
+    prompt = _build_prompt(
+        brand, blog_posts, month, notes,
+        post_count=linkedin_count,
+        business_profile=business_profile,
+    )
 
     response = ai_client.messages.create(
         model=settings.anthropic_model,

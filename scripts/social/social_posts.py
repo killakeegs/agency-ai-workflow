@@ -34,6 +34,7 @@ import anthropic
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations.business_profile import load_business_profile
 
 CLIENTS_JSON_PATH = Path(__file__).parent.parent.parent / "config" / "clients.json"
 
@@ -322,6 +323,7 @@ def _build_prompt(
     month: str,
     notes: str,
     post_count: int = 8,
+    business_profile: str = "",
 ) -> str:
     business = brand.get("business_name", "the practice")
     voice    = brand.get("voice", "") or brand.get("tone_desc", "")
@@ -332,6 +334,15 @@ def _build_prompt(
     if voice:  brand_block += f"Voice: {voice}\n"
     if power:  brand_block += f"Power words: {power}\n"
     if avoid:  brand_block += f"Words to avoid: {avoid}\n"
+
+    profile_block = ""
+    if business_profile:
+        profile_block = f"""
+BUSINESS PROFILE (use this deep client knowledge to make posts genuinely
+specific — reference actual services, populations, language rules, and
+philosophy. Never contradict this):
+{business_profile[:10000]}
+"""
 
     blog_block = ""
     if blog_posts:
@@ -372,7 +383,7 @@ def _build_prompt(
     return f"""\
 Generate {post_count} Instagram/Facebook social post drafts for {month}.
 
-{brand_block}{notes_block}
+{brand_block}{profile_block}{notes_block}
 {dist_block}
 
 {blog_block}{page_block}
@@ -490,7 +501,19 @@ async def run(client_key: str, month: str, notes: str) -> None:
         print(f"  Notes: {notes}")
 
     ai_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    prompt    = _build_prompt(brand, blog_posts, content_pages, month, notes, post_count=social_count)
+    # Load Business Profile for deep client context
+    print("Loading Business Profile...")
+    business_profile = await load_business_profile(notion, cfg)
+    if business_profile:
+        print(f"  ✓ {len(business_profile):,} chars of structured client knowledge loaded")
+    else:
+        print("  (no Business Profile — continuing without it)")
+
+    prompt = _build_prompt(
+        brand, blog_posts, content_pages, month, notes,
+        post_count=social_count,
+        business_profile=business_profile,
+    )
 
     response = ai_client.messages.create(
         model=settings.anthropic_model,
