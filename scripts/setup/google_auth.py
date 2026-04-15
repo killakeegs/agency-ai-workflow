@@ -41,6 +41,8 @@ SCOPES_DEFAULT = [
 SCOPES_GMAIL = [
     "https://www.googleapis.com/auth/gmail.send",            # Send emails via Gmail API
     "https://www.googleapis.com/auth/gmail.readonly",        # Read emails (for monitoring)
+    "https://www.googleapis.com/auth/drive.readonly",        # Read Google Drive folders (migrate_client.py)
+    "https://www.googleapis.com/auth/documents.readonly",    # Read Google Docs content
 ]
 
 PORT = 8080

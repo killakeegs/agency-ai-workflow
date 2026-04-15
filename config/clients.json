@@ -43,5 +43,43 @@
         "clickup_review_list_id": "",
         "meeting_notes_entry_id": "33bf7f45-333e-81d2-8842-d50e795d681e",
         "meeting_notes_db_id": "33bf7f45-333e-81ec-ab37-f0b0beaa115a"
+    },
+    "cielo_treatment_center": {
+        "client_id": "cielo_treatment_center",
+        "name": "Cielo Treatment Center",
+        "services": {
+            "website_build": false,
+            "care_plan": true,
+            "seo": true,
+            "gbp_management": true,
+            "gbp_posts_per_month": 8,
+            "blog": true,
+            "blog_posts_per_month": 4,
+            "social_media": true,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
+            "newsletter": true,
+            "paid_ads": true
+        },
+        "vertical": [
+            "addiction_treatment"
+        ],
+        "client_info_db_id": "343f7f45-333e-815c-bce4-cb761f1af547",
+        "client_log_db_id": "343f7f45-333e-81a4-b482-e60b4598de39",
+        "brand_guidelines_db_id": "343f7f45-333e-813e-942d-f4c264ad957b",
+        "care_plan_db_id": "343f7f45-333e-819d-92e8-c28ba6df40c6",
+        "business_profile_page_id": "343f7f45-333e-8126-b17b-ee8800ada596",
+        "sitemap_db_id": "",
+        "content_db_id": "",
+        "images_db_id": "",
+        "competitors_db_id": "343f7f45-333e-81e7-8951-dcfd418cb20a",
+        "keywords_db_id": "343f7f45-333e-8139-a77c-e7ce503961df",
+        "seo_metrics_db_id": "",
+        "gbp_posts_db_id": "",
+        "blog_posts_db_id": "",
+        "social_posts_db_id": "",
+        "gbp_location_id": "",
+        "clickup_review_list_id": "",
+        "migration_source": "google_drive"
     }
 }

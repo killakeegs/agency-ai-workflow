@@ -202,6 +202,15 @@ onboard:
 onboard-list:
 	@$(PYTHON) scripts/onboarding/onboard_client.py --list
 
+migrate-client:
+	@$(PYTHON) scripts/onboarding/migrate_client.py \
+		--name "$(NAME)" \
+		--services $(SERVICES) \
+		--verticals $(VERTICALS) \
+		--drive-folder "$(DRIVE)" \
+		$(if $(EMAIL),--contact-email "$(EMAIL)",) \
+		$(if $(DRY),--dry-run,)
+
 # ── Approval flow ─────────────────────────────────────────────────────────────
 
 advance:

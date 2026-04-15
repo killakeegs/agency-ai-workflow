@@ -987,18 +987,25 @@ async def setup_client(
 
     all_dbs = base_dbs + service_dbs
 
-    print(f"\nPass 1: Creating {len(all_dbs)} databases...")
+    # Client name prefix for DB titles (first word of client name).
+    # This makes DBs readable at scale when agents have access to 20+ clients'
+    # databases — "Cielo — Client Log" instead of "Client Log" (x20).
+    db_prefix = client_name.split()[0] if client_name else "Client"
+
+    print(f"\nPass 1: Creating {len(all_dbs)} databases (prefix: '{db_prefix} — ')...")
     for db_name, schema in all_dbs:
+        titled_name = f"{db_prefix} — {db_name}"
         if not dry_run:
             db_id = await notion.create_database(
                 parent_page_id=client_page_id,
-                title=db_name,
+                title=titled_name,
                 properties_schema=schema,
             )
+            # Keep the base name as the lookup key so downstream code works
             databases[db_name] = db_id
-            print(f"  ✓ {db_name}: {db_id}")
+            print(f"  ✓ {titled_name}: {db_id}")
         else:
-            print(f"  [DRY RUN] Would create: {db_name}")
+            print(f"  [DRY RUN] Would create: {titled_name}")
 
     # ── Pass 2: Add relation properties ───────────────────────────────────────
     if not dry_run:
