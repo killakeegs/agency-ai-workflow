@@ -39,6 +39,7 @@ from rex.tools import (
     execute_notion_tool, NOTION_TOOL_NAMES,
     execute_clickup_tool, CLICKUP_TOOL_NAMES,
     execute_pipeline_tool, PIPELINE_TOOL_NAMES,
+    execute_meeting_tool, MEETING_TOOL_NAMES,
     STAGE_COMMANDS, STAGE_LABELS,
 )
 
@@ -374,6 +375,30 @@ TOOLS = [
             "required": [],
         },
     },
+    # ── Meeting processing tools ──────────────────────────────────────────────
+    {
+        "name": "process_meeting",
+        "description": "Process a meeting transcript into structured meeting notes, ClickUp tasks, and a follow-up email draft. The transcript should already exist as a Notion page (from Notion AI note taker). Returns a summary for Slack with an email draft awaiting approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+                "meeting_ref": {"type": "string", "description": "How to find the meeting: 'today', 'yesterday', or a Notion page ID. Default 'today'."},
+            },
+            "required": ["client_key"],
+        },
+    },
+    {
+        "name": "list_unprocessed_meetings",
+        "description": "List meetings in the Client Log that haven't been processed yet.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
+            },
+            "required": ["client_key"],
+        },
+    },
 ]
 
 
@@ -389,6 +414,8 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
             return await execute_pipeline_tool(
                 name, tool_input, CLIENTS, _event_context, slack_app.client
             )
+        elif name in MEETING_TOOL_NAMES:
+            return await execute_meeting_tool(name, tool_input, CLIENTS, notion._client)
         else:
             return f"Unknown tool: {name}"
     except Exception as exc:
