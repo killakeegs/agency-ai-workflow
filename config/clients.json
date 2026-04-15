@@ -81,5 +81,81 @@
         "gbp_location_id": "",
         "clickup_review_list_id": "",
         "migration_source": "google_drive"
+    },
+    "another_chance": {
+        "client_id": "another_chance",
+        "name": "Another Chance",
+        "services": {
+            "website_build": true,
+            "care_plan": true,
+            "seo": true,
+            "gbp_management": true,
+            "gbp_posts_per_month": 8,
+            "blog": true,
+            "blog_posts_per_month": 4,
+            "social_media": true,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
+            "newsletter": true,
+            "paid_ads": false
+        },
+        "vertical": [
+            "addiction_treatment"
+        ],
+        "client_info_db_id": "343f7f45-333e-8183-a385-e2932859bd84",
+        "client_log_db_id": "343f7f45-333e-81ae-b9ff-e30960e9e3fa",
+        "brand_guidelines_db_id": "343f7f45-333e-81ed-a02d-c48aac5a73de",
+        "care_plan_db_id": "343f7f45-333e-81b7-a04d-d7acad81e79c",
+        "business_profile_page_id": "343f7f45-333e-812b-9993-c19ad6b28f91",
+        "sitemap_db_id": "343f7f45-333e-81c4-b9bc-ce6c80192ddd",
+        "content_db_id": "343f7f45-333e-81eb-b289-ec47b92abcc2",
+        "images_db_id": "343f7f45-333e-810d-9d8f-e8780dd4f6d6",
+        "competitors_db_id": "343f7f45-333e-81aa-804b-c792b36cf253",
+        "keywords_db_id": "343f7f45-333e-8152-86ff-d0a5905ac155",
+        "seo_metrics_db_id": "",
+        "gbp_posts_db_id": "",
+        "blog_posts_db_id": "",
+        "social_posts_db_id": "",
+        "gbp_location_id": "",
+        "clickup_review_list_id": "",
+        "migration_source": "google_drive"
+    },
+    "lotus_recovery": {
+        "client_id": "lotus_recovery",
+        "name": "Lotus Recovery",
+        "services": {
+            "website_build": true,
+            "care_plan": true,
+            "seo": true,
+            "gbp_management": true,
+            "gbp_posts_per_month": 8,
+            "blog": true,
+            "blog_posts_per_month": 4,
+            "social_media": true,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
+            "newsletter": false,
+            "paid_ads": true
+        },
+        "vertical": [
+            "addiction_treatment"
+        ],
+        "client_info_db_id": "343f7f45-333e-81b4-813e-f98d183d98ab",
+        "client_log_db_id": "343f7f45-333e-8139-bcd8-fc4a6dabbcf8",
+        "brand_guidelines_db_id": "343f7f45-333e-8187-bb6c-de2cb5778c5f",
+        "care_plan_db_id": "343f7f45-333e-819f-8bcb-d17395660435",
+        "business_profile_page_id": "343f7f45-333e-81c3-a3f3-da3756bbdf73",
+        "sitemap_db_id": "343f7f45-333e-813d-bc00-da29c63e6642",
+        "content_db_id": "343f7f45-333e-81e9-8ab9-c792faf6d6a0",
+        "images_db_id": "343f7f45-333e-816c-ad64-e720bb2c9eab",
+        "competitors_db_id": "343f7f45-333e-8130-8f04-c78abf89aae0",
+        "keywords_db_id": "343f7f45-333e-8140-86d4-ea47885b3458",
+        "seo_metrics_db_id": "",
+        "gbp_posts_db_id": "",
+        "blog_posts_db_id": "",
+        "social_posts_db_id": "",
+        "gbp_location_id": "",
+        "clickup_review_list_id": "",
+        "migration_source": "google_drive"
     }
 }
