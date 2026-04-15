@@ -2,24 +2,17 @@
 """
 google_auth.py — One-time OAuth flow for Google APIs
 
-Run this once to authorize rxmediamanager@gmail.com and save a refresh token.
-Covers three APIs in a single auth flow:
-  - Google Business Profile (business.manage)
-  - Google Search Console (webmasters.readonly)
-  - Google Analytics 4 (analytics.readonly)
+Supports two modes:
+  1. Default: authorize rxmediamanager@gmail.com for GBP, GSC, GA4
+  2. --gmail: authorize keegan@rxmedia.io for Gmail sending only
 
-The refresh token is stored in .env as GOOGLE_REFRESH_TOKEN and used by all
-subsequent API calls without requiring re-authorization.
+Refresh tokens are stored in .env:
+  - GOOGLE_REFRESH_TOKEN — rxmediamanager (GBP, GSC, GA4)
+  - GOOGLE_GMAIL_REFRESH_TOKEN — keegan@rxmedia.io (Gmail send)
 
 Usage:
-    python3 scripts/google_auth.py
-
-What happens:
-  1. Starts a local HTTP server on port 8080 to catch the OAuth redirect
-  2. Opens a browser window to Google's OAuth consent screen
-  3. You log in as rxmediamanager@gmail.com and approve all scopes
-  4. Browser redirects to localhost:8080 — script catches the auth code automatically
-  5. Refresh token is written to .env automatically
+    python3 scripts/setup/google_auth.py            # GBP + GSC + GA4 (rxmediamanager)
+    python3 scripts/setup/google_auth.py --gmail     # Gmail send (keegan@rxmedia.io)
 """
 from __future__ import annotations
 
@@ -32,18 +25,22 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.config import settings
 
 CLIENT_ID     = settings.google_client_id
 CLIENT_SECRET = settings.google_client_secret
 
-SCOPES = [
+SCOPES_DEFAULT = [
     "https://www.googleapis.com/auth/business.manage",       # GBP performance data
     "https://www.googleapis.com/auth/webmasters.readonly",   # Google Search Console
     "https://www.googleapis.com/auth/analytics.readonly",    # Google Analytics 4
+]
+
+SCOPES_GMAIL = [
     "https://www.googleapis.com/auth/gmail.send",            # Send emails via Gmail API
+    "https://www.googleapis.com/auth/gmail.readonly",        # Read emails (for monitoring)
 ]
 
 PORT = 8080
@@ -85,37 +82,52 @@ class _OAuthHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Google OAuth setup")
+    parser.add_argument("--gmail", action="store_true",
+                        help="Authorize Gmail send/read for keegan@rxmedia.io (separate token)")
+    args = parser.parse_args()
+
+    gmail_mode = args.gmail
+
     if not CLIENT_ID or not CLIENT_SECRET:
         print("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env")
         sys.exit(1)
+
+    scopes    = SCOPES_GMAIL if gmail_mode else SCOPES_DEFAULT
+    env_key   = "GOOGLE_GMAIL_REFRESH_TOKEN" if gmail_mode else "GOOGLE_REFRESH_TOKEN"
+    login_as  = "keegan@rxmedia.io" if gmail_mode else "rxmediamanager@gmail.com"
+    label     = "Gmail (send + read)" if gmail_mode else "GBP + Search Console + Analytics"
 
     # Step 1 — Start local server to catch redirect
     server = HTTPServer(("localhost", PORT), _OAuthHandler)
 
     def _serve():
-        server.handle_request()  # handle exactly one request then stop
+        server.handle_request()
 
     thread = threading.Thread(target=_serve, daemon=True)
     thread.start()
 
     # Step 2 — Build auth URL
-    params = {
+    auth_params = {
         "client_id":     CLIENT_ID,
         "redirect_uri":  REDIRECT_URI,
         "response_type": "code",
-        "scope":         " ".join(SCOPES),
+        "scope":         " ".join(scopes),
         "access_type":   "offline",
-        "prompt":        "consent",  # force refresh token even if previously authorized
+        "prompt":        "consent",
     }
-    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    if gmail_mode:
+        auth_params["login_hint"] = login_as
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(auth_params)
 
     print("\n" + "="*60)
-    print("  Google APIs — OAuth Authorization")
-    print("  (GBP + Search Console + Analytics)")
+    print(f"  Google APIs — OAuth Authorization")
+    print(f"  ({label})")
     print("="*60)
     print(f"\nLocal redirect server listening on port {PORT}.")
-    print("Opening browser. Log in as: rxmediamanager@gmail.com")
-    print("Approve ALL scopes shown — GBP, Search Console, Analytics\n")
+    print(f"Opening browser. Log in as: {login_as}")
+    print(f"Approve ALL scopes shown\n")
 
     webbrowser.open(auth_url)
 
@@ -166,24 +178,28 @@ def main() -> None:
     print(f"✓ Refresh token obtained: {refresh_token[:20]}...")
 
     # Step 4 — Write to .env
-    env_path = Path(__file__).parent.parent / ".env"
+    env_path = Path(__file__).parent.parent.parent / ".env"
     env_text = env_path.read_text()
 
-    if "GOOGLE_REFRESH_TOKEN=" in env_text:
+    if f"{env_key}=" in env_text:
         lines = env_text.splitlines()
         new_lines = []
         for line in lines:
-            if line.startswith("GOOGLE_REFRESH_TOKEN="):
-                new_lines.append(f"GOOGLE_REFRESH_TOKEN={refresh_token}")
+            if line.startswith(f"{env_key}="):
+                new_lines.append(f"{env_key}={refresh_token}")
             else:
                 new_lines.append(line)
         env_path.write_text("\n".join(new_lines) + "\n")
     else:
-        env_path.write_text(env_text + f"\nGOOGLE_REFRESH_TOKEN={refresh_token}\n")
+        env_path.write_text(env_text.rstrip("\n") + f"\n{env_key}={refresh_token}\n")
 
-    print("✓ Saved to .env as GOOGLE_REFRESH_TOKEN")
-    print("\nYou're set. The Business Profile API is now authorized.")
-    print("Run 'make competitor-research CLIENT=x ENRICH=1' to pull GBP data.\n")
+    print(f"✓ Saved to .env as {env_key}")
+    if gmail_mode:
+        print(f"\nGmail API authorized for {login_as}.")
+        print("Rex can now send follow-up emails on Keegan's behalf.\n")
+    else:
+        print("\nGoogle APIs authorized. GBP, GSC, and GA4 are ready.")
+        print("Run 'make competitor-research CLIENT=x ENRICH=1' to pull GBP data.\n")
 
 
 if __name__ == "__main__":

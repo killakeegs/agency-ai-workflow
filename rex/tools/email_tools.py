@@ -25,15 +25,19 @@ DEFAULT_SENDER = "keegan@rxmedia.io"
 
 
 async def _get_access_token() -> str:
-    """Exchange refresh token for a short-lived access token."""
+    """Exchange Gmail refresh token for a short-lived access token."""
     client_id     = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
-    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
+    # Use the separate Gmail token (keegan@rxmedia.io), fall back to shared token
+    refresh_token = (
+        os.environ.get("GOOGLE_GMAIL_REFRESH_TOKEN", "").strip()
+        or os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
+    )
 
     if not all([client_id, client_secret, refresh_token]):
         raise ValueError(
-            "Missing Google OAuth credentials. Set GOOGLE_CLIENT_ID, "
-            "GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN in .env"
+            "Missing Google OAuth credentials for Gmail. Run: "
+            "python3 scripts/setup/google_auth.py --gmail"
         )
 
     async with httpx.AsyncClient() as http:
