@@ -26,7 +26,7 @@ from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
 
-CLIENTS_JSON_PATH = Path(__file__).parent.parent / "config" / "clients.json"
+CLIENTS_JSON_PATH = Path(__file__).parent.parent.parent / "config" / "clients.json"
 
 
 def _save_to_json(client_key: str, field: str, value: str) -> None:

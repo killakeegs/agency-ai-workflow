@@ -28,7 +28,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import anthropic
 
@@ -37,7 +37,7 @@ from src.config import settings
 from src.integrations.notion import NotionClient
 from src.integrations.business_profile import load_business_profile
 
-CLIENTS_JSON_PATH = Path(__file__).parent.parent / "config" / "clients.json"
+CLIENTS_JSON_PATH = Path(__file__).parent.parent.parent / "config" / "clients.json"
 
 # ── Notion field helpers ───────────────────────────────────────────────────────
 
