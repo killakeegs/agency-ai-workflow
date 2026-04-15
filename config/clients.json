@@ -16,27 +16,28 @@
             "newsletter": false,
             "paid_ads": false
         },
+        "vertical": ["speech_pathology", "occupational_therapy", "physical_therapy"],
         "intake_submission_ids": [
             "33bf7f45-333e-81e3-b962-dc5f7d5873ca",
             "33bf7f45-333e-8194-9159-ef1692d9fea2"
         ],
         "client_info_db_id": "33bf7f45-333e-8183-8ecc-cfcfa7386ce9",
-        "meeting_notes_db_id": "33bf7f45-333e-81ec-ab37-f0b0beaa115a",
+        "client_log_db_id": "",
         "brand_guidelines_db_id": "33bf7f45-333e-8178-b83d-dca28ae7a1ef",
-        "mood_board_db_id": "33bf7f45-333e-8106-b43e-d7809199402f",
+        "care_plan_db_id": "33ef7f45-333e-8187-ba68-efc21a3f904b",
+        "business_profile_page_id": "343f7f45-333e-818a-81b0-d94ac08f1bfb",
         "sitemap_db_id": "33bf7f45-333e-8195-bb5e-e3169f1ad300",
         "content_db_id": "33bf7f45-333e-81cd-ab1c-f6aa9d13bbb0",
-        "wireframes_db_id": "33bf7f45-333e-81f9-aacf-ccf7cafea9fa",
-        "hifi_db_id": "33bf7f45-333e-8169-9c49-df808b6f32bf",
-        "action_items_db_id": "33bf7f45-333e-81dd-923b-f5bc09a70365",
         "images_db_id": "33bf7f45-333e-8136-8d61-e281fb412ba0",
-        "meeting_notes_entry_id": "33bf7f45-333e-81d2-8842-d50e795d681e",
-        "clickup_review_list_id": "",
-        "care_plan_db_id": "33ef7f45-333e-8187-ba68-efc21a3f904b",
         "competitors_db_id": "33ef7f45-333e-81ba-acc8-dd0ca90d2493",
         "keywords_db_id": "33ef7f45-333e-81ba-a3c8-c681dcd9965a",
         "seo_metrics_db_id": "",
+        "gbp_posts_db_id": "341f7f45-333e-81f9-bb71-e97b4b8358a2",
+        "blog_posts_db_id": "",
+        "social_posts_db_id": "",
         "gbp_location_id": "",
-        "gbp_posts_db_id": "341f7f45-333e-81f9-bb71-e97b4b8358a2"
+        "clickup_review_list_id": "",
+        "meeting_notes_entry_id": "33bf7f45-333e-81d2-8842-d50e795d681e",
+        "meeting_notes_db_id": "33bf7f45-333e-81ec-ab37-f0b0beaa115a"
     }
 }

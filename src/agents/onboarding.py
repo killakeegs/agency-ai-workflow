@@ -7,12 +7,12 @@ Triggered by: a new entry in the Client Intake — Submissions DB
 
 What it does:
   1. Reads the intake form submission from Notion
-  2. Creates the full 9-database Notion structure for the client
+  2. Creates the new Notion structure (4 base DBs + Business Profile + service DBs)
   3. Populates Client Info DB with contact + business details from the form
   4. Populates Brand Guidelines DB with colors, fonts, tone from the form
   5. Asks Claude to synthesize the form into a Client Brief document
      and writes it to a Notion page under the client root
-  6. Writes the new client entry to config/clients.json
+  6. Writes the new client entry to config/clients.json (with services config)
   7. Marks the submission as "Active Client" in the intake DB
   8. Returns the new client key (slug) for immediate pipeline use
 
@@ -240,11 +240,42 @@ class OnboardingAgent(BaseAgent):
 
         # ── Step 2: Create Notion structure ───────────────────────────────────
         self.log.info("Creating Notion databases...")
-        from scripts.setup_notion import setup_client as notion_setup
+
+        # Determine services from form data
+        active_services = ["website_build", "care_plan"]  # defaults
+        if services_interested:
+            si_lower = [s.lower() for s in services_interested]
+            if any("seo" in s for s in si_lower):
+                active_services.append("seo")
+            if any("social" in s for s in si_lower):
+                active_services.append("social_media")
+            if any("content" in s or "blog" in s for s in si_lower):
+                active_services.append("blog")
+
+        # Determine verticals from practice type
+        vertical_map = {
+            "speech-language pathology": "speech_pathology",
+            "speech pathology":         "speech_pathology",
+            "occupational therapy":     "occupational_therapy",
+            "physical therapy":         "physical_therapy",
+            "addiction treatment":      "addiction_treatment",
+            "behavioral health":        "mental_health",
+            "mental health":            "mental_health",
+            "dermatology":              "dermatology",
+        }
+        active_verticals = []
+        for pt in practice_type:
+            v = vertical_map.get(pt.lower().strip())
+            if v and v not in active_verticals:
+                active_verticals.append(v)
+
+        from scripts.onboarding.setup_notion import setup_client as notion_setup
         setup_result = await notion_setup(
             client_name=business_name,
             contact_email=email or "unknown@example.com",
             dry_run=False,
+            services=active_services,
+            verticals=active_verticals,
         )
         client_page_id = setup_result["client_page_id"]
         databases      = setup_result["databases"]
@@ -342,28 +373,50 @@ class OnboardingAgent(BaseAgent):
 
         # ── Step 6: Write to config/clients.json ──────────────────────────────
         self.log.info("Writing client config...")
+
+        # Build services config block
+        services_config = {
+            "website_build":          "website_build" in active_services,
+            "care_plan":              True,  # always on
+            "seo":                    "seo" in active_services,
+            "gbp_management":         False,
+            "gbp_posts_per_month":    8,
+            "blog":                   "blog" in active_services,
+            "blog_posts_per_month":   0,
+            "social_media":           "social_media" in active_services,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
+            "newsletter":             False,
+            "paid_ads":               False,
+        }
+
         new_client_config = {
             "client_id":   client_key,
             "name":        business_name,
-            "services":    ["website_build", "care_plan"],
-            "intake_submission_ids":   submission_page_ids,
-            "client_info_db_id":       databases.get("Client Info", ""),
-            "meeting_notes_db_id":     databases.get("Meeting Notes & Transcripts", ""),
-            "brand_guidelines_db_id":  databases.get("Brand Guidelines", ""),
-            "mood_board_db_id":        databases.get("Mood Board", ""),
-            "sitemap_db_id":           databases.get("Sitemap", ""),
-            "content_db_id":           databases.get("Page Content", ""),
-            "wireframes_db_id":        databases.get("Wireframes", ""),
-            "hifi_db_id":              databases.get("High-Fidelity Design", ""),
-            "action_items_db_id":      databases.get("Action Items", ""),
-            "images_db_id":            databases.get("Images", ""),
-            "care_plan_db_id":         databases.get("Care Plan", ""),
-            "competitors_db_id":       databases.get("Competitors", ""),
-            "keywords_db_id":          databases.get("Keywords", ""),
-            "seo_metrics_db_id":       "",  # populated by make seo-activate
-            "gbp_location_id":         "",  # populated by make seo-activate
-            "meeting_notes_entry_id":  "",
-            "clickup_review_list_id":  "",
+            "services":    services_config,
+            "vertical":    active_verticals,
+            "intake_submission_ids":     submission_page_ids,
+            # ── Base DBs (always created) ────────────────────────────────────
+            "client_info_db_id":         databases.get("Client Info", ""),
+            "client_log_db_id":          databases.get("Client Log", ""),
+            "brand_guidelines_db_id":    databases.get("Brand Guidelines", ""),
+            "care_plan_db_id":           databases.get("Care Plan", ""),
+            "business_profile_page_id":  setup_result.get("business_profile_id", ""),
+            # ── Service-specific DBs (created if service active) ─────────────
+            "sitemap_db_id":             databases.get("Sitemap", ""),
+            "content_db_id":             databases.get("Page Content", ""),
+            "images_db_id":              databases.get("Images", ""),
+            "competitors_db_id":         databases.get("Competitors", ""),
+            "keywords_db_id":            databases.get("Keywords", ""),
+            # ── Auto-created on first run ────────────────────────────────────
+            "seo_metrics_db_id":         "",
+            "gbp_posts_db_id":           "",
+            "blog_posts_db_id":          "",
+            "social_posts_db_id":        "",
+            # ── External IDs ─────────────────────────────────────────────────
+            "gbp_location_id":           "",
+            "clickup_review_list_id":    "",
+            "meeting_notes_entry_id":    "",  # legacy — kept for backward compat
         }
         existing: dict = {}
         if CLIENTS_JSON_PATH.exists():

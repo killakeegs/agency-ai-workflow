@@ -80,21 +80,52 @@ Instead of Relume wireframes → custom Webflow builds, the agency maintains pre
 
 ---
 
-## Notion Database Structure (Per Client)
+## Notion Structure
 
-Each client has a master page under the workspace root with 9 linked databases (created automatically by `make onboard` or `scripts/onboarding/setup_notion.py`):
+### Top-Level
 
-- **Client Info** — pipeline stage, stage status, revision notes, ClickUp folder ID, timeline
-- **Meeting Notes & Transcripts** — raw transcripts, parsed decisions, action item counts
-- **Brand Guidelines** — colors, fonts, tone descriptors, logo assets, image direction notes, photography style (drives Pexels search queries)
-- **Mood Board** — variations (A–F), status, style keywords, color palette, client feedback
-- **Sitemap** — page hierarchy, slugs, page type (Static/CMS), content mode, approval status
+- **Clients DB** — master database, one row per client. Status, services, vertical, retainer value, account manager. Agency command center. Created once via `--setup-clients-db`.
+
+### Per Client (restructured Apr 2026)
+
+Each client has a master page under the workspace root with base databases + a Business Profile page + service-specific databases.
+
+**Three layers of client knowledge:**
+1. **Client Info DB** — our relationship with them (pipeline, contacts, services, template, Figma links)
+2. **Brand Guidelines DB** — how we communicate as them (voice, colors, fonts, photography style)
+3. **Business Profile page** — deep understanding of their business (not a DB — rich Notion page with 12 universal sections + vertical-specific sections)
+
+**Always created (4 databases + 1 page):**
+- **Client Info** — pipeline stage, contacts, services, vertical, template, Figma links, account manager, monthly retainer
+- **Client Log** — single chronological timeline of every interaction (meetings, emails, calls). Replaces Meeting Notes + Action Items. Rex writes here.
+- **Brand Guidelines** — colors, fonts, tone descriptors, photography style, blog voice, reviewer info
+- **Care Plan** — monthly PageSpeed reports, ADA widget status, privacy/terms
+- **Business Profile** (page) — 12 universal sections + vertical-specific sections. Grows over time as Rex processes meetings.
+
+**Created when website_build is active:**
+- **Sitemap** — page hierarchy, slugs, page type (Static/CMS), content mode, sections, approval status
 - **Page Content** — copy per page, SEO fields (title tag, meta, H1, keywords), word count
-- **Wireframes** — Relume component maps per page, Figma URLs, approval status
-- **High-Fidelity Design** — Figma desktop/mobile URLs, client feedback
-- **Action Items** — tasks from meetings, assigned to Agency or Client, due dates, ClickUp task IDs
-- **Images** — AI-generated images (Replicate), batch type, category, page association, image URLs
-- **Blog Posts** — full blog lifecycle: idea → approved → draft → scheduled → published. One row per post. Auto-created by `make blog-ideas` if missing.
+- **Images** — stock photos + AI-generated images, batch type, category, page association
+
+**Created on demand by their scripts (auto-created on first run):**
+- **Blog Posts** — full blog lifecycle: Idea → Approved → Draft → Scheduled → Published
+- **Social Posts** — IG/FB + LinkedIn drafts, Platform field distinguishes them
+- **GBP Posts** — Google Business Profile post drafts
+- **Competitors** — SERP analysis (SEO clients)
+- **Keywords** — keyword research (SEO clients)
+
+**Removed (Apr 2026):** Mood Board DB, Wireframes DB, High-Fidelity Design DB, Action Items DB. Mood board replaced by template model. Wireframes/Hi-Fi replaced by Figma link fields on Client Info. Action items replaced by ClickUp (single task system).
+
+### Business Profile — Vertical Templates
+
+The `vertical` field in clients.json is a list. Multi-discipline practices get all matching vertical sections:
+```json
+"vertical": ["speech_pathology", "occupational_therapy", "physical_therapy"]
+```
+
+Available verticals: `addiction_treatment`, `speech_pathology`, `occupational_therapy`, `physical_therapy`, `dermatology`, `mental_health`
+
+Universal sections (12): Company Credentials, Specialized Populations, Staffing & Team, Services Overview, Insurance & Payment, Admissions & Intake, Facility & Environment, Outcomes & Results, Referral Network, Compliance & Legal, Tech Stack, Common Objections & FAQs.
 
 ---
 
@@ -115,10 +146,12 @@ Manual entries take precedence over auto-generated ones. Never edit `clients.jso
 
 Each client entry contains:
 - `client_id`, `name`
-- All Notion database IDs (client_info, meeting_notes, brand_guidelines, sitemap, content, wireframes, hifi, action_items, images, care_plan, competitors, keywords, seo_metrics, gbp_posts, blog_posts)
-- `meeting_notes_entry_id`, `clickup_review_list_id`
-- `blog_voice_setup_page_id` — Notion page ID for the Blog Voice & Author Setup page (created by `make blog-setup`)
-- `vertical` — client industry vertical for cross-client blog link discovery (e.g. `speech_pathology`, `addiction_treatment`, `physical_therapy`). Optional but enables cross-client linking suggestions.
+- `services` — structured dict with boolean flags + volume numbers (see Services Config below)
+- `vertical` — list of industry verticals (e.g. `["speech_pathology", "occupational_therapy"]`)
+- Base DB IDs: `client_info_db_id`, `client_log_db_id`, `brand_guidelines_db_id`, `care_plan_db_id`
+- `business_profile_page_id` — Notion page with universal + vertical-specific sections
+- Service-specific DB IDs: `sitemap_db_id`, `content_db_id`, `images_db_id`, `competitors_db_id`, `keywords_db_id`, `seo_metrics_db_id`, `gbp_posts_db_id`, `blog_posts_db_id`, `social_posts_db_id`
+- `blog_voice_setup_page_id` — Blog Voice & Author Setup page (created by `make blog-setup`)
 - SEO fields: `gbp_location_id`, `gsc_site_url`, `ga4_property_id`, `search_atlas_project_id`
 - Webflow fields: `webflow_site_id`, `webflow_blog_collection_id` (auto-detected by blog-publish)
 
