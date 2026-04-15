@@ -43,6 +43,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/business.manage",       # GBP performance data
     "https://www.googleapis.com/auth/webmasters.readonly",   # Google Search Console
     "https://www.googleapis.com/auth/analytics.readonly",    # Google Analytics 4
+    "https://www.googleapis.com/auth/gmail.send",            # Send emails via Gmail API
 ]
 
 PORT = 8080

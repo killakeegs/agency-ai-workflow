@@ -40,6 +40,7 @@ from rex.tools import (
     execute_clickup_tool, CLICKUP_TOOL_NAMES,
     execute_pipeline_tool, PIPELINE_TOOL_NAMES,
     execute_meeting_tool, MEETING_TOOL_NAMES,
+    execute_email_tool, EMAIL_TOOL_NAMES,
     STAGE_COMMANDS, STAGE_LABELS,
 )
 
@@ -399,6 +400,21 @@ TOOLS = [
             "required": ["client_key"],
         },
     },
+    # ── Email tools ───────────────────────────────────────────────────────────
+    {
+        "name": "send_follow_up_email",
+        "description": "Send a follow-up email via Gmail on behalf of Keegan. Only use this after the user has approved an email draft (e.g. via thumbs-up reaction). Always CC keegan@rxmedia.io.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Recipient email address"},
+                "subject": {"type": "string", "description": "Email subject line"},
+                "body": {"type": "string", "description": "Full email body (plain text)"},
+                "cc": {"type": "string", "description": "CC email address(es), comma-separated"},
+            },
+            "required": ["to", "subject", "body"],
+        },
+    },
 ]
 
 
@@ -416,6 +432,8 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
             )
         elif name in MEETING_TOOL_NAMES:
             return await execute_meeting_tool(name, tool_input, CLIENTS, notion._client)
+        elif name in EMAIL_TOOL_NAMES:
+            return await execute_email_tool(name, tool_input)
         else:
             return f"Unknown tool: {name}"
     except Exception as exc:
@@ -512,6 +530,18 @@ async def _process(event: dict, client, thread: bool = False) -> None:
     await client.chat_postMessage(**kwargs)
 
 
+# ── Pending email drafts (in-memory, keyed by message timestamp) ──────────────
+# When Rex posts an email draft to Slack, we store it here.
+# When Keegan reacts with :thumbsup:, we look it up and send.
+_pending_emails: dict[str, dict] = {}
+# Format: { "message_ts": { "to": "...", "subject": "...", "body": "...", "cc": "...", "channel": "..." } }
+
+
+def store_pending_email(message_ts: str, email_data: dict) -> None:
+    """Store an email draft awaiting Slack approval."""
+    _pending_emails[message_ts] = email_data
+
+
 @slack_app.event("app_mention")
 async def handle_mention(event, client):
     # Post directly to the channel so the whole team sees Rex's response
@@ -529,6 +559,54 @@ async def handle_message(event, client):
         await _process(event, client, thread=True)
 
 
+@slack_app.event("reaction_added")
+async def handle_reaction(event, client):
+    """
+    Handle thumbs-up reactions on email drafts.
+    When Keegan reacts with :thumbsup: or :+1: to Rex's email draft message,
+    Rex sends the email via Gmail and confirms in the thread.
+    """
+    reaction = event.get("reaction", "")
+    if reaction not in ("+1", "thumbsup"):
+        return
+
+    message_ts = event.get("item", {}).get("ts", "")
+    channel    = event.get("item", {}).get("channel", "")
+
+    email_data = _pending_emails.pop(message_ts, None)
+    if not email_data:
+        return  # Not one of our pending emails
+
+    try:
+        from rex.tools.email_tools import send_email
+
+        result = await send_email(
+            to=email_data["to"],
+            subject=email_data["subject"],
+            body=email_data["body"],
+            cc=email_data.get("cc", ""),
+        )
+
+        if "error" in result:
+            await client.chat_postMessage(
+                channel=channel,
+                thread_ts=message_ts,
+                text=f"Failed to send email: {result['error']}",
+            )
+        else:
+            await client.chat_postMessage(
+                channel=channel,
+                thread_ts=message_ts,
+                text=f"Email sent to {email_data['to']}.",
+            )
+    except Exception as exc:
+        await client.chat_postMessage(
+            channel=channel,
+            thread_ts=message_ts,
+            text=f"Error sending email: {exc}",
+        )
+
+
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 
 api = FastAPI(title="Rex — RxMedia AI Agent")
@@ -542,7 +620,7 @@ async def slack_events(req: Request):
 
 @api.get("/health")
 async def health():
-    return {"status": "ok", "agent": "Rex", "version": "1.3"}
+    return {"status": "ok", "agent": "Rex", "version": "2.0"}
 
 
 if __name__ == "__main__":
