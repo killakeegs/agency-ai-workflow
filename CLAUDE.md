@@ -227,6 +227,14 @@ make seo-report       → Monthly performance report → Notion + HTML
 make care-plan        → PageSpeed + ADA + care plan → Notion Care Plan DB
 ```
 
+### Email Enrichment (on-demand per client)
+```
+make enrich-emails CLIENT=x                  → Pull last 180 days of Gmail threads → Notion
+make enrich-emails CLIENT=x DAYS=90          → Shorter window
+make enrich-emails CLIENT=x DRY=1            → Preview to /tmp without writing
+make enrich-emails CLIENT=x MAX=30           → Tighter token budget (default 60 threads)
+```
+
 **Webflow template model:** Agency maintains master templates per vertical (addiction, speech pathology, PT). Developer clones the right template per client, then content is pushed via CMS API. Eliminates custom wireframe → build cycle. Pending developer completing master templates.
 
 **Why mood board was removed:** Replaced by Webflow template model. Visual direction is determined by template selection + brand guidelines, not a separate mood board stage.
@@ -329,6 +337,12 @@ make blog-write NOTES="warmer tone, fewer clinical terms"
 make blog-publish           # Dry run: show what would publish today
 make blog-publish COMMIT=1  # Push Scheduled posts to Webflow Blog CMS
 make blog-publish ALL=1 COMMIT=1  # Publish all Scheduled regardless of date
+
+# Email enrichment (on-demand per client)
+make enrich-emails              # Pull last 180 days of Gmail → Notion Client Log + Business Profile
+make enrich-emails DAYS=90      # Shorter window
+make enrich-emails DRY=1        # Preview to /tmp without writing to Notion
+make enrich-emails MAX=30       # Tighter token budget (default 60 threads)
 
 # Visual exports
 make sitemap-visuals        # HTML + JSON sitemap visual
@@ -525,6 +539,44 @@ Key fields: Title, Status, Target Keyword, Search Intent, Internal Link Target, 
 
 Webflow CMS field names expected (developer must match these in the template):
 `name`, `slug`, `post-body`, `post-summary`, `meta-title`, `meta-description`, `author-name`, `reviewer-name`, `reviewer-credentials`, `published-date`
+
+---
+
+## Email Enrichment Pipeline
+
+Pulls Gmail threads for a client, synthesizes with Claude, writes to Notion. Built for both on-demand backfill and future real-time monitoring.
+
+**Architecture:** Shared modules designed for reuse by both backfill and real-time monitor:
+- `src/integrations/gmail.py` — Gmail API client (OAuth2, search, fetch, thread grouping, noise/DNL filtering)
+- `src/services/email_enrichment.py` — Claude synthesis + Notion write core (dedup, profile-aware, rule_set → Brand Guidelines)
+- `scripts/enrichment/enrich_from_emails.py` — backfill entry point
+
+**What it writes to Notion:**
+1. **Client Log entries** — one per substantive email thread (Type = Email Inbound/Outbound), with `Gmail Thread ID` field for dedup on re-run
+2. **Business Profile** — "Email Enrichment" block with new facts + flags (appended at bottom for review)
+3. **Brand Guidelines** — `rule_set` flags auto-appended (Words to Avoid, Voice & Tone, Photography Style, etc.)
+
+**Dedup behavior (safe to re-run):**
+- Stores `Gmail Thread ID` on each Client Log entry; skips already-logged threads
+- Passes existing Business Profile content to Claude so it only surfaces genuinely new facts
+- Passes recent Client Log entry titles/dates to Claude to prevent duplicate entries
+
+**Filtering:**
+- `[DNL]` / `[do-not-log]` / "internal only" in subject/body = excluded
+- Automated noise (noreply, calendar notifications, newsletters, thin emails) = excluded
+- Token budget: `--max-threads` caps threads sent to Claude (default 60)
+
+**Flag types:**
+- `open_action` — pending work or deliverable
+- `scope_change` — expansion or contraction of engagement
+- `blocker` — something preventing progress
+- `promise_made` — commitment by either party
+- `strategic` — referral partnership, upsell opportunity, relationship signal
+- `rule_set` — client-stated constraint → auto-writes to Brand Guidelines DB
+
+**Prerequisite:** Client must have `email` or `primary_contact_email` in `config/clients.json` (domain-based Gmail search). Missing for 8 legacy clients: cielo, atlas, arc, dmab, bloom, freedom, nonno, lotus.
+
+**Planned: real-time monitor** — Railway cron service (every 10–15 min) reusing shared modules. Gmail `historyId` cursor for incremental processing. State in Supabase. Slack alerts via Rex for flagged items.
 
 ---
 
