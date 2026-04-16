@@ -137,18 +137,59 @@ async def _read_transcript_content(notion: NotionClient, page_id: str) -> str:
 
 # ── Client matching ────────────────────────────────────────────────────────────
 
+RXMEDIA_TEAM = {"keegan", "henna", "justin", "andrea", "karla", "mari"}
+RXMEDIA_DOMAINS = {"rxmedia.io"}
+
+
 def _match_client(client_field: str) -> str | None:
     """Match the Client field from Meeting Transcripts to a client key."""
     if not client_field:
         return None
     client_lower = client_field.strip().lower()
     for key, cfg in CLIENTS.items():
+        if cfg.get("internal"):
+            continue
         name = cfg.get("name", "").lower()
         if name and (name in client_lower or client_lower in name):
             return key
         if key.replace("_", " ") in client_lower:
             return key
     return None
+
+
+def _detect_meeting_type(client_field: str, title: str, attendees_text: str) -> str:
+    """Determine if a meeting is client, internal, or unrelated.
+    Returns: 'client', 'internal', or 'skip'.
+    """
+    # If client field matches a known client, it's a client meeting
+    if _match_client(client_field):
+        return "client"
+
+    # Check attendees — if all are RxMedia team, it's internal
+    if attendees_text:
+        emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
+        names = re.findall(r"[A-Za-z]+", attendees_text.lower())
+
+        if emails:
+            all_internal = all(
+                any(d in e for d in RXMEDIA_DOMAINS) for e in emails
+            )
+            if all_internal:
+                return "internal"
+
+    # Check title for internal signals
+    title_lower = (title or "").lower()
+    internal_signals = ["standup", "team meeting", "internal", "rxmedia", "strategy", "planning"]
+    if any(s in title_lower for s in internal_signals):
+        return "internal"
+
+    # Check if any team member name is in the client field
+    if client_field:
+        cl = client_field.lower()
+        if any(name in cl for name in RXMEDIA_TEAM):
+            return "internal"
+
+    return "skip"
 
 
 # ── Slack ──────────────────────────────────────────────────────────────────────
@@ -176,11 +217,15 @@ async def _process_one(
     title: str,
     client_field: str,
     meeting_date_str: str,
+    is_internal: bool = False,
 ) -> dict:
     """Process a single meeting transcript. Returns summary dict."""
 
     # Match client
-    client_key = _match_client(client_field)
+    if is_internal:
+        client_key = "rxmedia"
+    else:
+        client_key = _match_client(client_field)
     if not client_key:
         return {"status": "skipped", "reason": f"Could not match client '{client_field}'"}
 
@@ -232,15 +277,17 @@ async def _process_one(
         except Exception as e:
             print(f"  ⚠ ClickUp task creation failed: {e}")
 
-    # Draft follow-up email
-    print("  Drafting follow-up email...")
-    email = await _draft_follow_up_email(parsed, client_name, meeting_date_str)
-
-    # Ensure To field is populated from client config
-    if not email.get("to"):
-        email["to"] = cfg.get("primary_contact_email") or cfg.get("email", "")
-    if not email.get("cc"):
-        email["cc"] = "keegan@rxmedia.io"
+    # Draft follow-up email (skip for internal meetings)
+    email = {}
+    if not is_internal:
+        print("  Drafting follow-up email...")
+        email = await _draft_follow_up_email(parsed, client_name, meeting_date_str)
+        if not email.get("to"):
+            email["to"] = cfg.get("primary_contact_email") or cfg.get("email", "")
+        if not email.get("cc"):
+            email["cc"] = "keegan@rxmedia.io"
+    else:
+        print("  Internal meeting — skipping email draft")
     print(f"  ✓ Subject: {email.get('subject', '')}")
     print(f"  ✓ To: {email.get('to', '')}")
 
@@ -255,8 +302,9 @@ async def _process_one(
     print("  ✓ Marked Processed")
 
     # Build Slack summary
+    label = "Internal Meeting" if is_internal else "Meeting Processed"
     slack_parts = [
-        f"📋 *{client_name} — Meeting Processed*",
+        f"📋 *{client_name} — {label}*",
         f"{meeting_type}, {len(attendees)} attendees",
         "",
         f"Summary: {parsed.get('summary', '')[:300]}",
@@ -270,15 +318,16 @@ async def _process_one(
     if parsed.get("value_add_opportunities"):
         slack_parts.append(f"💡 {len(parsed['value_add_opportunities'])} value-add opportunities")
 
-    slack_parts.extend([
-        "",
-        f"📧 Follow-up email draft ready:",
-        f"To: {email.get('to', '')}",
-        f"Subject: {email.get('subject', '')}",
-        f"```{email.get('body', '')[:500]}```",
-        "",
-        "Reply in thread: `send` to send the email, or `edit: <instructions>` to revise.",
-    ])
+    if email:
+        slack_parts.extend([
+            "",
+            f"📧 Follow-up email draft ready:",
+            f"To: {email.get('to', '')}",
+            f"Subject: {email.get('subject', '')}",
+            f"```{email.get('body', '')[:500]}```",
+            "",
+            "Reply in thread: `send` to send the email, or `edit: <instructions>` to revise.",
+        ])
 
     slack_msg = "\n".join(slack_parts)
     await _post_to_slack(slack_msg)
@@ -335,13 +384,51 @@ async def run(client_filter: str = "") -> None:
         date_obj = props.get("Meeting Date", {}).get("date")
         meeting_date = date_obj.get("start", "") if date_obj else ""
 
+        # Smart routing: client, internal, or skip
+        # Read attendees from page for detection (if available)
+        attendees_text = ""
+        try:
+            page_data = await notion._client.request(path=f"pages/{row['id']}", method="GET")
+            page_props = page_data.get("properties", {})
+            for field_name in ("Attendees", "attendees"):
+                if field_name in page_props:
+                    attendees_text = "".join(
+                        p.get("text", {}).get("content", "")
+                        for p in page_props[field_name].get("rich_text", [])
+                    )
+                    break
+        except Exception:
+            pass
+
+        meeting_route = _detect_meeting_type(client_field, title, attendees_text)
+
         # Optional client filter
         if client_filter:
             matched = _match_client(client_field)
             if matched != client_filter:
                 continue
 
-        result = await _process_one(notion, row["id"], title, client_field, meeting_date)
+        if meeting_route == "skip":
+            print(f"\n  Skipped (no client match, not internal): {title}")
+            # Mark as processed so we don't re-check every tick
+            await notion._client.request(
+                path=f"pages/{row['id']}", method="PATCH",
+                body={"properties": {"Processed": {"checkbox": True}}},
+            )
+            continue
+
+        if meeting_route == "internal":
+            # Route to RxMedia internal log — lighter processing (no email draft)
+            rxmedia_cfg = CLIENTS.get("rxmedia", {})
+            rxmedia_log_db = rxmedia_cfg.get("client_log_db_id", "")
+            if not rxmedia_log_db:
+                print(f"\n  Skipped (internal but no RxMedia Client Log DB): {title}")
+                continue
+            result = await _process_one(
+                notion, row["id"], title, "RxMedia", meeting_date, is_internal=True,
+            )
+        else:
+            result = await _process_one(notion, row["id"], title, client_field, meeting_date)
 
         if result["status"] == "processed":
             processed_count += 1
