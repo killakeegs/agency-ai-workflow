@@ -414,6 +414,22 @@ async def setup_only() -> None:
     print(f"✓ Email Monitor State DB: {db_id}")
 
 
+async def _alert_failure(error: str) -> None:
+    """Post failure alert to Slack so silent crashes are caught."""
+    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL:
+        return
+    try:
+        async with httpx.AsyncClient() as http:
+            await http.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+                json={"channel": SLACK_CHANNEL, "text": f"🚨 *Email Monitor Failed*\n```{error[:500]}```"},
+                timeout=10.0,
+            )
+    except Exception:
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Real-time email monitor")
     parser.add_argument("--setup", action="store_true", help="Create state DB only")
@@ -424,7 +440,13 @@ def main() -> None:
     if args.setup:
         asyncio.run(setup_only())
     else:
-        asyncio.run(tick(lookback_minutes=args.lookback))
+        try:
+            asyncio.run(tick(lookback_minutes=args.lookback))
+        except Exception as e:
+            import traceback
+            error = traceback.format_exc()
+            print(f"\n🚨 Email Monitor crashed:\n{error}")
+            asyncio.run(_alert_failure(error))
 
 
 if __name__ == "__main__":

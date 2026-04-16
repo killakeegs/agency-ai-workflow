@@ -46,7 +46,7 @@ from rex.tools.meeting_tools import (
     _create_clickup_tasks,
     _draft_follow_up_email,
 )
-from rex.tools.email_tools import send_email
+from rex.tools.email_tools import send_email, create_gmail_draft
 
 MEETING_TRANSCRIPTS_DB = os.environ.get(
     "NOTION_MEETING_TRANSCRIPTS_DB_ID",
@@ -141,19 +141,50 @@ RXMEDIA_TEAM = {"keegan", "henna", "justin", "andrea", "karla", "mari"}
 RXMEDIA_DOMAINS = {"rxmedia.io"}
 
 
-def _match_client(client_field: str) -> str | None:
-    """Match the Client field from Meeting Transcripts to a client key."""
-    if not client_field:
-        return None
-    client_lower = client_field.strip().lower()
+def _build_client_email_map() -> tuple[dict[str, str], dict[str, str]]:
+    """Build domain → client_key and email → client_key maps from CLIENTS."""
+    domain_map: dict[str, str] = {}
+    email_map: dict[str, str] = {}
     for key, cfg in CLIENTS.items():
         if cfg.get("internal"):
             continue
-        name = cfg.get("name", "").lower()
-        if name and (name in client_lower or client_lower in name):
-            return key
-        if key.replace("_", " ") in client_lower:
-            return key
+        for field in ("email", "primary_contact_email"):
+            email = (cfg.get(field, "") or "").lower().strip()
+            if not email:
+                continue
+            email_map[email] = key
+            domain = email.split("@")[-1] if "@" in email else ""
+            if domain and domain not in ("gmail.com", "rxmedia.io", "google.com", "yahoo.com", "hotmail.com"):
+                domain_map[domain] = key
+    return domain_map, email_map
+
+_DOMAIN_MAP, _EMAIL_MAP = _build_client_email_map()
+
+
+def _match_client(client_field: str, attendees_text: str = "") -> str | None:
+    """Match to a client by name field OR attendee emails."""
+    # First try name matching
+    if client_field:
+        client_lower = client_field.strip().lower()
+        for key, cfg in CLIENTS.items():
+            if cfg.get("internal"):
+                continue
+            name = cfg.get("name", "").lower()
+            if name and (name in client_lower or client_lower in name):
+                return key
+            if key.replace("_", " ") in client_lower:
+                return key
+
+    # Fallback: match by attendee email domain
+    if attendees_text:
+        emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
+        for email in emails:
+            if email in _EMAIL_MAP:
+                return _EMAIL_MAP[email]
+            domain = email.split("@")[-1]
+            if domain in _DOMAIN_MAP:
+                return _DOMAIN_MAP[domain]
+
     return None
 
 
@@ -161,15 +192,13 @@ def _detect_meeting_type(client_field: str, title: str, attendees_text: str) -> 
     """Determine if a meeting is client, internal, or unrelated.
     Returns: 'client', 'internal', or 'skip'.
     """
-    # If client field matches a known client, it's a client meeting
-    if _match_client(client_field):
+    # If client field or attendee emails match a known client
+    if _match_client(client_field, attendees_text):
         return "client"
 
     # Check attendees — if all are RxMedia team, it's internal
     if attendees_text:
         emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
-        names = re.findall(r"[A-Za-z]+", attendees_text.lower())
-
         if emails:
             all_internal = all(
                 any(d in e for d in RXMEDIA_DOMAINS) for e in emails
@@ -218,6 +247,7 @@ async def _process_one(
     client_field: str,
     meeting_date_str: str,
     is_internal: bool = False,
+    attendees_text: str = "",
 ) -> dict:
     """Process a single meeting transcript. Returns summary dict."""
 
@@ -225,7 +255,7 @@ async def _process_one(
     if is_internal:
         client_key = "rxmedia"
     else:
-        client_key = _match_client(client_field)
+        client_key = _match_client(client_field, attendees_text)
     if not client_key:
         return {"status": "skipped", "reason": f"Could not match client '{client_field}'"}
 
@@ -286,6 +316,23 @@ async def _process_one(
             email["to"] = cfg.get("primary_contact_email") or cfg.get("email", "")
         if not email.get("cc"):
             email["cc"] = "keegan@rxmedia.io"
+
+        # Auto-create Gmail draft
+        html_body = email.get("html_body", email.get("body", ""))
+        if email.get("to") and html_body:
+            try:
+                draft_result = await create_gmail_draft(
+                    to=email["to"],
+                    subject=email.get("subject", f"{client_name} - Meeting Recap"),
+                    html_body=html_body,
+                    cc=email.get("cc", ""),
+                )
+                if draft_result.get("status") == "draft_created":
+                    print(f"  ✓ Gmail draft created (check Drafts folder)")
+                else:
+                    print(f"  ⚠ Gmail draft failed: {draft_result.get('error', '')}")
+            except Exception as e:
+                print(f"  ⚠ Gmail draft failed: {e}")
     else:
         print("  Internal meeting — skipping email draft")
     print(f"  ✓ Subject: {email.get('subject', '')}")
@@ -404,7 +451,7 @@ async def run(client_filter: str = "") -> None:
 
         # Optional client filter
         if client_filter:
-            matched = _match_client(client_field)
+            matched = _match_client(client_field, attendees_text)
             if matched != client_filter:
                 continue
 
@@ -425,10 +472,14 @@ async def run(client_filter: str = "") -> None:
                 print(f"\n  Skipped (internal but no RxMedia Client Log DB): {title}")
                 continue
             result = await _process_one(
-                notion, row["id"], title, "RxMedia", meeting_date, is_internal=True,
+                notion, row["id"], title, "RxMedia", meeting_date,
+                is_internal=True, attendees_text=attendees_text,
             )
         else:
-            result = await _process_one(notion, row["id"], title, client_field, meeting_date)
+            result = await _process_one(
+                notion, row["id"], title, client_field, meeting_date,
+                attendees_text=attendees_text,
+            )
 
         if result["status"] == "processed":
             processed_count += 1
@@ -440,11 +491,32 @@ async def run(client_filter: str = "") -> None:
     print(f"{'='*50}")
 
 
+async def _alert_failure(error: str) -> None:
+    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL:
+        return
+    try:
+        async with httpx.AsyncClient() as http:
+            await http.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+                json={"channel": SLACK_CHANNEL, "text": f"🚨 *Meeting Processor Failed*\n```{error[:500]}```"},
+                timeout=10.0,
+            )
+    except Exception:
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Process meeting transcripts")
     parser.add_argument("--client", default="", help="Only process for this client key")
     args = parser.parse_args()
-    asyncio.run(run(client_filter=args.client))
+    try:
+        asyncio.run(run(client_filter=args.client))
+    except Exception as e:
+        import traceback
+        error = traceback.format_exc()
+        print(f"\n🚨 Meeting Processor crashed:\n{error}")
+        asyncio.run(_alert_failure(error))
 
 
 if __name__ == "__main__":

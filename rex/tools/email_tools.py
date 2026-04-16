@@ -103,6 +103,52 @@ async def send_email(
         return {"error": f"Gmail API error {r.status_code}: {r.text[:200]}"}
 
 
+async def create_gmail_draft(
+    to: str,
+    subject: str,
+    html_body: str,
+    cc: str = "",
+    sender: str = DEFAULT_SENDER,
+) -> dict:
+    """Create a Gmail draft with HTML formatting."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText as MT
+
+    access_token = await _get_access_token()
+
+    msg = MIMEMultipart("alternative")
+    msg["to"] = to
+    msg["from"] = sender
+    msg["subject"] = subject
+    if cc:
+        msg["cc"] = cc
+
+    # Plain text fallback
+    import re
+    plain = re.sub(r"<[^>]+>", "", html_body).strip()
+    msg.attach(MT(plain, "plain"))
+    msg.attach(MT(html_body, "html"))
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    async with httpx.AsyncClient() as http:
+        r = await http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"message": {"raw": raw}},
+            timeout=15,
+        )
+
+    if r.status_code in (200, 201):
+        data = r.json()
+        return {"id": data.get("id", ""), "status": "draft_created"}
+    else:
+        return {"error": f"Gmail API error {r.status_code}: {r.text[:200]}"}
+
+
 async def execute_email_tool(name: str, tool_input: dict) -> str:
     """Dispatch an email tool call."""
     if name == "send_follow_up_email":
