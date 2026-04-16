@@ -117,7 +117,7 @@ FORMATTING RULES (non-negotiable — output is HTML for Gmail):
 - Sign-off: "<p>Best regards,</p><p>Keegan<br>RxMedia</p>"
 
 WRITING RULES:
-- No em dashes
+- ABSOLUTELY NO em dashes (—) or en dashes (–). Use a comma, period, or parentheses instead. Em dashes are the #1 AI tell — the emails must look human-written.
 - No AI filler: "It was great to discuss," "I wanted to follow up on," "Looking forward to"
 - Use "We will" not "We'll" in the body (slightly more formal)
 - Use "Please" for client requests (polite but direct)
@@ -561,8 +561,23 @@ async def _draft_follow_up_email(
     raw = response.content[0].text.strip()
     match = re.search(r'\{.*\}', raw, re.DOTALL)
     if match:
-        return json.loads(match.group(0))
-    return {"subject": f"{client_name} + RxMedia — Meeting Recap ({meeting_date})", "body": raw}
+        result = json.loads(match.group(0))
+    else:
+        result = {"subject": f"{client_name} + RxMedia - Meeting Recap ({meeting_date})", "body": raw}
+
+    # Strip em dashes and en dashes — AI tells. Replace with comma + space.
+    def _sanitize(text: str) -> str:
+        if not text:
+            return text
+        # Em dash (—) and en dash (–) both get replaced
+        text = text.replace(" — ", ", ").replace("—", ", ").replace(" – ", ", ").replace("–", ", ")
+        return text
+
+    for key in ("subject", "body", "html_body"):
+        if key in result:
+            result[key] = _sanitize(result[key])
+
+    return result
 
 
 # ── Main tool dispatcher ──────────────────────────────────────────────────────
