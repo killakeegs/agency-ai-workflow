@@ -48,6 +48,7 @@ from src.services.email_enrichment import (
     write_client_log,
     append_profile_enrichments,
     apply_rule_set_flags,
+    update_last_contact,
 )
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
@@ -390,6 +391,12 @@ async def tick(lookback_minutes: int = 15) -> None:
 
         total_flags += len(flags)
         clients_enriched.append(client_name)
+
+        # Update Last Contact on Clients DB
+        if log_entries:
+            latest = max(e.get("date", "") for e in log_entries if e.get("date"))
+            if latest:
+                await update_last_contact(notion, client_name, latest)
 
         # Slack alert for flags
         if flags and SLACK_BOT_TOKEN:

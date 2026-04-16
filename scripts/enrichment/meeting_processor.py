@@ -348,6 +348,13 @@ async def _process_one(
     )
     print("  ✓ Marked Processed")
 
+    # Update Last Contact on Clients DB
+    if not is_internal:
+        from src.services.email_enrichment import update_last_contact
+        contact_date = meeting_date_str or date.today().isoformat()
+        await update_last_contact(notion, client_name, contact_date)
+        print(f"  ✓ Last Contact → {contact_date}")
+
     # Build Slack summary
     label = "Internal Meeting" if is_internal else "Meeting Processed"
     slack_parts = [

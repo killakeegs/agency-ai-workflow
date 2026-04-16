@@ -405,3 +405,36 @@ async def apply_rule_set_flags(
             return 0
 
     return applied
+
+
+# ── Last Contact update ────────────────────────────────────────────────────────
+
+async def update_last_contact(
+    notion: NotionClient,
+    client_name: str,
+    contact_date: str,
+) -> None:
+    """Update the Last Contact date on the top-level Clients DB row."""
+    import os
+    clients_db_id = os.environ.get("NOTION_CLIENTS_DB_ID", "").strip()
+    if not clients_db_id:
+        return
+
+    try:
+        rows = await notion._client.request(
+            path=f"databases/{clients_db_id}/query",
+            method="POST",
+            body={
+                "page_size": 100,
+                "filter": {"property": "Client Name", "title": {"equals": client_name}},
+            },
+        )
+        if rows.get("results"):
+            page_id = rows["results"][0]["id"]
+            await notion._client.request(
+                path=f"pages/{page_id}",
+                method="PATCH",
+                body={"properties": {"Last Contact": {"date": {"start": contact_date}}}},
+            )
+    except Exception:
+        pass

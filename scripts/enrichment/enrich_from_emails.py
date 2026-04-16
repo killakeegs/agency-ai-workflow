@@ -41,6 +41,7 @@ from src.services.email_enrichment import (
     write_client_log,
     append_profile_enrichments,
     apply_rule_set_flags,
+    update_last_contact,
 )
 
 
@@ -234,6 +235,13 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
         print(f"  ✓ {applied} rule_set flags → Brand Guidelines")
     elif rule_flags:
         print("  ⚠ No brand_guidelines_db_id — skipping rule_set writes")
+
+    # Update Last Contact on Clients DB
+    if log_entries:
+        latest_date = max(e.get("date", "") for e in log_entries if e.get("date"))
+        if latest_date:
+            await update_last_contact(notion, client_name, latest_date)
+            print(f"  ✓ Last Contact → {latest_date}")
 
     print(f"\n✓ Done. Review in Notion before acting on flagged items.")
 
