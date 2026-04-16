@@ -211,6 +211,20 @@ migrate-client:
 		$(if $(EMAIL),--contact-email "$(EMAIL)",) \
 		$(if $(DRY),--dry-run,)
 
+# ── Gmail enrichment ──────────────────────────────────────────────────────────
+# Pulls last N days of email threads for a client, synthesizes with Claude,
+# writes Client Log entries + Business Profile enrichments + flags.
+#   make enrich-emails CLIENT=wellness_works_management_partners
+#   make enrich-emails CLIENT=the_manor DAYS=90
+#   make enrich-emails CLIENT=skycloud_health DRY=1
+
+enrich-emails:
+	@$(PYTHON) scripts/enrichment/enrich_from_emails.py \
+		--client $(CLIENT) \
+		$(if $(DAYS),--days $(DAYS),) \
+		$(if $(MAX),--max-threads $(MAX),) \
+		$(if $(DRY),--dry-run,)
+
 # ── Approval flow ─────────────────────────────────────────────────────────────
 
 advance:

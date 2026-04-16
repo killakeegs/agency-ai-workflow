@@ -1,0 +1,387 @@
+"""
+Email enrichment service — shared core for backfill + real-time monitor.
+
+Responsibilities:
+  - Synthesize email threads → log entries + profile enrichments + flags
+  - Dedup against existing Client Log (by thread_id or subject+date)
+  - Write log entries, profile enrichments, and flags to Notion
+  - rule_set flags → auto-update Brand Guidelines (Words to Avoid, etc.)
+"""
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime
+
+import anthropic
+
+from src.config import settings
+from src.integrations.notion import NotionClient
+
+
+# ── Claude synthesis ───────────────────────────────────────────────────────────
+
+SYNTHESIS_SYSTEM = """\
+You are analyzing email history between an agency (RxMedia, keegan@rxmedia.io) and one of its clients.
+
+Extract THREE things:
+
+1. CLIENT LOG ENTRIES — one per substantive thread or topic. Merge back-and-forths on the same topic into one entry. Skip pure confirmations, logistics, and social chatter.
+
+2. BUSINESS PROFILE ENRICHMENTS — new factual information about the client's business revealed in emails (staffing changes, new services, pricing decisions, tech stack, strategic shifts, etc.).
+
+3. FLAGS — open action items, promises, scope changes, blockers, AND client rules/constraints.
+
+EXISTING CLIENT LOG ENTRIES (do NOT create duplicates):
+{existing_entries}
+
+EXISTING BUSINESS PROFILE (only surface genuinely NEW facts not already here):
+{existing_profile}
+
+Output ONLY a JSON object, no preamble:
+
+{{
+  "log_entries": [
+    {{
+      "date": "YYYY-MM-DD",
+      "direction": "inbound | outbound | mixed",
+      "subject": "email subject (from first message)",
+      "thread_id": "Gmail thread ID (from thread data)",
+      "attendees": "comma-separated names + emails",
+      "summary": "2-4 sentence summary of what was discussed",
+      "key_decisions": "what was decided (empty if none)",
+      "action_items": "what was committed to (empty if none)"
+    }}
+  ],
+  "profile_enrichments": [
+    {{
+      "section": "exact section name from Business Profile (e.g. Services Overview, Staffing & Team, Tech Stack, Insurance & Payment, Common Objections & FAQs, etc.)",
+      "fact": "the new fact — one concise sentence or short paragraph"
+    }}
+  ],
+  "flags": [
+    {{
+      "type": "open_action | scope_change | blocker | promise_made | strategic | rule_set",
+      "description": "what needs attention",
+      "source_date": "YYYY-MM-DD",
+      "brand_field": "(for rule_set only) which Brand Guidelines field: Words to Avoid | Voice & Tone | Photography Style | Image Direction | POV Notes | CTA Style",
+      "brand_value": "(for rule_set only) what to add or update"
+    }}
+  ],
+  "skipped_count": N
+}}
+
+Rules:
+- Use exact dates from the thread headers.
+- Only include facts actually stated in the emails. Do not infer.
+- If a thread is pure scheduling / acknowledgement / auto-reply, skip it — increment skipped_count.
+- Do NOT duplicate any existing Client Log entry (check subjects and dates).
+- Do NOT surface enrichments already present in the existing Business Profile.
+- For rule_set flags: these are client-stated constraints like "don't use this word", "we don't offer X", "never describe us as Y", "use warmer imagery." Map to the Brand Guidelines field where it belongs.
+- Compress aggressively. Quality over quantity.
+"""
+
+
+async def synthesize_threads(
+    threads: list[dict],
+    client_name: str,
+    existing_log_entries: list[str],
+    existing_profile: str,
+) -> dict:
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    threads_block = "\n\n===== THREAD =====\n".join(
+        f"Subject: {t['subject']}\n"
+        f"Thread ID: {t['thread_id']}\n"
+        f"Dates: {t['first_date']} → {t['last_date']} ({t['message_count']} msgs)\n"
+        f"Participants: {', '.join(t['participants'])}\n"
+        f"Last direction: {t['direction']}\n"
+        f"Body:\n{t['body']}"
+        for t in threads
+    )
+
+    existing_entries_str = "\n".join(
+        f"  - {e}" for e in existing_log_entries
+    ) if existing_log_entries else "(none — first enrichment run)"
+
+    existing_profile_str = existing_profile[:8000] if existing_profile else "(empty)"
+
+    system = SYNTHESIS_SYSTEM.format(
+        existing_entries=existing_entries_str,
+        existing_profile=existing_profile_str,
+    )
+
+    prompt = f"""Client: {client_name}
+
+Email threads to analyze ({len(threads)} threads):
+
+{threads_block}
+
+Return the JSON object as specified."""
+
+    response = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=16000,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = response.content[0].text.strip()
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        raise ValueError("Could not parse Claude response as JSON")
+    return json.loads(match.group(0))
+
+
+# ── Dedup: load existing Client Log entries ────────────────────────────────────
+
+async def load_existing_log_entries(
+    notion: NotionClient, log_db_id: str, days: int = 365
+) -> tuple[list[str], set[str]]:
+    """Return (summary strings for Claude context, set of thread_ids already logged)."""
+    summaries: list[str] = []
+    thread_ids: set[str] = set()
+
+    try:
+        rows = await notion._client.request(
+            path=f"databases/{log_db_id}/query",
+            method="POST",
+            body={"page_size": 100, "sorts": [{"property": "Date", "direction": "descending"}]},
+        )
+    except Exception:
+        return [], set()
+
+    for row in rows.get("results", []):
+        props = row.get("properties", {})
+
+        title_parts = props.get("Title", {}).get("title", [])
+        title = "".join(p.get("text", {}).get("content", "") for p in title_parts)
+
+        date_obj = props.get("Date", {}).get("date")
+        date_str = date_obj.get("start", "") if date_obj else ""
+
+        source_parts = props.get("Source", {}).get("rich_text", [])
+        source = "".join(p.get("text", {}).get("content", "") for p in source_parts)
+
+        # Extract thread_id if stored
+        tid_parts = props.get("Gmail Thread ID", {}).get("rich_text", [])
+        tid = "".join(p.get("text", {}).get("content", "") for p in tid_parts)
+        if tid:
+            thread_ids.add(tid)
+
+        summaries.append(f"[{date_str}] {title}")
+
+    return summaries[:80], thread_ids
+
+
+# ── Notion writes ──────────────────────────────────────────────────────────────
+
+async def write_client_log(
+    notion: NotionClient,
+    log_db_id: str,
+    client_name: str,
+    entries: list[dict],
+    known_thread_ids: set[str],
+) -> int:
+    created = 0
+
+    # Ensure Gmail Thread ID field exists
+    await _ensure_log_thread_field(notion, log_db_id)
+
+    for e in entries:
+        date_str = e.get("date", "")
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            continue
+
+        thread_id = e.get("thread_id", "")
+        if thread_id and thread_id in known_thread_ids:
+            continue
+
+        direction = e.get("direction", "inbound")
+        type_select = "Email Inbound" if direction != "outbound" else "Email Outbound"
+
+        subject = e.get("subject", "Email")
+        title = f"{client_name} — Email — {subject[:60]} — {date_str}"
+
+        props: dict = {
+            "Title":         {"title": [{"text": {"content": title}}]},
+            "Date":          {"date": {"start": date_str}},
+            "Type":          {"select": {"name": type_select}},
+            "Attendees":     {"rich_text": [{"text": {"content": e.get("attendees", "")[:2000]}}]},
+            "Summary":       {"rich_text": [{"text": {"content": e.get("summary", "")[:2000]}}]},
+            "Key Decisions": {"rich_text": [{"text": {"content": e.get("key_decisions", "")[:2000]}}]},
+            "Action Items":  {"rich_text": [{"text": {"content": e.get("action_items", "")[:2000]}}]},
+            "Processed":     {"checkbox": True},
+            "Source":        {"rich_text": [{"text": {"content": "Enriched from Gmail"}}]},
+        }
+        if thread_id:
+            props["Gmail Thread ID"] = {"rich_text": [{"text": {"content": thread_id}}]}
+
+        try:
+            await notion._client.request(
+                path="pages", method="POST",
+                body={"parent": {"database_id": log_db_id}, "properties": props},
+            )
+            created += 1
+            if thread_id:
+                known_thread_ids.add(thread_id)
+        except Exception as ex:
+            print(f"    ⚠ Failed to write log entry for {date_str}: {ex}")
+
+    return created
+
+
+async def _ensure_log_thread_field(notion: NotionClient, log_db_id: str) -> None:
+    """Add Gmail Thread ID field to Client Log DB if missing."""
+    try:
+        db = await notion._client.request(path=f"databases/{log_db_id}", method="GET")
+        if "Gmail Thread ID" not in db.get("properties", {}):
+            await notion._client.request(
+                path=f"databases/{log_db_id}",
+                method="PATCH",
+                body={"properties": {"Gmail Thread ID": {"rich_text": {}}}},
+            )
+    except Exception:
+        pass
+
+
+async def append_profile_enrichments(
+    notion: NotionClient,
+    profile_page_id: str,
+    enrichments: list[dict],
+    flags: list[dict],
+    days: int,
+) -> None:
+    if not enrichments and not flags:
+        return
+
+    non_rule_flags = [f for f in flags if f.get("type") != "rule_set"]
+
+    if not enrichments and not non_rule_flags:
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    blocks: list[dict] = [
+        {
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": f"Email Enrichment — {today}"}}],
+            },
+        },
+        {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"type": "emoji", "emoji": "📧"},
+                "rich_text": [{"type": "text", "text": {
+                    "content": f"Synthesized from Gmail threads (last {days} days). Review and merge into appropriate sections above."
+                }}],
+            },
+        },
+    ]
+
+    if enrichments:
+        blocks.append({
+            "object": "block", "type": "heading_3",
+            "heading_3": {"rich_text": [{"type": "text", "text": {"content": "New Facts"}}]},
+        })
+        for e in enrichments:
+            content = f"[{e.get('section', 'General')}] {e.get('fact', '')}"
+            blocks.append({
+                "object": "block", "type": "bulleted_list_item",
+                "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": content[:1900]}}]},
+            })
+
+    if non_rule_flags:
+        blocks.append({
+            "object": "block", "type": "heading_3",
+            "heading_3": {"rich_text": [{"type": "text", "text": {"content": "Flags — Needs Attention"}}]},
+        })
+        for f in non_rule_flags:
+            content = f"[{f.get('type', 'flag').upper()}] ({f.get('source_date', '')}) {f.get('description', '')}"
+            blocks.append({
+                "object": "block", "type": "bulleted_list_item",
+                "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": content[:1900]}}]},
+            })
+
+    for i in range(0, len(blocks), 100):
+        await notion._client.request(
+            path=f"blocks/{profile_page_id}/children",
+            method="PATCH",
+            body={"children": blocks[i : i + 100]},
+        )
+
+
+# ── rule_set → Brand Guidelines auto-write ─────────────────────────────────────
+
+BRAND_FIELD_MAP = {
+    "Words to Avoid":     "Words to Avoid",
+    "Voice & Tone":       "Voice & Tone",
+    "Photography Style":  "Photography Style",
+    "Image Direction":    "Image Direction",
+    "POV Notes":          "POV Notes",
+    "CTA Style":          "CTA Style",
+}
+
+
+async def apply_rule_set_flags(
+    notion: NotionClient,
+    brand_db_id: str,
+    flags: list[dict],
+) -> int:
+    """Write rule_set flags to the Brand Guidelines DB."""
+    rule_flags = [f for f in flags if f.get("type") == "rule_set"]
+    if not rule_flags or not brand_db_id:
+        return 0
+
+    # Read existing brand row
+    try:
+        rows = await notion._client.request(
+            path=f"databases/{brand_db_id}/query", method="POST", body={"page_size": 1},
+        )
+    except Exception:
+        return 0
+
+    if not rows.get("results"):
+        return 0
+
+    page_id = rows["results"][0]["id"]
+    props = rows["results"][0].get("properties", {})
+
+    updates: dict = {}
+    applied = 0
+
+    for flag in rule_flags:
+        brand_field = BRAND_FIELD_MAP.get(flag.get("brand_field", ""), "")
+        value = flag.get("brand_value", "").strip()
+        if not brand_field or not value:
+            continue
+
+        existing_prop = props.get(brand_field, {})
+        existing_text = "".join(
+            p.get("text", {}).get("content", "")
+            for p in existing_prop.get("rich_text", [])
+        )
+
+        # Append, don't overwrite — separate with semicolon if existing content
+        if value.lower() in existing_text.lower():
+            continue
+
+        new_text = f"{existing_text}; {value}" if existing_text.strip() else value
+        updates[brand_field] = {"rich_text": [{"text": {"content": new_text[:2000]}}]}
+        applied += 1
+
+    if updates:
+        try:
+            await notion._client.request(
+                path=f"pages/{page_id}",
+                method="PATCH",
+                body={"properties": updates},
+            )
+        except Exception as e:
+            print(f"    ⚠ Could not update Brand Guidelines: {e}")
+            return 0
+
+    return applied
