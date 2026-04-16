@@ -226,6 +226,14 @@ enrich-emails:
 		$(if $(MAX),--max-threads $(MAX),) \
 		$(if $(DRY),--dry-run,)
 
+# Meeting processor — processes Notion AI transcripts into Client Log + ClickUp + email
+#   make meeting-processor                    # Process all unprocessed transcripts
+#   make meeting-processor CLIENT=pdx_plumber # Process only for one client
+
+meeting-processor:
+	@$(PYTHON) scripts/enrichment/meeting_processor.py \
+		$(if $(CLIENT),--client $(CLIENT),)
+
 # Real-time email monitor — one tick across all clients
 #   make email-monitor                  # Run one tick (checks since last run)
 #   make email-monitor LOOKBACK=120     # First run: check last 2 hours
