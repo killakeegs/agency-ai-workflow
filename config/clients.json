@@ -899,5 +899,43 @@
         "gbp_location_id": "",
         "clickup_review_list_id": "",
         "migration_source": "google_drive"
+    },
+    "wellwell": {
+        "client_id": "wellwell",
+        "name": "WellWell",
+        "services": {
+            "website_build": false,
+            "care_plan": false,
+            "seo": false,
+            "gbp_management": false,
+            "gbp_posts_per_month": 8,
+            "blog": false,
+            "blog_posts_per_month": 0,
+            "social_media": false,
+            "social_posts_per_month": 8,
+            "linkedin_posts_per_month": 2,
+            "newsletter": false,
+            "paid_ads": false
+        },
+        "vertical": [
+            "dermatology"
+        ],
+        "client_info_db_id": "344f7f45-333e-8160-aaf3-e0ef08015058",
+        "client_log_db_id": "344f7f45-333e-815f-84e2-d2a52a904337",
+        "brand_guidelines_db_id": "344f7f45-333e-8127-b149-c9792f83454b",
+        "care_plan_db_id": "344f7f45-333e-81b3-b669-cd17b020eab2",
+        "business_profile_page_id": "344f7f45-333e-81be-a8b3-e34d74633edd",
+        "sitemap_db_id": "",
+        "content_db_id": "",
+        "images_db_id": "",
+        "competitors_db_id": "",
+        "keywords_db_id": "",
+        "seo_metrics_db_id": "",
+        "gbp_posts_db_id": "",
+        "blog_posts_db_id": "",
+        "social_posts_db_id": "",
+        "gbp_location_id": "",
+        "clickup_review_list_id": "",
+        "migration_source": "google_drive"
     }
 }
