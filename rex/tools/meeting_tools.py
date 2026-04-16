@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import anthropic
 import httpx
@@ -459,23 +459,38 @@ async def _create_clickup_tasks(
                 f"Pipeline stage: {item.get('pipeline_stage', 'general')}"
             )
 
-            # Parse due date
+            # Start date = today
+            start_ts = int(datetime.now().timestamp() * 1000)
+
+            # Parse due date — default to 3 business days from now if unspecified
             due_ts = None
             due_str = item.get("due_date", "")
-            if due_str and due_str != "unspecified":
+            if due_str and due_str not in ("unspecified", "TBD", ""):
                 try:
                     due_dt = datetime.strptime(due_str, "%Y-%m-%d")
                     due_ts = int(due_dt.timestamp() * 1000)
                 except ValueError:
                     pass
+            if not due_ts:
+                default_due = datetime.now() + timedelta(days=3)
+                # Skip weekends
+                while default_due.weekday() >= 5:
+                    default_due += timedelta(days=1)
+                due_ts = int(default_due.timestamp() * 1000)
+
+            # Priority mapping: ClickUp 1=urgent 2=high 3=normal 4=low
+            priority_str = item.get("priority", "MEDIUM").upper()
+            priority_map = {"URGENT": 1, "HIGH": 2, "MEDIUM": 3, "LOW": 4}
+            priority = priority_map.get(priority_str, 3)
 
             body: dict = {
                 "name":        task_name,
                 "description": desc,
                 "assignees":   [assignee_id],
+                "start_date":  start_ts,
+                "due_date":    due_ts,
+                "priority":    priority,
             }
-            if due_ts:
-                body["due_date"] = due_ts
 
             r = await http.post(
                 f"https://api.clickup.com/api/v2/list/{list_id}/task",
