@@ -6,7 +6,7 @@
 # For revisions: make content NOTES="homepage feels too formal, loosen the tone"
 
 PYTHON := .venv/bin/python3
-CLIENT := summit_therapy
+CLIENT ?=
 NOTES  ?=
 
 # ── Interactive menu (recommended) ───────────────────────────────────────────
