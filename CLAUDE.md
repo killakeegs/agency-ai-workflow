@@ -344,6 +344,14 @@ make enrich-emails DAYS=90      # Shorter window
 make enrich-emails DRY=1        # Preview to /tmp without writing to Notion
 make enrich-emails MAX=30       # Tighter token budget (default 60 threads)
 
+# Meeting processor (automated or manual)
+make meeting-processor          # Process all unprocessed Notion AI transcripts
+make meeting-processor CLIENT=pdx_plumber  # Process only for one client
+
+# Real-time monitors (Railway cron — also runnable locally)
+make email-monitor              # One tick: check Gmail for all clients since last run
+make email-monitor LOOKBACK=120 # First run: check last 2 hours
+
 # Visual exports
 make sitemap-visuals        # HTML + JSON sitemap visual
 make brand-export           # Brand guidelines JSON
@@ -576,7 +584,45 @@ Pulls Gmail threads for a client, synthesizes with Claude, writes to Notion. Bui
 
 **Prerequisite:** Client must have `email` or `primary_contact_email` in `config/clients.json` (domain-based Gmail search). Missing for 8 legacy clients: cielo, atlas, arc, dmab, bloom, freedom, nonno, lotus.
 
-**Planned: real-time monitor** — Railway cron service (every 10–15 min) reusing shared modules. Gmail `historyId` cursor for incremental processing. State in Supabase. Slack alerts via Rex for flagged items.
+**Real-time monitor** — Railway cron service "agency-ai-workflow" (every 15 min). ONE Gmail search per tick, matches to clients by domain. State stored in Notion "Email Monitor State" DB. Thread update support (replies update existing Client Log entries). Slack alerts for flags.
+
+---
+
+## Meeting Processor
+
+Automated pipeline that processes Notion AI meeting transcripts into structured client records.
+
+**Script:** `scripts/enrichment/meeting_processor.py`
+**Make commands:**
+```bash
+make meeting-processor                     # Process all unprocessed transcripts
+make meeting-processor CLIENT=pdx_plumber  # Process only for one client
+```
+
+**Pipeline (fully automated):**
+1. Polls Meeting Transcripts DB for `Processed: False` entries
+2. Reads the Notion AI `transcription` block (summary + notes + full transcript children)
+3. Matches to client by the `Client` field on the transcript page
+4. Parses with Claude → 12 structured sections (uses Rex's `_parse_transcript` in `rex/tools/meeting_tools.py`)
+5. Writes to client's Client Log DB (structured: summary, key decisions, action items with owners + priority)
+6. Creates ClickUp tasks from action items (requires `clickup_review_list_id` in clients.json)
+7. Drafts follow-up email as Gmail draft (HTML formatted — bold headers, bullet points)
+8. Posts summary to Slack (`#agency-pipeline`)
+9. Marks transcript as `Processed: True`
+
+**Email draft format (matches Keegan's writing style):**
+- Casual, warm opening — personal touch, excited tone
+- Three sections: **RxMedia Action Items**, **Action Items for You**, **Future Roadmap**
+- Each item: **Bold Label:** description (bullet points)
+- Sign-off: "Best regards, Keegan, RxMedia"
+- Always HTML for proper Gmail rendering
+- Never auto-sends — always creates a Gmail draft for review
+
+**Meeting Transcripts DB:** `343f7f45-333e-81cf-8f2f-ebfd074fc9fd` — Notion AI note-taker writes here automatically after Google Meet calls. Fields: Title, Client, Meeting Date, Processed, Processed Date.
+
+**Notion Custom Agent (Meeting Processor) — DISABLED 2026-04-16.** Was partially working but three blockers: (1) fires before transcript content is ready (empty block), (2) no ClickUp MCP (Notion bug), (3) no Slack posting permissions. Python version handles all three.
+
+**Deployment:** Ready for Railway cron alongside the email monitor. Start command: `python3 scripts/enrichment/meeting_processor.py`. Schedule: `*/10 * * * *`.
 
 ---
 
