@@ -449,7 +449,12 @@ async def _create_clickup_tasks(
     async with httpx.AsyncClient() as http:
         for item in action_items:
             owner_name = item.get("owner", "").lower().split()[0] if item.get("owner") else ""
-            assignee_id = name_to_id.get(owner_name, HENNA_CLICKUP_ID)
+
+            # Only create ClickUp tasks for RxMedia team members
+            if owner_name not in name_to_id:
+                continue
+
+            assignee_id = name_to_id[owner_name]
 
             task_name = f"{client_name} — {item.get('task', 'Task')}"
             desc = (
