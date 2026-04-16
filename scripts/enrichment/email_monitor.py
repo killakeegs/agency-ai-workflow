@@ -220,6 +220,42 @@ def _format_slack_alert(client_name: str, flags: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# Keyword-based urgency detection — fires even when Claude doesn't flag
+URGENCY_KEYWORDS = [
+    "not working", "stopped working", "broken", "down", "outage",
+    "urgent", "asap", "emergency", "critical", "immediately",
+    "can't access", "cannot access", "can't log in", "cannot log in",
+    "not receiving", "no one is available", "not available",
+    "please help", "need help", "help!",
+    "issue with", "problem with", "something wrong",
+]
+
+
+def _detect_urgency(subject: str, body: str) -> list[str]:
+    """Return list of urgency keywords matched in subject or body."""
+    combined = f"{subject}\n{body[:1500]}".lower()
+    return [kw for kw in URGENCY_KEYWORDS if kw in combined]
+
+
+def _format_urgent_alert(client_name: str, thread: dict, matched: list[str]) -> str:
+    subject = thread.get("subject", "(no subject)")
+    last_date = thread.get("last_date", "")
+    direction = thread.get("direction", "inbound")
+    body_preview = thread.get("body", "")[:400].strip()
+
+    lines = [
+        f"🚨 *URGENT EMAIL — {client_name}*",
+        f"_{direction} | {last_date}_",
+        f"*Subject:* {subject}",
+        f"*Keywords:* {', '.join(matched[:5])}",
+        "",
+        "```",
+        body_preview,
+        "```",
+    ]
+    return "\n".join(lines)
+
+
 # ── Main tick ──────────────────────────────────────────────────────────────────
 
 async def tick(lookback_minutes: int = 15) -> None:
@@ -334,6 +370,14 @@ async def tick(lookback_minutes: int = 15) -> None:
 
         if not summarized:
             continue
+
+        # Urgency keyword safety net — fires regardless of Claude's flag decisions
+        for thread in summarized:
+            matched = _detect_urgency(thread.get("subject", ""), thread.get("body", ""))
+            if matched and SLACK_BOT_TOKEN:
+                alert = _format_urgent_alert(client_name, thread, matched)
+                await _post_to_slack(alert)
+                print(f"  🚨 Urgent alert sent: {thread.get('subject', '')[:60]} (matched: {', '.join(matched[:3])})")
 
         print(f"\n  Processing {client_name}: {len(summarized)} threads from {len(msgs)} messages")
 
