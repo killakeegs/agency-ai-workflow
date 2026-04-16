@@ -209,6 +209,7 @@ migrate-client:
 		--verticals $(VERTICALS) \
 		--drive-folder "$(DRIVE)" \
 		$(if $(EMAIL),--contact-email "$(EMAIL)",) \
+		$(if $(FROM_JSON),--from-json "$(FROM_JSON)",) \
 		$(if $(DRY),--dry-run,)
 
 # ── Gmail enrichment ──────────────────────────────────────────────────────────
