@@ -114,11 +114,11 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
     print(f"  Gmail query: {query[:200]}{'...' if len(query) > 200 else ''}\n")
 
     # Load existing log for dedup
-    existing_summaries, known_thread_ids = [], set()
+    existing_summaries, thread_map = [], {}
     if log_db_id:
         print("  Loading existing Client Log for dedup...")
-        existing_summaries, known_thread_ids = await load_existing_log_entries(notion, log_db_id, days)
-        print(f"    {len(existing_summaries)} existing entries, {len(known_thread_ids)} thread IDs tracked")
+        existing_summaries, thread_map = await load_existing_log_entries(notion, log_db_id, days)
+        print(f"    {len(existing_summaries)} existing entries, {len(thread_map)} thread IDs tracked")
 
     # Load existing Business Profile for dedup
     existing_profile = ""
@@ -155,7 +155,7 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
 
     for tid, thread in threads_raw.items():
         # Skip if we already have this thread logged
-        if tid in known_thread_ids:
+        if tid in thread_map:
             skipped_known += 1
             continue
 
@@ -218,8 +218,8 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
     print("\nWriting to Notion...")
 
     if log_entries and log_db_id:
-        created = await write_client_log(notion, log_db_id, client_name, log_entries, known_thread_ids)
-        print(f"  ✓ {created} Client Log entries")
+        created, updated = await write_client_log(notion, log_db_id, client_name, log_entries, thread_map)
+        print(f"  ✓ {created} new + {updated} updated Client Log entries")
     elif not log_db_id:
         print("  ⚠ No client_log_db_id — skipping Client Log")
 

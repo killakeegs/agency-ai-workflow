@@ -47,6 +47,7 @@ Output ONLY a JSON object, no preamble:
       "direction": "inbound | outbound | mixed",
       "subject": "email subject (from first message)",
       "thread_id": "Gmail thread ID (from thread data)",
+      "message_count": N,
       "attendees": "comma-separated names + emails",
       "summary": "2-4 sentence summary of what was discussed",
       "key_decisions": "what was decided (empty if none)",
@@ -136,10 +137,10 @@ Return the JSON object as specified."""
 
 async def load_existing_log_entries(
     notion: NotionClient, log_db_id: str, days: int = 365
-) -> tuple[list[str], set[str]]:
-    """Return (summary strings for Claude context, set of thread_ids already logged)."""
+) -> tuple[list[str], dict[str, dict]]:
+    """Return (summary strings for Claude context, thread_id → {page_id, msg_count} map)."""
     summaries: list[str] = []
-    thread_ids: set[str] = set()
+    thread_map: dict[str, dict] = {}
 
     try:
         rows = await notion._client.request(
@@ -148,7 +149,7 @@ async def load_existing_log_entries(
             body={"page_size": 100, "sorts": [{"property": "Date", "direction": "descending"}]},
         )
     except Exception:
-        return [], set()
+        return [], {}
 
     for row in rows.get("results", []):
         props = row.get("properties", {})
@@ -159,18 +160,17 @@ async def load_existing_log_entries(
         date_obj = props.get("Date", {}).get("date")
         date_str = date_obj.get("start", "") if date_obj else ""
 
-        source_parts = props.get("Source", {}).get("rich_text", [])
-        source = "".join(p.get("text", {}).get("content", "") for p in source_parts)
-
-        # Extract thread_id if stored
         tid_parts = props.get("Gmail Thread ID", {}).get("rich_text", [])
         tid = "".join(p.get("text", {}).get("content", "") for p in tid_parts)
+
+        msg_count = props.get("Message Count", {}).get("number") or 0
+
         if tid:
-            thread_ids.add(tid)
+            thread_map[tid] = {"page_id": row["id"], "msg_count": msg_count}
 
         summaries.append(f"[{date_str}] {title}")
 
-    return summaries[:80], thread_ids
+    return summaries[:80], thread_map
 
 
 # ── Notion writes ──────────────────────────────────────────────────────────────
@@ -180,11 +180,12 @@ async def write_client_log(
     log_db_id: str,
     client_name: str,
     entries: list[dict],
-    known_thread_ids: set[str],
-) -> int:
+    thread_map: dict[str, dict],
+) -> tuple[int, int]:
+    """Write or update Client Log entries. Returns (created, updated)."""
     created = 0
+    updated = 0
 
-    # Ensure Gmail Thread ID field exists
     await _ensure_log_thread_field(notion, log_db_id)
 
     for e in entries:
@@ -195,8 +196,7 @@ async def write_client_log(
             continue
 
         thread_id = e.get("thread_id", "")
-        if thread_id and thread_id in known_thread_ids:
-            continue
+        msg_count = e.get("message_count", 1)
 
         direction = e.get("direction", "inbound")
         type_select = "Email Inbound" if direction != "outbound" else "Email Outbound"
@@ -217,30 +217,50 @@ async def write_client_log(
         }
         if thread_id:
             props["Gmail Thread ID"] = {"rich_text": [{"text": {"content": thread_id}}]}
+        props["Message Count"] = {"number": msg_count}
+
+        existing = thread_map.get(thread_id, {}) if thread_id else {}
+
+        if existing and existing.get("msg_count", 0) >= msg_count:
+            continue
 
         try:
-            await notion._client.request(
-                path="pages", method="POST",
-                body={"parent": {"database_id": log_db_id}, "properties": props},
-            )
-            created += 1
-            if thread_id:
-                known_thread_ids.add(thread_id)
+            if existing and existing.get("page_id"):
+                await notion._client.request(
+                    path=f"pages/{existing['page_id']}",
+                    method="PATCH",
+                    body={"properties": props},
+                )
+                updated += 1
+                thread_map[thread_id] = {"page_id": existing["page_id"], "msg_count": msg_count}
+            else:
+                result = await notion._client.request(
+                    path="pages", method="POST",
+                    body={"parent": {"database_id": log_db_id}, "properties": props},
+                )
+                created += 1
+                if thread_id:
+                    thread_map[thread_id] = {"page_id": result["id"], "msg_count": msg_count}
         except Exception as ex:
             print(f"    ⚠ Failed to write log entry for {date_str}: {ex}")
 
-    return created
+    return created, updated
 
 
 async def _ensure_log_thread_field(notion: NotionClient, log_db_id: str) -> None:
-    """Add Gmail Thread ID field to Client Log DB if missing."""
+    """Add Gmail Thread ID + Message Count fields to Client Log DB if missing."""
     try:
         db = await notion._client.request(path=f"databases/{log_db_id}", method="GET")
+        patches: dict = {}
         if "Gmail Thread ID" not in db.get("properties", {}):
+            patches["Gmail Thread ID"] = {"rich_text": {}}
+        if "Message Count" not in db.get("properties", {}):
+            patches["Message Count"] = {"number": {}}
+        if patches:
             await notion._client.request(
                 path=f"databases/{log_db_id}",
                 method="PATCH",
-                body={"properties": {"Gmail Thread ID": {"rich_text": {}}}},
+                body={"properties": patches},
             )
     except Exception:
         pass

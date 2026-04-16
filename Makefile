@@ -226,6 +226,18 @@ enrich-emails:
 		$(if $(MAX),--max-threads $(MAX),) \
 		$(if $(DRY),--dry-run,)
 
+# Real-time email monitor — one tick across all clients
+#   make email-monitor                  # Run one tick (checks since last run)
+#   make email-monitor LOOKBACK=120     # First run: check last 2 hours
+#   make email-monitor-setup            # Create state DB only
+
+email-monitor:
+	@$(PYTHON) scripts/enrichment/email_monitor.py \
+		$(if $(LOOKBACK),--lookback $(LOOKBACK),)
+
+email-monitor-setup:
+	@$(PYTHON) scripts/enrichment/email_monitor.py --setup
+
 # ── Approval flow ─────────────────────────────────────────────────────────────
 
 advance:
