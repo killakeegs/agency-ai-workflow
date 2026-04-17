@@ -1,13 +1,72 @@
 ---
-// TODO(ralph): Build Trusted-By ribbon
-// Eyebrow: "TRUSTED BY LEADING mental health and addiction treatment providers"
-// Logo row: AC, freedom, cielo, parkwood, evolve, lotus, resilient-return, renaissance, TR
-// Logos in reference/assets/images/ — files ending in logo.avif
+// Trusted-By ribbon — horizontal marquee of client logos.
+// Reference: section.ribbon-section on rxmedia.io (logo-grid class).
+
+const logos = [
+  { src: '/images/ribbon/freedom.avif', alt: "Freedom Recovery's logo" },
+  { src: '/images/ribbon/another-chance.avif', alt: "Another Chance's logo" },
+  { src: '/images/ribbon/cielo.avif', alt: "Cielo's logo" },
+  { src: '/images/ribbon/roots.avif', alt: 'Roots logo' },
+  { src: '/images/ribbon/parkwood.avif', alt: "Parkwood Clinic's logo" },
+  { src: '/images/ribbon/team-recovery.avif', alt: "Team Recovery's logo" },
+  { src: '/images/ribbon/resilient-return.avif', alt: 'Resilient Return logo' },
+  { src: '/images/ribbon/restore.avif', alt: 'Restore logo' },
+  { src: '/images/ribbon/buena-vista.avif', alt: 'Buena Vista logo' },
+  { src: '/images/ribbon/lotus.avif', alt: 'Lotus Recovery logo' },
+];
+
+// Duplicate once for seamless marquee loop.
+const marqueeLogos = [...logos, ...logos];
 ---
-<section id="trusted-by" class="border-y border-[color:var(--color-border)] bg-[color:var(--color-bg-muted)] py-12">
-  <div class="mx-auto max-w-7xl px-6 text-center">
-    <p class="text-xs uppercase tracking-[0.2em] text-[color:var(--color-fg-muted)]">
-      Trusted by leading mental health and addiction treatment providers
-    </p>
+<section id="trusted-by" class="border-y border-[color:var(--color-border)] bg-[color:var(--color-bg-muted)] py-16">
+  <div class="mx-auto mb-10 max-w-7xl px-6 text-center">
+    <h2 class="text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--color-fg-subtle)] md:text-sm">
+      <span class="text-[color:var(--color-accent)]">Trusted</span> by leading mental health and addiction treatment providers
+    </h2>
+  </div>
+
+  <div class="group relative overflow-hidden" data-marquee>
+    <!-- Edge fade masks -->
+    <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[color:var(--color-bg-muted)] to-transparent"></div>
+    <div class="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[color:var(--color-bg-muted)] to-transparent"></div>
+
+    <div class="marquee-track flex gap-16 whitespace-nowrap">
+      {marqueeLogos.map((logo, i) => (
+        <div class="flex shrink-0 items-center justify-center">
+          <img
+            src={logo.src}
+            alt={i < logos.length ? logo.alt : ''}
+            aria-hidden={i >= logos.length}
+            loading="lazy"
+            width="140"
+            height="70"
+            class="h-14 w-auto max-w-[140px] object-contain opacity-70 transition hover:opacity-100"
+          />
+        </div>
+      ))}
+    </div>
   </div>
 </section>
+
+<style>
+  .marquee-track {
+    animation: ribbon-scroll 45s linear infinite;
+    width: max-content;
+  }
+  [data-marquee]:hover .marquee-track {
+    animation-play-state: paused;
+  }
+  @keyframes ribbon-scroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none;
+    }
+  }
+</style>
