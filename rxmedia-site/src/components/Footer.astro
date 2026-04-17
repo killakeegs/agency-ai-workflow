@@ -1,9 +1,153 @@
 ---
-// Placeholder — filled out in a later iteration
+const navColumn = [
+  { label: 'Home', href: '/' },
+  { label: 'About', href: '/about' },
+  { label: 'Industries', href: '/industries-we-serve' },
+  { label: 'Services', href: '/service' },
+  { label: 'Case Studies', href: '/case-studies' },
+  { label: 'Blog', href: '/blog' },
+  { label: 'FAQ', href: '/faq' },
+  { label: 'Contact Us', href: '/contact' },
+];
+
+const servicesColumn = [
+  { label: 'AI-Powered Marketing', href: '/service/ai-powered-marketing' },
+  { label: 'Content & Social Media Marketing', href: '/service/content-and-social-media-marketing' },
+  { label: 'SEO Marketing', href: '/service/seo-marketing' },
+  { label: 'PPC Marketing', href: '/service/ppc-marketing' },
+  { label: 'Website Design & Development', href: '/service/website-design-and-development' },
+  { label: 'CRM & EMR Management', href: '/service/crm-and-emr-management' },
+];
+
+const industriesColumn = [
+  { label: 'Behavioral Health & Addiction', href: '/industries-we-serve/behavioral-health-addiction' },
+  { label: 'Specialized Therapy Practices', href: '/industries-we-serve/specialized-therapy-practices' },
+  { label: 'Wellness & Integrative Health', href: '/industries-we-serve/wellness-and-integrative-health' },
+];
+
+const year = new Date().getFullYear();
 ---
 <footer class="border-t border-[color:var(--color-border)] bg-[color:var(--color-bg)]">
-  <div class="mx-auto max-w-7xl px-6 py-12 text-center text-sm text-[color:var(--color-fg-muted)]">
-    <p>© {new Date().getFullYear()} RxMedia. All rights reserved.</p>
-    <p class="mt-2">(footer placeholder)</p>
+  <div class="mx-auto max-w-7xl px-6 pt-20 pb-12">
+    <div class="mb-16 grid gap-10 md:grid-cols-2 md:items-end">
+      <div>
+        <img src="/images/rxmedia-logo.avif" alt="RxMedia" class="mb-6 h-10 w-auto" width="150" height="40" />
+        <h2 class="text-3xl font-semibold leading-tight md:text-4xl">
+          Stay Tuned for Our Latest Services and Offerings!
+        </h2>
+      </div>
+      <form
+        class="flex w-full max-w-md items-center gap-3"
+        action="#"
+        method="post"
+        data-newsletter
+      >
+        <label class="sr-only" for="footer-newsletter-email">Your email</label>
+        <input
+          id="footer-newsletter-email"
+          type="email"
+          name="email"
+          required
+          placeholder="Enter your email"
+          class="flex-1 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] px-5 py-3 text-sm text-[color:var(--color-fg)] placeholder:text-[color:var(--color-fg-muted)] focus:border-[color:var(--color-accent)] focus:outline-none"
+        />
+        <button
+          type="submit"
+          class="rounded-full bg-[color:var(--color-accent)] px-6 py-3 text-sm font-semibold text-black transition hover:brightness-95"
+        >
+          Subscribe
+        </button>
+      </form>
+    </div>
+
+    <div class="grid gap-10 border-t border-[color:var(--color-border)] pt-12 md:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <h3 class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-fg-muted)]">Navigation</h3>
+        <ul class="space-y-2">
+          {navColumn.map((link) => (
+            <li>
+              <a href={link.href} class="text-sm text-[color:var(--color-fg-subtle)] transition hover:text-[color:var(--color-accent)]">
+                {link.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-fg-muted)]">Services</h3>
+        <ul class="space-y-2">
+          {servicesColumn.map((link) => (
+            <li>
+              <a href={link.href} class="text-sm text-[color:var(--color-fg-subtle)] transition hover:text-[color:var(--color-accent)]">
+                {link.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-fg-muted)]">Industries We Serve</h3>
+        <ul class="space-y-2">
+          {industriesColumn.map((link) => (
+            <li>
+              <a href={link.href} class="text-sm text-[color:var(--color-fg-subtle)] transition hover:text-[color:var(--color-accent)]">
+                {link.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-fg-muted)]">Contact</h3>
+        <ul class="space-y-2 text-sm text-[color:var(--color-fg-subtle)]">
+          <li>
+            <a href="tel:503-744-5173" class="transition hover:text-[color:var(--color-accent)]">
+              503-744-5173
+            </a>
+          </li>
+          <li>
+            <a href="mailto:sales@rxmedia.io" class="transition hover:text-[color:var(--color-accent)]">
+              sales@rxmedia.io
+            </a>
+          </li>
+          <li class="leading-relaxed">
+            2121 NW Savier St,<br />Portland, OR 97210,<br />United States
+          </li>
+        </ul>
+        <div class="mt-5 flex items-center gap-3">
+          <a
+            href="https://www.facebook.com/rxmediamktg"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="RxMedia on Facebook"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] transition hover:border-[color:var(--color-accent)]"
+          >
+            <img src="/images/icon-fb.avif" alt="" class="h-4 w-4" width="16" height="16" />
+          </a>
+          <a
+            href="https://www.linkedin.com/company/rxmedia"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="RxMedia on LinkedIn"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] transition hover:border-[color:var(--color-accent)]"
+          >
+            <img src="/images/icon-linkedin.avif" alt="" class="h-4 w-4" width="16" height="16" />
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-12 flex flex-col items-center justify-between gap-4 border-t border-[color:var(--color-border)] pt-8 text-sm text-[color:var(--color-fg-muted)] md:flex-row">
+      <p>
+        Copyright © {year} |&nbsp;Designed by <a href="https://rxmedia.io" class="text-[color:var(--color-fg-subtle)] hover:text-[color:var(--color-accent)]">RxMedia</a>
+      </p>
+      <div class="flex items-center gap-6">
+        <a href="/terms-of-service" class="transition hover:text-[color:var(--color-accent)]">Terms of Service</a>
+        <a href="#" class="transition hover:text-[color:var(--color-accent)]">Privacy Policy</a>
+      </div>
+    </div>
   </div>
 </footer>

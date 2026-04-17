@@ -1,9 +1,157 @@
 ---
-// Placeholder — filled out in a later iteration
+const mainLinks = [
+  { label: 'Home', href: '/' },
+  { label: 'About', href: '/about' },
+];
+
+const industries = [
+  { label: 'Behavioral Health & Addiction', href: '/industries-we-serve/behavioral-health-addiction' },
+  { label: 'Specialized Therapy Practices', href: '/industries-we-serve/specialized-therapy-practices' },
+  { label: 'Wellness & Integrative Health', href: '/industries-we-serve/wellness-and-integrative-health' },
+];
+
+const services = [
+  { label: 'AI-Powered Marketing', href: '/service/ai-powered-marketing' },
+  { label: 'Content and Social Media Marketing', href: '/service/content-and-social-media-marketing' },
+  { label: 'SEO Marketing', href: '/service/seo-marketing' },
+  { label: 'PPC Marketing', href: '/service/ppc-marketing' },
+  { label: 'Website Design and Development', href: '/service/website-design-and-development' },
+  { label: 'CRM and EMR Management', href: '/service/crm-and-emr-management' },
+];
+
+const trailingLinks = [
+  { label: 'Blog', href: '/blog' },
+  { label: 'FAQ', href: '/faq' },
+];
 ---
-<nav class="sticky top-0 z-40 w-full border-b border-[color:var(--color-border)] bg-[color:var(--color-bg)]/90 backdrop-blur">
-  <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-    <a href="/" class="text-xl font-bold">RxMedia</a>
-    <span class="text-sm text-[color:var(--color-fg-muted)]">(nav placeholder)</span>
+<header
+  class="sticky top-0 z-50 w-full border-b border-[color:var(--color-border)] bg-[color:var(--color-bg)]/90 backdrop-blur"
+>
+  <div class="mx-auto flex max-w-7xl items-center justify-between gap-8 px-6 py-4">
+    <a href="/" class="flex items-center" aria-label="RxMedia home">
+      <img src="/images/rxmedia-logo.avif" alt="RxMedia" class="h-8 w-auto" width="120" height="32" />
+    </a>
+
+    <nav class="hidden items-center gap-8 lg:flex" aria-label="Primary">
+      {mainLinks.map((link) => (
+        <a
+          href={link.href}
+          class="text-sm font-medium text-[color:var(--color-fg)] transition hover:text-[color:var(--color-accent)]"
+        >
+          {link.label}
+        </a>
+      ))}
+
+      <div class="group relative">
+        <button
+          type="button"
+          class="flex items-center gap-1 text-sm font-medium text-[color:var(--color-fg)] transition hover:text-[color:var(--color-accent)]"
+          aria-haspopup="true"
+        >
+          Industries
+          <svg class="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div
+          class="invisible absolute left-0 top-full min-w-[280px] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          <div class="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] p-2 shadow-2xl">
+            {industries.map((link) => (
+              <a
+                href={link.href}
+                class="block rounded-lg px-4 py-2 text-sm text-[color:var(--color-fg-subtle)] transition hover:bg-[color:var(--color-bg-muted)] hover:text-[color:var(--color-accent)]"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div class="group relative">
+        <button
+          type="button"
+          class="flex items-center gap-1 text-sm font-medium text-[color:var(--color-fg)] transition hover:text-[color:var(--color-accent)]"
+          aria-haspopup="true"
+        >
+          Services
+          <svg class="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div
+          class="invisible absolute left-0 top-full min-w-[300px] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          <div class="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] p-2 shadow-2xl">
+            {services.map((link) => (
+              <a
+                href={link.href}
+                class="block rounded-lg px-4 py-2 text-sm text-[color:var(--color-fg-subtle)] transition hover:bg-[color:var(--color-bg-muted)] hover:text-[color:var(--color-accent)]"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {trailingLinks.map((link) => (
+        <a
+          href={link.href}
+          class="text-sm font-medium text-[color:var(--color-fg)] transition hover:text-[color:var(--color-accent)]"
+        >
+          {link.label}
+        </a>
+      ))}
+    </nav>
+
+    <div class="flex items-center gap-4">
+      <a
+        href="/contact"
+        class="hidden items-center gap-2 rounded-full border border-[color:var(--color-fg)] px-5 py-2 text-sm font-medium text-[color:var(--color-fg)] transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-black sm:inline-flex"
+      >
+        Get in touch
+        <span aria-hidden="true">→</span>
+      </a>
+
+      <button
+        type="button"
+        id="nav-hamburger"
+        class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[color:var(--color-border)] lg:hidden"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="nav-mobile-panel"
+      >
+        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
   </div>
-</nav>
+
+  <div
+    id="nav-mobile-panel"
+    class="hidden border-t border-[color:var(--color-border)] bg-[color:var(--color-bg)] lg:hidden"
+  >
+    <nav class="mx-auto max-w-7xl space-y-1 px-6 py-4" aria-label="Mobile">
+      {[...mainLinks, { label: 'Industries', href: '/industries-we-serve' }, { label: 'Services', href: '/service' }, ...trailingLinks, { label: 'Contact', href: '/contact' }].map((link) => (
+        <a
+          href={link.href}
+          class="block rounded-lg px-4 py-3 text-base font-medium text-[color:var(--color-fg)] transition hover:bg-[color:var(--color-bg-muted)] hover:text-[color:var(--color-accent)]"
+        >
+          {link.label}
+        </a>
+      ))}
+    </nav>
+  </div>
+</header>
+
+<script>
+  const btn = document.getElementById('nav-hamburger');
+  const panel = document.getElementById('nav-mobile-panel');
+  btn?.addEventListener('click', () => {
+    const open = panel?.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+  });
+</script>

@@ -15,8 +15,8 @@ Work **top-to-bottom** — foundation first, then each section in order.
 
 ## 1. Global components
 
-- 🟡 **Nav** — placeholder logo + "(nav placeholder)" label. NEEDS: real menu items (Home, About, Industries dropdown, Services dropdown, Blog, FAQ), Get in touch CTA, mobile hamburger
-- 🟡 **Footer** — placeholder copyright only. NEEDS: logo, nav columns, social icons (fb, linkedin)
+- ✅ **Nav** — Logo + Home, About, Industries (dropdown with 3 items), Services (dropdown with 6 items), Blog, FAQ, "Get in touch" CTA. Desktop hover dropdowns + mobile hamburger + click-to-open panel. All links use real /service/, /industries-we-serve/, etc paths.
+- ✅ **Footer** — Logo, newsletter signup ("Stay Tuned for Our Latest Services and Offerings!" + email input), 4 columns (Navigation, Services, Industries We Serve, Contact with phone/email/address), Facebook + LinkedIn icons, bottom row with copyright + Terms/Privacy.
 
 ## 2. Sections (in reference order — top to bottom)
 
@@ -50,3 +50,6 @@ Work **top-to-bottom** — foundation first, then each section in order.
 - **Iter 1:** Scaffolded Layout.astro, index.astro composition, and placeholder section components. All 9 sections render (verify.mjs reports 9 sections, h1=1, h2=4). Now iterating per-section with real content.
 - **Observation:** rxmedia.io h1 is "More Admissions. Less Marketing Stress." (line-break between sentences). Confirmed in reference HTML.
 - **Observation:** Stat values weren't scraped as individual data — need to re-examine reference HTML around `overview-section-2` class for actual numeric values (currently stubbed as 150+ / 98% / 12+ / 4.2x).
+- **Iter 2:** Built real Nav (with Industries + Services dropdowns) and real Footer (newsletter, 4 columns, social icons, contact). verify.mjs: imgs 0→4, words 191→270, still 9 sections / 1 h1.
+- **Observation:** rxmedia.io is actually multi-page (/about, /blog, /contact, /service/*, /industries-we-serve/*). Phase 1 clones only the homepage — internal nav links use real paths but will 404 locally. Phase 2 / future iterations can add those routes if needed.
+- **Observation:** Hero CTA on live site uses blue accent (`--color-accent-alt` #2fa9e0) not lime green. "Get in touch" nav button + Subscribe footer button use lime. Worth checking hero button color when that section is built out.
