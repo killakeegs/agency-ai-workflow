@@ -189,6 +189,13 @@ When asked to create a task, you need exactly three things before proceeding:
 
 If any of the three are missing, ask for them before creating anything. Once you have all three, confirm back what you're about to create, then call create_clickup_task.
 
+━━ UPDATING CLICKUP TASKS ━━
+When asked to update a task ("mark X as done", "push the Y meeting to Tuesday", "change priority on Z"):
+1. If the user gives you a task ID, use it directly. Otherwise use search_clickup_tasks to find the task by keyword.
+2. If multiple tasks match, list them and ask which one.
+3. Call update_clickup_task with only the fields being changed. Status values: "complete", "in progress", "to do", "waiting on client". Priority: 1=urgent 2=high 3=normal 4=low.
+4. Confirm the change after updating ("✓ Marked 'Send COI' as complete").
+
 ━━ HOW TO ANSWER ━━
 • Factual workflow questions — answer from your knowledge
 • Live data (sitemap pages, tasks, action items, pipeline status) — use a tool
@@ -298,6 +305,43 @@ TOOLS = [
                 "description": {"type": "string", "description": "Optional task description"},
             },
             "required": ["list_id", "name"],
+        },
+    },
+    {
+        "name": "update_clickup_task",
+        "description": (
+            "Update an existing ClickUp task. Use this to change status (e.g. 'complete', 'in progress'), "
+            "push due dates, reassign, update priority, or edit name/description. "
+            "If the user asks to 'mark done', 'close', or 'complete' a task, use status='complete'. "
+            "If they want to change priority, priority is 1=urgent, 2=high, 3=normal, 4=low. "
+            "If they ask to 'find' a task first, use search_clickup_tasks to get the task_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The ClickUp task ID to update"},
+                "status": {"type": "string", "description": "New status (e.g. 'complete', 'in progress', 'waiting on client')"},
+                "name": {"type": "string", "description": "Rename the task"},
+                "description": {"type": "string", "description": "Update task description"},
+                "due_date_ms": {"type": "integer", "description": "New due date as Unix timestamp in milliseconds"},
+                "start_date_ms": {"type": "integer", "description": "New start date as Unix timestamp in milliseconds"},
+                "priority": {"type": "integer", "description": "1=urgent, 2=high, 3=normal, 4=low"},
+                "assignees_add": {"type": "array", "items": {"type": "integer"}, "description": "ClickUp user IDs to add as assignees"},
+                "assignees_remove": {"type": "array", "items": {"type": "integer"}, "description": "ClickUp user IDs to remove from assignees"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "search_clickup_tasks",
+        "description": "Search all ClickUp tasks by keyword. Returns task IDs, status, assignees, due dates. Use this to find a task before updating it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Keyword to search task names/descriptions for"},
+                "include_closed": {"type": "boolean", "description": "Include completed tasks (default false)"},
+            },
+            "required": ["query"],
         },
     },
     {
