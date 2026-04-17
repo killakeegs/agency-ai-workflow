@@ -1,34 +1,148 @@
 ---
-// TODO(ralph): Build Services section
-// Eyebrow: "Our Services"
-// Heading: "Results-Driven Digital Marketing Services"
-// "Our Newest Offering" callout for AI-Powered Marketing
-// Cards: Content & Social Media, SEO, PPC, Website Design & Development, CRM & EMR, AI-Powered (newest)
+// Services — "Results-Driven Digital Marketing Services"
+// AI-Powered Marketing is flagged as "Our Newest Offering" on the reference
+// and features a larger feature card / illustration. Remaining 5 services
+// render as a grid. All copy verbatim from reference.
+
 const services = [
-  { title: 'Content & Social Media Marketing', newest: false },
-  { title: 'SEO Marketing', newest: false },
-  { title: 'PPC Marketing', newest: false },
-  { title: 'Website Design & Development', newest: false },
-  { title: 'CRM & EMR Management', newest: false },
-  { title: 'AI-Powered Marketing', newest: true },
+  {
+    title: 'Content & Social Media Marketing',
+    href: '/service/content-and-social-media-marketing',
+    body:
+      "We meticulously curate and manage your treatment center's blogs and social media presence, ensuring a consistent online identity. Our experts handle content strategy while you focus on what matters most—your patients' recovery.",
+    icon: 'content',
+  },
+  {
+    title: 'SEO Marketing',
+    href: '/service/seo-marketing',
+    body:
+      'We boost your online presence, including your Google Business Profile, to secure a prominent spot on search engines like Google. This helps potential patients find your services quickly when they look for healthcare options online.',
+    icon: 'seo',
+  },
+  {
+    title: 'PPC Marketing',
+    href: '/service/ppc-marketing',
+    body:
+      'We leverage targeted paid advertising campaigns so you can connect with a larger audience and seamlessly convert more leads into admissions.',
+    icon: 'ppc',
+  },
+  {
+    title: 'Website Design & Development',
+    href: '/service/website-design-and-development',
+    body:
+      'We create easy-to-navigate websites that not only look great but also enhance your branding. A fast-loading, user-friendly site that leaves a lasting impression.',
+    icon: 'web',
+  },
+  {
+    title: 'CRM & EMR Management',
+    href: '/service/crm-and-emr-management',
+    body:
+      'Streamline patient relationships and improve operational efficiency. From monitoring calls to enhancing overall patient experience, we help you adapt to the ever-evolving digital landscape.',
+    icon: 'crm',
+  },
 ];
 ---
-<section id="services" class="bg-[color:var(--color-bg)] py-24">
+<section id="services" class="bg-[color:var(--color-bg)] py-24 md:py-32">
   <div class="mx-auto max-w-7xl px-6">
-    <p class="mb-2 text-sm uppercase tracking-[0.2em] text-[color:var(--color-accent)]">Our Services</p>
-    <h2 class="mb-12 text-4xl font-semibold md:text-[60px] md:leading-[60px]">
-      Results-Driven Digital Marketing Services
-    </h2>
+    <div class="mb-16 max-w-3xl">
+      <p class="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
+        Our Services
+      </p>
+      <h2 class="text-4xl font-semibold leading-tight md:text-5xl lg:text-[60px] lg:leading-[60px]">
+        Results-Driven <span class="text-[color:var(--color-accent)]">Digital Marketing Services</span>
+      </h2>
+      <p class="mt-6 max-w-2xl text-base text-[color:var(--color-fg-subtle)] md:text-lg">
+        From AI-driven tools to SEO and paid ads, we craft targeted strategies that boost your visibility, capture attention, and turn interest into admissions.
+      </p>
+    </div>
+
+    <!-- Featured: AI-Powered Marketing — "Our Newest Offering" -->
+    <a
+      href="/service/ai-powered-marketing"
+      class="group mb-8 block overflow-hidden rounded-3xl border border-[color:var(--color-accent)]/40 bg-gradient-to-br from-[color:var(--color-bg-elevated)] via-[color:var(--color-bg-elevated)] to-[color:var(--color-bg)] transition hover:border-[color:var(--color-accent)]"
+    >
+      <div class="grid items-center gap-8 p-8 md:grid-cols-12 md:p-12">
+        <div class="md:col-span-7">
+          <span class="mb-4 inline-block rounded-full bg-[color:var(--color-accent)] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-black">
+            Our Newest Offering
+          </span>
+          <h3 class="mb-4 text-3xl font-semibold leading-tight md:text-4xl lg:text-[44px] lg:leading-[52.8px]">
+            AI-Powered Marketing
+          </h3>
+          <p class="mb-4 text-lg font-medium text-[color:var(--color-accent)]">
+            Put your brand front and center in AI search conversations.
+          </p>
+          <p class="mb-4 text-sm leading-relaxed text-[color:var(--color-fg-subtle)] md:text-base">
+            From ChatGPT and Google SGE to voice assistants and smart results, people are getting answers from AI more than ever. Our AI-Powered Marketing service is designed to help you rank in those conversations, automate engagement, and keep your website working smarter.
+          </p>
+          <p class="mb-6 text-sm leading-relaxed text-[color:var(--color-fg-subtle)] md:text-base">
+            We combine SEO strategy, high-quality content, and AI-driven tools to increase your visibility and conversions. By integrating AEO (Answer Engine Optimization) and GEO (Generative Engine Optimization), we align your content with how today's AI platforms surface and prioritize information so your brand gets seen, trusted, and chosen.
+          </p>
+          <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)] transition group-hover:gap-3">
+            Learn More
+            <span aria-hidden="true">→</span>
+          </span>
+        </div>
+        <div class="md:col-span-5">
+          <img
+            src="/images/ai-marketing-illustration.avif"
+            alt="Search engine illustration"
+            loading="lazy"
+            width="520"
+            height="400"
+            class="h-auto w-full"
+          />
+        </div>
+      </div>
+    </a>
+
     <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {services.map((s) => (
-        <div class="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] p-8">
-          {s.newest && (
-            <span class="mb-3 inline-block rounded-full bg-[color:var(--color-accent)] px-3 py-1 text-xs font-semibold text-black">
-              Our Newest Offering
-            </span>
-          )}
-          <h3 class="text-2xl font-semibold">{s.title}</h3>
-        </div>
+        <a
+          href={s.href}
+          class="group relative flex flex-col rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] p-8 transition hover:border-[color:var(--color-accent)]"
+        >
+          <div class="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]">
+            {s.icon === 'content' && (
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round" />
+              </svg>
+            )}
+            {s.icon === 'seo' && (
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="M21 21l-4.3-4.3" stroke-linecap="round" />
+              </svg>
+            )}
+            {s.icon === 'ppc' && (
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1m0-12.8l-2.1 2.1M5.6 18.4l2.1-2.1" stroke-linecap="round" />
+                <circle cx="12" cy="12" r="3.5" />
+              </svg>
+            )}
+            {s.icon === 'web' && (
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="14" rx="2" />
+                <path d="M3 9h18M8 14h2m3 0h3" stroke-linecap="round" />
+              </svg>
+            )}
+            {s.icon === 'crm' && (
+              <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M9 12a3 3 0 100-6 3 3 0 000 6zm6 0a3 3 0 100-6 3 3 0 000 6zM4 19c0-2.8 2.2-5 5-5s5 2.2 5 5M14 19c0-2.8 2.2-5 5-5" stroke-linecap="round" />
+              </svg>
+            )}
+          </div>
+          <h3 class="mb-3 text-xl font-semibold leading-tight md:text-2xl">
+            {s.title}
+          </h3>
+          <p class="text-sm leading-relaxed text-[color:var(--color-fg-subtle)]">
+            {s.body}
+          </p>
+          <div class="mt-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)] transition group-hover:gap-3">
+            Learn More
+            <span aria-hidden="true">→</span>
+          </div>
+        </a>
       ))}
     </div>
   </div>
