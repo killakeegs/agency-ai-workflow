@@ -234,6 +234,14 @@ meeting-processor:
 	@$(PYTHON) scripts/enrichment/meeting_processor.py \
 		$(if $(CLIENT),--client $(CLIENT),)
 
+# Morning briefing — DMs overdue tasks + flags to each team member
+#   make morning-briefing          # Live run (posts to Slack)
+#   make morning-briefing DRY=1    # Preview only
+
+morning-briefing:
+	@$(PYTHON) scripts/enrichment/morning_briefing.py \
+		$(if $(DRY),--dry,)
+
 # Real-time email monitor — one tick across all clients
 #   make email-monitor                  # Run one tick (checks since last run)
 #   make email-monitor LOOKBACK=120     # First run: check last 2 hours
