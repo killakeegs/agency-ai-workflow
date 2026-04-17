@@ -54,6 +54,7 @@ Return a single JSON object with this exact structure:
     {
       "title": "Exact page title as it will appear in navigation",
       "slug": "/url-slug",
+      "parent_slug": "/url-of-parent-page or null",
       "page_type": "Static" or "CMS",
       "content_mode": "AI Generated" or "Client Provided",
       "section": "Core" or "Services" or "Service Subcategories" or "Who We Serve" or "Locations" or "Programs" or "Patient Resources" or "Blog" or "Legal",
@@ -108,6 +109,18 @@ MANDATORY CMS RULES — no exceptions:
   The locations hub/overview page (/locations) stays "Static"
 - Any page that is one instance of a repeating template → "CMS"
 - Hub/index/overview pages that list CMS items → "Static"
+
+PARENT PAGE RULES (for topical architecture + SEO internal linking):
+- Every page must have a `parent_slug` field that points to the slug of its parent page, or null if it's a top-level page.
+- Top-level pages have parent_slug = null. Examples: /, /about, /services, /locations, /blog, /contact, /faq, /terms.
+- Subpages have parent_slug = the slug of their direct parent (one level up).
+  - /services/speech-therapy → parent_slug: "/services"
+  - /services/speech-therapy/fluency → parent_slug: "/services/speech-therapy"
+  - /locations/frisco → parent_slug: "/locations"
+  - /blog/how-to-talk-to-kids → parent_slug: "/blog"
+- Legal pages (privacy, terms, accessibility) have parent_slug = null (they live in the footer, topically standalone).
+- The parent_slug you emit MUST exist as another page's slug in the same response. Never reference a slug that doesn't exist in the sitemap.
+- Downstream agents use parent_slug to (1) build nav dropdowns, (2) auto-suggest internal links between related pages, (3) group pages into topical clusters for SEO.
 """
 
 
@@ -186,6 +199,36 @@ class SitemapAgent(BaseAgent):
     name = "sitemap"
     tools = SITEMAP_TOOLS
 
+    async def _patch_missing_fields(self, sitemap_db_id: str) -> None:
+        """
+        Add any self-healing fields to the Sitemap DB that aren't there yet.
+
+        Currently heals: Parent Page (self-referential relation for topical
+        architecture + SEO internal linking). Safe to re-run.
+        """
+        db_info = await self.notion._client.request(
+            path=f"databases/{sitemap_db_id}", method="GET",
+        )
+        existing = db_info.get("properties", {})
+        to_add: dict[str, Any] = {}
+
+        if "Parent Page" not in existing:
+            to_add["Parent Page"] = {
+                "relation": {
+                    "database_id": sitemap_db_id,
+                    "type": "single_property",
+                    "single_property": {},
+                }
+            }
+
+        if to_add:
+            await self.notion._client.request(
+                path=f"databases/{sitemap_db_id}",
+                method="PATCH",
+                body={"properties": to_add},
+            )
+            self.log.info(f"Patched Sitemap DB — added: {', '.join(to_add.keys())}")
+
     async def run(self, client_id: str, **kwargs: Any) -> dict:
         """
         Generate sitemap pages for a client.
@@ -209,7 +252,10 @@ class SitemapAgent(BaseAgent):
 
         self.log.info(f"SitemapAgent starting | client={client_id}")
 
-        # ── Step 0: Clear existing Draft pages to prevent duplicates ──────────
+        # ── Step 0a: Self-heal Sitemap DB schema (Parent Page, etc) ──────────
+        await self._patch_missing_fields(sitemap_db_id)
+
+        # ── Step 0b: Clear existing Draft pages to prevent duplicates ────────
         existing = await self.notion.query_database(sitemap_db_id)
         draft_pages = [
             e for e in existing
@@ -330,13 +376,18 @@ revise the page structure, types, or scope.
         pages = data.get("pages", [])
         self.log.info(f"Generated {len(pages)} pages")
 
-        # ── Step 4: Write each page to Sitemap DB ─────────────────────────────
+        # ── Step 4: Write each page to Sitemap DB (Pass 1 — create pages) ────
+        # Collect parent_slug per page; Parent Page relation is set in Pass 2
+        # once every page exists and we can resolve slugs → notion IDs.
         created_ids: list[str] = []
         first_entry_id: str | None = None
+        slug_to_id: dict[str, str] = {}
+        pending_parents: list[tuple[str, str]] = []  # (child_entry_id, parent_slug)
 
         for page in pages:
             title = page.get("title", "Untitled")
             slug = page.get("slug", "/")
+            parent_slug = page.get("parent_slug")
             page_type = page.get("page_type", "Static")
             content_mode = page.get("content_mode", "AI Generated")
             section = page.get("section", "Core")
@@ -378,7 +429,34 @@ revise the page structure, types, or scope.
                 first_entry_id = entry_id
 
             created_ids.append(entry_id)
+            slug_to_id[slug] = entry_id
+            if parent_slug:
+                pending_parents.append((entry_id, parent_slug))
             self.log.info(f"  ✓ [{page_type}/{content_mode[:2]}] {title} ({slug})")
+
+        # ── Step 4b: Pass 2 — resolve Parent Page relations ──────────────────
+        if pending_parents:
+            resolved = 0
+            unresolved: list[str] = []
+            for child_id, parent_slug in pending_parents:
+                parent_id = slug_to_id.get(parent_slug)
+                if not parent_id:
+                    unresolved.append(parent_slug)
+                    continue
+                await self.notion._client.request(
+                    path=f"pages/{child_id}", method="PATCH",
+                    body={"properties": {
+                        "Parent Page": {"relation": [{"id": parent_id}]}
+                    }},
+                )
+                resolved += 1
+            self.log.info(
+                f"  ✓ Parent Page relations set: {resolved}/{len(pending_parents)}"
+            )
+            if unresolved:
+                self.log.warning(
+                    f"  ⚠ Unresolved parent slugs (no matching page): {unresolved}"
+                )
 
         # ── Step 5: Append SEO strategy + CMS collections to first entry ──────
         if first_entry_id:

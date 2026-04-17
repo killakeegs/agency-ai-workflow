@@ -438,6 +438,22 @@ Section outlines (the list of named sections on each page) are generated and app
 - Hub/index/overview pages that list CMS items → Static
 - Any page that is one instance of a repeating template → CMS
 
+### Topical Architecture — Parent Page (hub / spoke hierarchy)
+
+Every Sitemap DB entry carries a **Parent Page** relation — a self-referential Notion relation that points to another page in the same Sitemap DB. This is how we express hub/spoke topical architecture in a form that's both visible to humans (clickable in Notion during client reviews) and queryable by downstream agents.
+
+- **Parent Page empty** → top-level page (Home, About, Services, Locations, Blog, Contact, legal pages)
+- **Parent Page set** → subpage of that parent (e.g. Local SEO → SEO Marketing → Services)
+- **Legal pages** (privacy, terms, accessibility) → always parent_slug = null (footer-only, topically standalone)
+
+**How it's populated:**
+- SitemapAgent emits a `parent_slug` per page in its JSON output. Two-pass write: create all pages first, then resolve parent_slug → Notion IDs and set the Parent Page relation. Self-heals the field on the Sitemap DB at Step 0.
+- Role (hub/spoke/standalone) and cluster (topical root) are *not* stored as separate fields — they can be derived at read-time from the parent chain. Adding parallel Role/Cluster fields would just drift from Parent Page.
+
+**What this is NOT:**
+- Not a replacement for the Sitemap DB `Section` field. Section = nav grouping (Services, Legal, Blog). Parent Page = topical hierarchy. Orthogonal — both stay.
+- Not yet consumed by ContentAgent or the blog pipeline. Those integrations are deferred until Parent Page has been validated on a real client sitemap. V1 is about making hierarchy visible and structured, not automating anything on top of it.
+
 ### Navigation Architecture Rules
 - Main nav should be clean and minimal — avoid more than 6 top-level items
 - Legal pages (Privacy, Terms, Accessibility) always live in the Footer only
