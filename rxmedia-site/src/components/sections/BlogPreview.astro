@@ -1,41 +1,99 @@
 ---
-// TODO(ralph): Build Blog Preview section
-// Eyebrow: "From our blog"
-// Heading: "Explore Our Latest Articles"
-// 3 post cards (see reference HTML for titles, thumbnails, excerpts)
+// Blog Preview — "Explore Our Latest Articles"
+// 3 posts with real titles, slugs, thumbnails, and publish dates from reference.
 const posts = [
   {
     title:
       'Healthcare Website Design That Converts: What Top Clinics Do Differently in 2026',
-    href: '#',
+    href: '/blog/healthcare-website-design-that-converts-what-top-clinics-do-differently-in-2026',
+    date: 'April 10, 2026',
+    category: 'Lead Generation',
+    categoryHref: '/blog-category/lead-generation',
+    img: '/images/blog/healthcare-design.png',
   },
   {
     title:
       'Why Most Addiction Treatment Marketing Fails (And What High-Performing Rehab Centers Do Differently)',
-    href: '#',
+    href: '/blog/why-most-addiction-treatment-marketing-fails-and-what-high-performing-rehab-centers-do-differently',
+    date: 'April 3, 2026',
+    category: null,
+    categoryHref: null,
+    img: '/images/blog/addiction-marketing.png',
   },
   {
     title: 'Healthcare Marketing Metrics That Actually Move the Needle',
-    href: '#',
+    href: '/blog/healthcare-marketing-metrics-that-actually-move-the-needle',
+    date: 'March 20, 2026',
+    category: null,
+    categoryHref: null,
+    img: '/images/blog/metrics.png',
   },
 ];
 ---
-<section id="blog-preview" class="bg-[color:var(--color-bg-elevated)] py-24">
+<section id="blog-preview" class="bg-[color:var(--color-bg-elevated)] py-24 md:py-32">
   <div class="mx-auto max-w-7xl px-6">
-    <p class="mb-2 text-sm uppercase tracking-[0.2em] text-[color:var(--color-accent)]">From our blog</p>
-    <h2 class="mb-12 text-4xl font-semibold md:text-[60px] md:leading-[60px]">
-      Explore Our Latest Articles
-    </h2>
-    <div class="grid gap-8 md:grid-cols-3">
+    <div class="mb-12 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
+          From our blog
+        </p>
+        <h2 class="max-w-3xl text-4xl font-semibold leading-tight md:text-5xl lg:text-[60px] lg:leading-[60px]">
+          Explore Our <span class="text-[color:var(--color-accent)]">Latest Articles</span>
+        </h2>
+      </div>
+      <a
+        href="/blog"
+        class="inline-flex items-center gap-2 self-start text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)] transition hover:gap-3 md:self-end"
+      >
+        View all
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+
+    <div class="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
       {posts.map((p) => (
-        <a href={p.href} class="group block rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-6 transition hover:border-[color:var(--color-accent)]">
-          <h3 class="text-xl font-semibold group-hover:text-[color:var(--color-accent)]">
-            {p.title}
-          </h3>
-          <p class="mt-4 text-sm font-medium uppercase tracking-wider text-[color:var(--color-fg-muted)]">
-            Read more →
-          </p>
-        </a>
+        <article class="group flex h-full flex-col overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)] transition hover:border-[color:var(--color-accent)]">
+          <a href={p.href} class="block overflow-hidden bg-[color:var(--color-bg-muted)]">
+            <div class="aspect-[16/10] overflow-hidden">
+              <img
+                src={p.img}
+                alt={p.title}
+                loading="lazy"
+                width="560"
+                height="350"
+                class="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+              />
+            </div>
+          </a>
+          <div class="flex flex-1 flex-col p-6">
+            <div class="mb-4 flex items-center gap-4 text-xs text-[color:var(--color-fg-muted)]">
+              <time>{p.date}</time>
+              {p.category && (
+                <>
+                  <span aria-hidden="true" class="h-1 w-1 rounded-full bg-[color:var(--color-fg-muted)]"></span>
+                  <a
+                    href={p.categoryHref}
+                    class="font-medium uppercase tracking-wider text-[color:var(--color-accent)] hover:underline"
+                  >
+                    {p.category}
+                  </a>
+                </>
+              )}
+            </div>
+            <h3 class="mb-6 flex-1 text-lg font-semibold leading-snug md:text-xl">
+              <a href={p.href} class="transition group-hover:text-[color:var(--color-accent)]">
+                {p.title}
+              </a>
+            </h3>
+            <a
+              href={p.href}
+              class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)] transition group-hover:gap-3"
+            >
+              Read article
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </article>
       ))}
     </div>
   </div>

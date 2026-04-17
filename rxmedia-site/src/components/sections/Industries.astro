@@ -1,21 +1,70 @@
 ---
-// TODO(ralph): Build Industries section
-// Eyebrow: "INDUSTRIES WE SERVE"
-// 3 callouts: Behavioral Health & Addiction, Specialized Therapy Practices, Wellness & Integrative Health
+// Industries We Serve — 3 callouts, real copy from reference.
 const industries = [
-  'Behavioral Health & Addiction',
-  'Specialized Therapy Practices',
-  'Wellness & Integrative Health',
+  {
+    name: 'Behavioral Health & Addiction',
+    href: '/industries-we-serve/behavioral-health-addiction',
+    body:
+      'Addiction treatment centers and mental health professionals often struggle to reach people searching for help. Our digital advertising services make it easier for those in need to find and choose your care.',
+    icon: 'mind',
+  },
+  {
+    name: 'Specialized Therapy Practices',
+    href: '/industries-we-serve/specialized-therapy-practices',
+    body:
+      'Speech therapists, occupational therapists, and similar practices often rely on word-of-mouth to grow. Our healthcare marketing services can expand your reach.',
+    icon: 'therapy',
+  },
+  {
+    name: 'Wellness & Integrative Health',
+    href: '/industries-we-serve/wellness-and-integrative-health',
+    body:
+      "It's easy for wellness and integrative health practices to get overlooked. Our digital marketing services spotlight your holistic care, helping the right clients discover you.",
+    icon: 'wellness',
+  },
 ];
 ---
-<section id="industries" class="bg-[color:var(--color-bg-elevated)] py-24">
+<section id="industries" class="bg-[color:var(--color-bg-elevated)] py-24 md:py-32">
   <div class="mx-auto max-w-7xl px-6">
-    <p class="mb-12 text-sm uppercase tracking-[0.2em] text-[color:var(--color-accent)]">Industries we serve</p>
+    <p class="mb-12 text-center text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--color-accent)] md:text-sm">
+      Industries We Serve
+    </p>
+
     <div class="grid gap-6 md:grid-cols-3">
-      {industries.map((i) => (
-        <div class="rounded-2xl border border-[color:var(--color-border)] p-8">
-          <h3 class="text-2xl font-semibold">{i}</h3>
-        </div>
+      {industries.map((item) => (
+        <a
+          href={item.href}
+          class="group relative flex flex-col rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-8 transition hover:border-[color:var(--color-accent)] md:p-10"
+        >
+          <div class="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]">
+            {item.icon === 'mind' && (
+              <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M12 3c-3 0-5 2.3-5 5 0 1 .3 2 .8 2.8-1.1 1-1.8 2.4-1.8 4 0 2.8 2.2 5 5 5h4.5c2.2 0 4-1.8 4-4a4 4 0 00-2.2-3.6A5 5 0 0012 3z" stroke-linejoin="round" />
+                <path d="M9 13c.5.5 1.3.5 2 0M11 9h.01" stroke-linecap="round" />
+              </svg>
+            )}
+            {item.icon === 'therapy' && (
+              <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M8 14a4 4 0 108 0M12 4a3 3 0 00-3 3v7M12 4a3 3 0 013 3v7M7 14h10" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            )}
+            {item.icon === 'wellness' && (
+              <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M12 21s-7-4.3-7-10a4.5 4.5 0 017-3.7A4.5 4.5 0 0119 11c0 5.7-7 10-7 10z" stroke-linejoin="round" />
+              </svg>
+            )}
+          </div>
+          <h3 class="mb-4 text-xl font-semibold leading-tight md:text-2xl">
+            {item.name}
+          </h3>
+          <p class="text-sm leading-relaxed text-[color:var(--color-fg-subtle)] md:text-base">
+            {item.body}
+          </p>
+          <div class="mt-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)] transition group-hover:gap-3">
+            Explore
+            <span aria-hidden="true">→</span>
+          </div>
+        </a>
       ))}
     </div>
   </div>
