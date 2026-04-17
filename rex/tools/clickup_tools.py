@@ -61,7 +61,23 @@ async def execute_clickup_tool(name: str, tool_input: dict) -> str:
         if r.status_code != 200:
             return f"ClickUp API error: {r.status_code}"
 
-        tasks = r.json().get("tasks", [])
+        tasks_raw = r.json().get("tasks", [])
+
+        # Filter out completed/done tasks (ClickUp's include_closed only catches
+        # 'closed' type, not 'done' or 'complete' custom statuses)
+        tasks = []
+        for t in tasks_raw:
+            status_obj = t.get("status", {})
+            status_type = (status_obj.get("type") or "").lower()
+            status_name = (status_obj.get("status") or "").lower()
+            if status_type in ("closed", "done"):
+                continue
+            if any(w in status_name for w in ("complete", "done", "closed", "archived", "cancelled")):
+                continue
+            if t.get("date_closed"):
+                continue
+            tasks.append(t)
+
         if not tasks:
             return "No tasks found."
 
@@ -76,7 +92,7 @@ async def execute_clickup_tool(name: str, tool_input: dict) -> str:
             assignees     = ", ".join(a.get("username", "") for a in t.get("assignees", []))
             assignee_str  = f" [{assignees}]" if assignees else ""
             lines.append(f"• {task_name} ({status}){assignee_str}{due_str}")
-        return f"ClickUp tasks ({len(tasks)} total):\n" + "\n".join(lines)
+        return f"ClickUp tasks ({len(tasks)} active):\n" + "\n".join(lines)
 
     elif name == "list_clickup_workspace":
         async with httpx.AsyncClient() as http:

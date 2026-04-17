@@ -104,22 +104,62 @@ async def _dm_user(http: httpx.AsyncClient, slack_id: str, text: str) -> dict:
 # ── ClickUp: overdue tasks per assignee ────────────────────────────────────────
 
 async def _fetch_clickup_tasks(http: httpx.AsyncClient) -> list[dict]:
+    """Fetch overdue ClickUp tasks that are actually still open.
+
+    Only looks at tasks overdue by 30 days or less (older cruft is ignored).
+    Filters out done/complete/approved statuses that ClickUp's include_closed misses.
+    """
     now_ms = int(time.time() * 1000)
-    params = {
-        "include_closed": "false",
-        "order_by": "due_date",
-        "subtasks": "true",
-        "limit": "100",
-        "due_date_lt": str(now_ms),
+    cutoff_ms = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
+
+    all_tasks: list[dict] = []
+    for page in range(5):  # up to 500 tasks max
+        params = {
+            "include_closed": "false",
+            "order_by": "due_date",
+            "reverse": "true",  # most recent overdue first
+            "subtasks": "true",
+            "due_date_gt": str(cutoff_ms),
+            "due_date_lt": str(now_ms),
+            "page": str(page),
+        }
+        r = await http.get(
+            f"https://api.clickup.com/api/v2/team/{CLICKUP_WORKSPACE_ID}/task",
+            headers={"Authorization": CLICKUP_API_KEY},
+            params=params, timeout=15,
+        )
+        if r.status_code != 200:
+            break
+        batch = r.json().get("tasks", [])
+        if not batch:
+            break
+        all_tasks.extend(batch)
+        if len(batch) < 100:
+            break
+
+    # Filter out done-like statuses that ClickUp doesn't treat as "closed"
+    INACTIVE_STATUSES = {
+        "complete", "completed", "done", "100% done", "closed",
+        "archived", "cancelled", "approved",
     }
-    r = await http.get(
-        f"https://api.clickup.com/api/v2/team/{CLICKUP_WORKSPACE_ID}/task",
-        headers={"Authorization": CLICKUP_API_KEY},
-        params=params, timeout=15,
-    )
-    if r.status_code != 200:
-        return []
-    return r.json().get("tasks", [])
+    active = []
+    for t in all_tasks:
+        status = t.get("status", {})
+        status_type = (status.get("type") or "").lower()
+        status_name = (status.get("status") or "").lower()
+
+        if status_type in ("closed", "done"):
+            continue
+        if status_name in INACTIVE_STATUSES:
+            continue
+        if any(w in status_name for w in ("complete", "done")):
+            continue
+        if t.get("date_closed"):
+            continue
+
+        active.append(t)
+
+    return active
 
 
 def _group_tasks_by_assignee(tasks: list[dict]) -> dict[int, list[dict]]:
@@ -148,12 +188,13 @@ def _format_task_line(t: dict) -> str:
 
 # ── Notion: recent flags + today's meetings ────────────────────────────────────
 
-async def _fetch_flagged_profiles(notion: NotionClient) -> list[tuple[str, str]]:
+async def _fetch_flagged_profiles(notion: NotionClient) -> dict:
     """Scan each client's Business Profile for recent Email Enrichment flags.
-    Returns list of (client_name, flag_text).
+    Returns dict with deduped + categorized flags:
+      {"blockers": [(client, text)], "open_actions": [(client, text)], "total_before_dedupe": N}
     """
-    flags: list[tuple[str, str]] = []
-    cutoff_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    all_raw_flags: list[tuple[str, str]] = []
+    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
     for client_key, cfg in CLIENTS.items():
         if cfg.get("internal"):
@@ -176,7 +217,6 @@ async def _fetch_flagged_profiles(notion: NotionClient) -> list[tuple[str, str]]
             if btype == "heading_2":
                 text = "".join(p.get("text", {}).get("content", "") for p in b.get("heading_2", {}).get("rich_text", []))
                 if "Email Enrichment" in text:
-                    # Parse date from heading
                     parts = text.split(" — ")
                     date_str = parts[-1].strip() if len(parts) > 1 else ""
                     in_recent_enrichment = date_str >= cutoff_date
@@ -189,32 +229,66 @@ async def _fetch_flagged_profiles(notion: NotionClient) -> list[tuple[str, str]]
                 in_flags_section = "Flags" in text
             elif btype == "bulleted_list_item" and in_recent_enrichment and in_flags_section:
                 text = "".join(p.get("text", {}).get("content", "") for p in b.get("bulleted_list_item", {}).get("rich_text", []))
-                if text and ("OPEN_ACTION" in text or "BLOCKER" in text or "RULE_SET" in text):
-                    flags.append((cfg.get("name", client_key), text[:250]))
+                if text and ("OPEN_ACTION" in text or "BLOCKER" in text):
+                    all_raw_flags.append((cfg.get("name", client_key), text[:250]))
 
-    return flags
+    # Dedupe by (client, description core text — ignoring date prefix)
+    seen: set[tuple[str, str]] = set()
+    deduped: list[tuple[str, str]] = []
+    for client_name, flag_text in all_raw_flags:
+        # Extract core description (strip [TYPE] and (date) prefixes)
+        import re as _re
+        core = _re.sub(r"^\[[^\]]+\]\s*(\(\d{4}-\d{2}-\d{2}\)\s*)?", "", flag_text).strip().lower()
+        key = (client_name, core[:120])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((client_name, flag_text))
+
+    blockers = [f for f in deduped if "BLOCKER" in f[1]]
+    open_actions = [f for f in deduped if "OPEN_ACTION" in f[1]]
+
+    # Sort open actions by date (most recent first)
+    def _extract_date(flag_text: str) -> str:
+        import re as _re
+        m = _re.search(r"\((\d{4}-\d{2}-\d{2})\)", flag_text)
+        return m.group(1) if m else ""
+    open_actions.sort(key=lambda f: _extract_date(f[1]), reverse=True)
+    blockers.sort(key=lambda f: _extract_date(f[1]), reverse=True)
+
+    return {
+        "blockers": blockers,
+        "open_actions": open_actions,
+        "total_before_dedupe": len(all_raw_flags),
+        "total_after_dedupe": len(deduped),
+    }
 
 
 # ── Compose briefings ──────────────────────────────────────────────────────────
 
 def _agency_pulse(
     total_overdue: int,
-    flags_count: int,
+    flags_data: dict,
     enriched_clients: set[str],
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
+    blockers = flags_data["blockers"]
+    open_actions = flags_data["open_actions"]
+
     lines = [
         f"🌅 *Good Morning RxMedia — {today}*",
         "",
         f"*Pulse:*",
         f"• *{total_overdue}* overdue ClickUp tasks across the team",
-        f"• *{flags_count}* flagged items in Notion from the last 48h",
     ]
+    if blockers:
+        lines.append(f"• 🚨 *{len(blockers)}* active BLOCKERs")
+    lines.append(f"• *{len(open_actions)}* open action items in last 7 days")
     if enriched_clients:
-        lines.append(f"• Recent client activity: {', '.join(sorted(list(enriched_clients))[:8])}")
+        lines.append(f"• Active clients: {', '.join(sorted(list(enriched_clients))[:8])}")
     lines.extend([
         "",
-        "_Each team member will receive a DM with their specific action items._",
+        "_Keegan receives a DM with top flags. DM Rex anytime for full lists._",
     ])
     return "\n".join(lines)
 
@@ -222,35 +296,53 @@ def _agency_pulse(
 def _personal_briefing(
     name: str,
     overdue_tasks: list[dict],
-    owned_flags: list[tuple[str, str]],
+    flags_data: dict | None,
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
     lines = [f"🌅 *Good Morning {name} — {today}*", ""]
 
     if overdue_tasks:
         lines.append(f"*Your {len(overdue_tasks)} Overdue ClickUp Tasks:*")
-        for t in overdue_tasks[:10]:
+        for t in overdue_tasks[:8]:
             lines.append(_format_task_line(t))
-        if len(overdue_tasks) > 10:
-            lines.append(f"_+ {len(overdue_tasks) - 10} more_")
+        if len(overdue_tasks) > 8:
+            lines.append(f"_+ {len(overdue_tasks) - 8} more — DM Rex for the full list_")
         lines.append("")
     else:
         lines.append("✓ No overdue tasks. Nice.")
         lines.append("")
 
-    if owned_flags:
-        lines.append(f"*Agency-wide flags needing attention ({len(owned_flags)}):*")
-        for client_name, flag_text in owned_flags[:8]:
-            lines.append(f"• [{client_name}] {flag_text[:180]}")
-        if len(owned_flags) > 8:
-            lines.append(f"_+ {len(owned_flags) - 8} more_")
+    if flags_data:
+        blockers = flags_data["blockers"]
+        open_actions = flags_data["open_actions"]
 
+        if blockers:
+            lines.append(f"🚨 *Active BLOCKERs ({len(blockers)}):*")
+            for client_name, flag_text in blockers[:5]:
+                import re as _re
+                clean = _re.sub(r"^\[BLOCKER\]\s*", "", flag_text)
+                lines.append(f"• *{client_name}* — {clean[:180]}")
+            if len(blockers) > 5:
+                lines.append(f"_+ {len(blockers) - 5} more blockers_")
+            lines.append("")
+
+        if open_actions:
+            lines.append(f"*Top 5 Most Recent Open Actions ({len(open_actions)} total):*")
+            for client_name, flag_text in open_actions[:5]:
+                import re as _re
+                clean = _re.sub(r"^\[OPEN_ACTION\]\s*", "", flag_text)
+                lines.append(f"• *{client_name}* — {clean[:180]}")
+            lines.append("")
+            lines.append("_DM Rex: \"show all open flags for [client]\" to dig deeper._")
+
+    lines.append("")
+    lines.append("_Tell Rex when tasks are done: \"mark [task] as complete\" or \"close the COI task\"._")
     return "\n".join(lines)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-async def run(dry_run: bool = False) -> None:
+async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = False) -> None:
     if not SLACK_TOKEN:
         print("⚠ SLACK_BOT_TOKEN not set")
         sys.exit(1)
@@ -279,37 +371,44 @@ async def run(dry_run: bool = False) -> None:
 
         # 3. Notion flags
         print("\n  Scanning Notion Business Profiles for recent flags...")
-        flags = await _fetch_flagged_profiles(notion)
-        enriched_clients = {name for name, _ in flags}
-        print(f"  Flags found: {len(flags)} across {len(enriched_clients)} clients")
+        flags_data = await _fetch_flagged_profiles(notion)
+        all_clients_with_flags = {c for c, _ in flags_data["blockers"]} | {c for c, _ in flags_data["open_actions"]}
+        print(f"  Flags: {flags_data['total_before_dedupe']} raw → {flags_data['total_after_dedupe']} after dedupe")
+        print(f"         {len(flags_data['blockers'])} blockers, {len(flags_data['open_actions'])} open actions")
 
         # 4. Agency pulse → #general
-        pulse = _agency_pulse(len(tasks), len(flags), enriched_clients)
+        enriched_clients = all_clients_with_flags
+        pulse = _agency_pulse(len(tasks), flags_data, enriched_clients)
         print("\n--- AGENCY PULSE (→ #general) ---")
         print(pulse)
-        if not dry_run:
+        if not dry_run and not skip_channel:
             result = await _post_channel(http, TEAM_CHANNEL, pulse)
             if result.get("ok"):
                 print("  ✓ Posted to #general")
             else:
                 print(f"  ⚠ Failed: {result.get('error')}")
+        elif skip_channel:
+            print("  (skipped — test mode)")
 
         # 5. Individual DMs
         print("\n--- PERSONAL BRIEFINGS ---")
         for email, info in TEAM.items():
+            if only_email and email != only_email:
+                continue
             name = info["name"]
             clickup_id = info["clickup_id"]
             slack_id = slack_ids.get(email, "")
 
             overdue_tasks = grouped.get(clickup_id, [])
-            # Keegan sees ALL flags (per user request); others see only owned
-            owned_flags = flags if email == "keegan@rxmedia.io" else []
+            # Keegan sees agency flags; others see only their overdue
+            flags_for_user = flags_data if email == "keegan@rxmedia.io" else None
 
-            if not overdue_tasks and not owned_flags:
+            has_flags = flags_for_user and (flags_for_user["blockers"] or flags_for_user["open_actions"])
+            if not overdue_tasks and not has_flags:
                 print(f"  {name}: nothing to send (no overdue, no flags)")
                 continue
 
-            msg = _personal_briefing(name, overdue_tasks, owned_flags)
+            msg = _personal_briefing(name, overdue_tasks, flags_for_user)
             print(f"\n  --- DM to {name} ---")
             print(msg[:400] + ("..." if len(msg) > 400 else ""))
 
@@ -332,9 +431,11 @@ async def run(dry_run: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Morning briefing")
     parser.add_argument("--dry", action="store_true", help="Preview, don't post")
+    parser.add_argument("--only", default="", help="Only DM this email (for testing)")
+    parser.add_argument("--skip-channel", action="store_true", help="Don't post the #general pulse")
     args = parser.parse_args()
     try:
-        asyncio.run(run(dry_run=args.dry))
+        asyncio.run(run(dry_run=args.dry, only_email=args.only, skip_channel=args.skip_channel))
     except Exception as e:
         import traceback
         error = traceback.format_exc()
