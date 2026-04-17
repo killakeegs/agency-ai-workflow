@@ -1,17 +1,117 @@
 ---
-// TODO(ralph): Build Case Studies section
-// Eyebrow: "Case studies"
-// Heading: "Success Stories That Speak for Themselves"
-// Cards: Parkwood Clinic, Another Chance, Evolving Health, Atlas, Freedom, Lotus, Resilient Return, Renaissance Ranch
-// CTA: "free Consultation"
-// Logos + hero images in reference/assets/images/
+// Case Studies — "Success Stories That Speak for Themselves"
+// 8 case study cards + "free Consultation" CTA.
+// Reference: section containing "Success Stories" h2 on rxmedia.io
+
+const cases = [
+  {
+    client: 'Parkwood Clinic',
+    title: 'Speech Therapy Clinic Grew 243% in Conversions',
+    href: '/case-studies/speech-therapy-clinic-grew-243-in-conversions',
+    img: '/images/case-studies/parkwood.avif',
+    alt: 'Parkwood Clinic — child building a road',
+  },
+  {
+    client: 'Another Chance Drug and Alcohol Rehab',
+    title: 'Website Visitors Grew by Over 41,000',
+    href: '/case-studies/website-visitors-grew-by-over-41-000',
+    img: '/images/case-studies/another-chance.avif',
+    alt: 'Another Chance reception area',
+  },
+  {
+    client: 'Evolving Health',
+    title: 'Revamped Website Drives 243% Increase in Visitors',
+    href: '/case-studies/revamped-website-drives-243-increase-in-visitors',
+    img: '/images/case-studies/evolving-health.avif',
+    alt: 'Evolving Health — healthy people',
+  },
+  {
+    client: 'Atlas Addiction Treatment',
+    title: 'Brand-New Addiction Center Hits 3,000 Website Visitors',
+    href: '/case-studies/newly-launched-addiction-center-attracts-3-000-website-visitors',
+    img: '/images/case-studies/atlas.webp',
+    alt: 'Entrance of Atlas Treatment Center in Oregon',
+  },
+  {
+    client: 'Freedom Recovery',
+    title: 'Idaho Rehab Inbound Calls Went Up By 239%',
+    href: '/case-studies/idaho-rehab-inbound-calls-went-up-by-239',
+    img: '/images/case-studies/freedom.webp',
+    alt: 'Freedom Recovery — recovery room interior',
+  },
+  {
+    client: 'Lotus Recovery Addiction Treatment',
+    title: 'Establishing a Strong Digital Footprint with 100% Visitor Growth',
+    href: '/case-studies/digital-strategy-drives-100-increase-in-website-visitors',
+    img: '/images/case-studies/lotus.webp',
+    alt: 'Lotus Recovery — group therapy meeting room',
+  },
+  {
+    client: 'Resilient Return Counseling Solutions',
+    title: 'DOT SAP Program Sees 303% Surge in Client Bookings',
+    href: '/case-studies/dot-sap-program-sees-303-surge-in-client-bookings',
+    img: '/images/case-studies/resilient-return.avif',
+    alt: 'Resilient Return — truck driver counseling',
+  },
+  {
+    client: 'Renaissance Ranch Wellness Clinic',
+    title: "Wellness Clinic's Digital Launch Attracted 703% More Visitors",
+    href: '/case-studies/wellness-clinics-digital-launch-attracted-703-more-visitors',
+    img: '/images/case-studies/renaissance.webp',
+    alt: 'Renaissance Ranch — modern wellness clinic reception',
+  },
+];
 ---
-<section id="case-studies" class="bg-[color:var(--color-bg)] py-24">
+<section id="case-studies" class="bg-[color:var(--color-bg)] py-24 md:py-32">
   <div class="mx-auto max-w-7xl px-6">
-    <p class="mb-2 text-sm uppercase tracking-[0.2em] text-[color:var(--color-accent)]">Case studies</p>
-    <h2 class="mb-12 text-4xl font-semibold md:text-[60px] md:leading-[60px]">
-      Success Stories That Speak for Themselves
-    </h2>
-    <p class="text-[color:var(--color-fg-muted)]">(cards to be implemented)</p>
+    <div class="mb-12 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
+          Case studies
+        </p>
+        <h2 class="max-w-3xl text-4xl font-semibold leading-tight md:text-5xl lg:text-[60px] lg:leading-[60px]">
+          Success Stories That <span class="text-[color:var(--color-accent)]">Speak for Themselves</span>
+        </h2>
+      </div>
+      <a
+        href="/contact"
+        class="inline-flex items-center gap-2 self-start rounded-full bg-[color:var(--color-accent)] px-6 py-3 text-sm font-semibold uppercase tracking-wider text-black transition hover:brightness-95 md:self-end"
+      >
+        Free Consultation
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {cases.map((c) => (
+        <a
+          href={c.href}
+          class="group relative block overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)] transition hover:border-[color:var(--color-accent)]"
+        >
+          <div class="aspect-[4/5] overflow-hidden bg-[color:var(--color-bg-muted)]">
+            <img
+              src={c.img}
+              alt={c.alt}
+              loading="lazy"
+              class="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+              width="480"
+              height="600"
+            />
+          </div>
+          <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent"></div>
+          <div class="absolute inset-x-0 bottom-0 p-6">
+            <p class="mb-2 text-xs font-medium uppercase tracking-wider text-[color:var(--color-accent)]">
+              {c.client}
+            </p>
+            <h3 class="text-lg font-semibold leading-tight text-[color:var(--color-fg)] md:text-xl">
+              {c.title}
+            </h3>
+            <p class="mt-3 text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)] opacity-0 transition group-hover:opacity-100">
+              View case study →
+            </p>
+          </div>
+        </a>
+      ))}
+    </div>
   </div>
 </section>
