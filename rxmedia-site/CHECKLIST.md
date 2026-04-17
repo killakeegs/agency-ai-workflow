@@ -20,7 +20,7 @@ Work **top-to-bottom** — foundation first, then each section in order.
 
 ## 2. Sections (in reference order — top to bottom)
 
-- 🟡 **Hero** — headline + subhead + eyebrow present. NEEDS: form (Name, Email, Website), hero illustration/image, button styling
+- ✅ **Hero** — Two-column layout on lg+: (1) eyebrow pill "Absolutely Free" + h1 "More Admissions. Less Marketing Stress." (with lime accent on second line) + description paragraph + Webflow Expert + Google Partner trust badges; (2) form card with "Absolutely Free!" eyebrow + "Get Your Personalized Digital Marketing Plan Today!" heading + Name/Email/Website fields + "Claim My Free Plan" submit + success message state. Form submission is client-side stub. Background uses radial gradient glow (lime + blue).
 - 🟡 **Trusted-By Ribbon** — eyebrow text only. NEEDS: horizontal row of client logos (AC, freedom, cielo, parkwood, evolve, lotus, resilient-return, renaissance, TR) from `reference/assets/images/`
 - 🟡 **Stats Overview** — 4 labeled cards with placeholder values. NEEDS: extract actual numbers from reference HTML/screenshot
 - 🟡 **Case Studies** — eyebrow + heading. NEEDS: client cards with logo + name + one-line result + "free Consultation" CTA
@@ -53,3 +53,5 @@ Work **top-to-bottom** — foundation first, then each section in order.
 - **Iter 2:** Built real Nav (with Industries + Services dropdowns) and real Footer (newsletter, 4 columns, social icons, contact). verify.mjs: imgs 0→4, words 191→270, still 9 sections / 1 h1.
 - **Observation:** rxmedia.io is actually multi-page (/about, /blog, /contact, /service/*, /industries-we-serve/*). Phase 1 clones only the homepage — internal nav links use real paths but will 404 locally. Phase 2 / future iterations can add those routes if needed.
 - **Observation:** Hero CTA on live site uses blue accent (`--color-accent-alt` #2fa9e0) not lime green. "Get in touch" nav button + Subscribe footer button use lime. Worth checking hero button color when that section is built out.
+- **Iter 3:** Built Hero with real copy, form (Name/Email/Website → "Claim My Free Plan" submit), trust badges, stub client-side form submit. Lottie animation in reference is NOT ported in Phase 1 — static image stand-in. verify.mjs: h2 5→6, imgs 4→7, words 270→306.
+- **Observation:** The description paragraph under H1 isn't visible in the scraped reference screenshot on mobile (might be visually hidden or rendered as marquee), but text is present in HTML. Leaving it visible — matches HTML structure, may need responsive tweak later.

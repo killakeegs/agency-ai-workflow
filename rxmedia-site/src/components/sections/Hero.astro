@@ -1,23 +1,139 @@
 ---
-// TODO(ralph): Build Hero section
-// Source: reference/html/index.html — search for "More Admissions"
-// Screenshot: reference/screenshots/index-desktop.png (top of page)
-// Should contain:
-//   h1: "More Admissions. Less Marketing Stress."
-//   subhead + small eyebrow "Absolutely Free!" / "Get Your Personalized Digital Marketing Plan Today!"
-//   form: Name, Email, Website → stub submit (no backend)
-//   hero illustration / accent graphic
+// Hero section — reference/html/index.html: "More Admissions. Less Marketing Stress."
+// Lottie animation on live site is skipped in Phase 1; static hero-illustration.avif used instead.
 ---
-<section id="hero" class="relative overflow-hidden bg-[color:var(--color-bg)] px-6 py-24 md:py-32">
-  <div class="mx-auto max-w-7xl text-center">
-    <p class="mb-4 text-sm uppercase tracking-wider text-[color:var(--color-accent)]">
-      Absolutely Free!
-    </p>
-    <h1 class="mb-6 text-5xl font-bold leading-tight md:text-[65px] md:leading-[71.5px]">
-      More Admissions.<br />Less Marketing Stress.
-    </h1>
-    <p class="mx-auto max-w-2xl text-lg text-[color:var(--color-fg-subtle)]">
-      Get Your Personalized Digital Marketing Plan Today!
-    </p>
+<section id="hero" class="relative overflow-hidden bg-[color:var(--color-bg)]">
+  <!-- Soft radial glow behind content -->
+  <div
+    class="pointer-events-none absolute inset-0 opacity-40"
+    style="background: radial-gradient(ellipse at 20% 10%, rgba(191,247,71,0.18), transparent 55%), radial-gradient(ellipse at 85% 70%, rgba(47,169,224,0.18), transparent 50%);"
+    aria-hidden="true"
+  ></div>
+
+  <div class="relative mx-auto max-w-7xl px-6 pt-16 pb-24 md:pt-24 md:pb-32">
+    <div class="grid items-center gap-12 lg:grid-cols-12">
+      <div class="lg:col-span-7">
+        <p class="mb-6 inline-flex items-center gap-2 rounded-full border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
+          Absolutely Free
+        </p>
+        <h1 class="mb-6 text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-[65px] lg:leading-[71.5px]">
+          More Admissions.<br />
+          <span class="text-[color:var(--color-accent)]">Less Marketing Stress.</span>
+        </h1>
+        <p class="mb-8 max-w-xl text-base text-[color:var(--color-fg-subtle)] md:text-lg md:leading-[28px]">
+          RxMedia offers targeted digital marketing solutions to enhance your online
+          presence so you can enjoy increased admissions and feel secure in your
+          marketing strategy.
+        </p>
+
+        <div class="flex items-center gap-6">
+          <img
+            src="/images/badge-webflow-expert.png"
+            alt="Webflow Certified Expert"
+            width="80"
+            height="80"
+            class="h-14 w-auto opacity-90"
+          />
+          <img
+            src="/images/badge-google-partner.png"
+            alt="Google Partner"
+            width="80"
+            height="80"
+            class="h-14 w-auto opacity-90"
+          />
+        </div>
+      </div>
+
+      <div class="lg:col-span-5">
+        <div
+          class="relative rounded-3xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)]/80 p-8 backdrop-blur-sm md:p-10"
+        >
+          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
+            Absolutely Free!
+          </p>
+          <h2 class="mb-6 text-2xl font-semibold leading-tight md:text-3xl">
+            Get Your Personalized Digital Marketing Plan Today!
+          </h2>
+
+          <form
+            class="space-y-4"
+            data-hero-form
+            action="#"
+            method="post"
+            novalidate
+          >
+            <div>
+              <label for="hero-name" class="sr-only">Your name</label>
+              <input
+                id="hero-name"
+                type="text"
+                name="name"
+                maxlength="256"
+                required
+                placeholder="Your name*"
+                class="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)]/60 px-5 py-4 text-sm text-[color:var(--color-fg)] placeholder:text-[color:var(--color-fg-muted)] focus:border-[color:var(--color-accent)] focus:outline-none"
+              />
+            </div>
+            <div>
+              <label for="hero-email" class="sr-only">Your email</label>
+              <input
+                id="hero-email"
+                type="email"
+                name="email"
+                maxlength="256"
+                required
+                placeholder="Your email*"
+                class="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)]/60 px-5 py-4 text-sm text-[color:var(--color-fg)] placeholder:text-[color:var(--color-fg-muted)] focus:border-[color:var(--color-accent)] focus:outline-none"
+              />
+            </div>
+            <div>
+              <label for="hero-website" class="sr-only">Website</label>
+              <input
+                id="hero-website"
+                type="text"
+                name="website"
+                maxlength="256"
+                required
+                placeholder="Website*"
+                class="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)]/60 px-5 py-4 text-sm text-[color:var(--color-fg)] placeholder:text-[color:var(--color-fg-muted)] focus:border-[color:var(--color-accent)] focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-6 py-4 text-sm font-semibold uppercase tracking-wider text-black transition hover:brightness-95"
+            >
+              Claim My Free Plan
+              <span class="transition group-hover:translate-x-1" aria-hidden="true">→</span>
+            </button>
+            <p
+              data-hero-success
+              class="hidden rounded-xl border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-4 py-3 text-sm text-[color:var(--color-accent)]"
+            >
+              Thank you! Your submission has been received!
+            </p>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decorative hero illustration — appears behind/alongside copy on wide viewports -->
+    <img
+      src="/images/hero-illustration.avif"
+      alt=""
+      aria-hidden="true"
+      loading="lazy"
+      class="pointer-events-none absolute -right-20 bottom-0 hidden w-[520px] opacity-60 mix-blend-screen xl:block"
+    />
   </div>
 </section>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('[data-hero-form]');
+  const success = document.querySelector<HTMLElement>('[data-hero-success]');
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    // Phase 1: no backend; show success state to match live UX.
+    success?.classList.remove('hidden');
+    form.reset();
+  });
+</script>
