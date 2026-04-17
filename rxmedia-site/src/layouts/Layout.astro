@@ -1,0 +1,55 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Best Marketing Remedy for Healthcare | RxMedia',
+  description = "Boost your business with our expert digital marketing services. We specialize in SEO, PPC, social media, and content strategies that drive results and increase your brand's online presence.",
+} = Astro.props;
+
+const ogImage = '/images/og-rxmedia.png';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta
+      name="keywords"
+      content="digital marketing healthcare, healthcare SEO, medical PPC services, healthcare social media marketing, content marketing for healthcare, patient engagement strategies, online presence for healthcare providers, RxMedia digital agency"
+    />
+
+    <link rel="canonical" href="https://www.rxmedia.io/" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.rxmedia.io/" />
+    <meta property="og:title" content="RxMedia | Best Marketing Remedy For Medical SEO" />
+    <meta property="og:description" content="Boost business with expert digital marketing." />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Expert Healthcare Marketing Strategies #RxMedia" />
+    <meta
+      name="twitter:description"
+      content="Boost healthcare marketing with expert digital strategies! SEO, PPC, social media & more. #HealthcareMarketing"
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Mona+Sans:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-fg)] antialiased">
+    <slot />
+  </body>
+</html>

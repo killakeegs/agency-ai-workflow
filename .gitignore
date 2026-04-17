@@ -24,6 +24,9 @@ credentials/
 *.json
 !tests/fixtures/*.json
 !config/clients.json
+!rxmedia-site/package.json
+!rxmedia-site/package-lock.json
+!rxmedia-site/tsconfig.json
 
 # Claude Code project config (contains API tokens)
 .claude.json
@@ -64,3 +67,10 @@ token.json
 /*.jpeg
 /*.gif
 /*.webp
+
+# rxmedia-site (Astro clone project)
+rxmedia-site/node_modules/
+rxmedia-site/.astro/
+rxmedia-site/dist/
+rxmedia-site/reference/
+rxmedia-site/build/

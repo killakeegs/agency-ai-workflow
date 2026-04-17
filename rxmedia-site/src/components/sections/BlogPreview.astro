@@ -1,0 +1,42 @@
+---
+// TODO(ralph): Build Blog Preview section
+// Eyebrow: "From our blog"
+// Heading: "Explore Our Latest Articles"
+// 3 post cards (see reference HTML for titles, thumbnails, excerpts)
+const posts = [
+  {
+    title:
+      'Healthcare Website Design That Converts: What Top Clinics Do Differently in 2026',
+    href: '#',
+  },
+  {
+    title:
+      'Why Most Addiction Treatment Marketing Fails (And What High-Performing Rehab Centers Do Differently)',
+    href: '#',
+  },
+  {
+    title: 'Healthcare Marketing Metrics That Actually Move the Needle',
+    href: '#',
+  },
+];
+---
+<section id="blog-preview" class="bg-[color:var(--color-bg-elevated)] py-24">
+  <div class="mx-auto max-w-7xl px-6">
+    <p class="mb-2 text-sm uppercase tracking-[0.2em] text-[color:var(--color-accent)]">From our blog</p>
+    <h2 class="mb-12 text-4xl font-semibold md:text-[60px] md:leading-[60px]">
+      Explore Our Latest Articles
+    </h2>
+    <div class="grid gap-8 md:grid-cols-3">
+      {posts.map((p) => (
+        <a href={p.href} class="group block rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-6 transition hover:border-[color:var(--color-accent)]">
+          <h3 class="text-xl font-semibold group-hover:text-[color:var(--color-accent)]">
+            {p.title}
+          </h3>
+          <p class="mt-4 text-sm font-medium uppercase tracking-wider text-[color:var(--color-fg-muted)]">
+            Read more →
+          </p>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>

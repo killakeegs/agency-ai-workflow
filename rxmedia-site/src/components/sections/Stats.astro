@@ -1,0 +1,25 @@
+---
+// TODO(ralph): Build Stats overview
+// 4 stat cards:
+//   Successful Campaigns Delivered
+//   Client Satisfaction Rate
+//   Years Of Marketing Experience
+//   Average ROI Achieved
+// Extract numeric values from reference HTML
+const stats = [
+  { label: 'Successful Campaigns Delivered', value: '150+' },
+  { label: 'Client Satisfaction Rate', value: '98%' },
+  { label: 'Years Of Marketing Experience', value: '12+' },
+  { label: 'Average ROI Achieved', value: '4.2x' },
+];
+---
+<section id="stats" class="bg-[color:var(--color-bg)] py-20">
+  <div class="mx-auto grid max-w-7xl grid-cols-2 gap-8 px-6 md:grid-cols-4">
+    {stats.map(({ value, label }) => (
+      <div class="text-center">
+        <div class="text-4xl font-bold text-[color:var(--color-accent)] md:text-5xl">{value}</div>
+        <div class="mt-2 text-sm text-[color:var(--color-fg-muted)]">{label}</div>
+      </div>
+    ))}
+  </div>
+</section>

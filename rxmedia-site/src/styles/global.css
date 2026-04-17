@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* Design tokens extracted from https://rxmedia.io on 2026-04-17
+   Source: reference/tokens.json
+   Do NOT add ad-hoc colors — extend this @theme block instead. */
+@theme {
+  /* Typography — Mona Sans loaded via Google Fonts in BaseHead */
+  --font-sans: "Mona Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Core palette */
+  --color-bg: #111111;            /* body background */
+  --color-bg-elevated: #171717;   /* card/section elevation */
+  --color-bg-muted: #1a1a1a;
+  --color-fg: #ffffff;             /* body text */
+  --color-fg-muted: #b0b0b0;
+  --color-fg-subtle: #dddddd;
+  --color-border: #333333;
+
+  /* Brand accents */
+  --color-accent: #bff747;        /* primary lime/green accent */
+  --color-accent-ink: #8ab334;    /* deeper green for text on light bg */
+  --color-accent-alt: #2fa9e0;    /* secondary blue accent */
+
+  /* Type scale — matches rxmedia.io computed sizes */
+  --text-h1: 65px;
+  --text-h1--line-height: 71.5px;
+  --text-h2: 60px;
+  --text-h2--line-height: 60px;
+  --text-h3: 44px;
+  --text-h3--line-height: 52.8px;
+  --text-body: 16px;
+  --text-body--line-height: 25.6px;
+}
+
+html {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+}
