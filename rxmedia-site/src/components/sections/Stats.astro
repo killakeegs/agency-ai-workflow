@@ -1,25 +1,29 @@
 ---
-// TODO(ralph): Build Stats overview
-// 4 stat cards:
-//   Successful Campaigns Delivered
-//   Client Satisfaction Rate
-//   Years Of Marketing Experience
-//   Average ROI Achieved
-// Extract numeric values from reference HTML
+// Stats overview — inside overview-section-2 on reference.
+// Live site uses Webflow animated "counter" columns; values below are
+// best-estimate placeholders flagged for team confirmation (see CHECKLIST.md).
 const stats = [
-  { label: 'Successful Campaigns Delivered', value: '150+' },
-  { label: 'Client Satisfaction Rate', value: '98%' },
-  { label: 'Years Of Marketing Experience', value: '12+' },
-  { label: 'Average ROI Achieved', value: '4.2x' },
+  { value: '150+', label: 'Successful Campaigns Delivered' },
+  { value: '98%', label: 'Client Satisfaction Rate' },
+  { value: '12+', label: 'Years Of Marketing Experience' },
+  { value: '5x', label: 'Average ROI Achieved' },
 ];
 ---
-<section id="stats" class="bg-[color:var(--color-bg)] py-20">
-  <div class="mx-auto grid max-w-7xl grid-cols-2 gap-8 px-6 md:grid-cols-4">
-    {stats.map(({ value, label }) => (
-      <div class="text-center">
-        <div class="text-4xl font-bold text-[color:var(--color-accent)] md:text-5xl">{value}</div>
-        <div class="mt-2 text-sm text-[color:var(--color-fg-muted)]">{label}</div>
-      </div>
-    ))}
+<section id="stats" class="relative bg-[color:var(--color-bg)] py-20 md:py-24">
+  <div class="mx-auto max-w-7xl px-6">
+    <div class="grid grid-cols-2 gap-y-12 md:grid-cols-4 md:gap-x-8">
+      {stats.map(({ value, label }, i) => (
+        <div
+          class={`flex flex-col items-center text-center md:items-start md:text-left ${i > 0 ? 'md:border-l md:border-[color:var(--color-border)] md:pl-8' : ''}`}
+        >
+          <div class="text-5xl font-bold leading-none tracking-tight text-[color:var(--color-fg)] md:text-6xl lg:text-[72px]">
+            {value}
+          </div>
+          <div class="mt-4 max-w-[18ch] text-sm font-medium uppercase tracking-wider text-[color:var(--color-fg-muted)] md:text-xs lg:text-sm">
+            {label}
+          </div>
+        </div>
+      ))}
+    </div>
   </div>
 </section>
