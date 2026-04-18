@@ -294,7 +294,10 @@ async def run(dry: bool = False) -> list[dict]:
 
         if dry:
             print(f"    [DRY] would create: {prep_title}  ({len(blocks)} blocks)")
-            prep_index.append({"time": time_str, "title": prep_title, "url": "(dry-run)", "type": meeting_type})
+            prep_index.append({
+                "time": time_str, "original_title": title, "prep_title": prep_title,
+                "url": "(dry-run)", "type": meeting_type, "client": client_key,
+            })
             continue
 
         # Create Notion page under root
@@ -311,8 +314,8 @@ async def run(dry: bool = False) -> list[dict]:
             url = f"https://notion.so/{page_id.replace('-', '')}"
             print(f"    ✓ Created: {url}")
             prep_index.append({
-                "time": time_str, "title": prep_title, "url": url,
-                "type": meeting_type, "client": client_key,
+                "time": time_str, "original_title": title, "prep_title": prep_title,
+                "url": url, "type": meeting_type, "client": client_key,
             })
         except Exception as e:
             print(f"    ⚠ Failed to create: {e}")

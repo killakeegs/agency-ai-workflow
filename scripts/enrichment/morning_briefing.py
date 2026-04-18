@@ -33,6 +33,8 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
+from src.integrations import google_calendar as gcal
+from scripts.enrichment.meeting_prep import run as run_meeting_prep
 
 SLACK_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
 TEAM_CHANNEL = "general"  # #general in Rx Media workspace
@@ -270,6 +272,7 @@ def _agency_pulse(
     total_overdue: int,
     flags_data: dict,
     enriched_clients: set[str],
+    total_meetings_today: int,
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
     blockers = flags_data["blockers"]
@@ -278,65 +281,88 @@ def _agency_pulse(
     lines = [
         f"🌅 *Good Morning RxMedia — {today}*",
         "",
-        f"*Pulse:*",
-        f"• *{total_overdue}* overdue ClickUp tasks across the team",
+        f"• *{total_meetings_today}* meetings on the schedule today",
+        f"• *{total_overdue}* open ClickUp tasks across the team",
     ]
     if blockers:
-        lines.append(f"• 🚨 *{len(blockers)}* active BLOCKERs")
-    lines.append(f"• *{len(open_actions)}* open action items in last 7 days")
+        lines.append(f"• 🚨 *{len(blockers)}* active blockers — see client logs")
+    lines.append(f"• *{len(open_actions)}* open action items (past 7 days)")
     if enriched_clients:
-        lines.append(f"• Active clients: {', '.join(sorted(list(enriched_clients))[:8])}")
-    lines.extend([
-        "",
-        "_Keegan receives a DM with top flags. DM Rex anytime for full lists._",
-    ])
+        active_list = ", ".join(sorted(list(enriched_clients))[:6])
+        if len(enriched_clients) > 6:
+            active_list += f" +{len(enriched_clients) - 6}"
+        lines.append(f"• Active clients: {active_list}")
     return "\n".join(lines)
 
 
 def _personal_briefing(
     name: str,
+    meetings: list[dict],
     overdue_tasks: list[dict],
     flags_data: dict | None,
+    show_pulse: bool = False,
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
     lines = [f"🌅 *Good Morning {name} — {today}*", ""]
 
-    if overdue_tasks:
-        lines.append(f"*Your {len(overdue_tasks)} Overdue ClickUp Tasks:*")
-        for t in overdue_tasks[:8]:
-            lines.append(_format_task_line(t))
-        if len(overdue_tasks) > 8:
-            lines.append(f"_+ {len(overdue_tasks) - 8} more — DM Rex for the full list_")
+    # 1. Today's Meetings (top priority)
+    if meetings:
+        lines.append(f"📅 *Today's Meetings ({len(meetings)})*")
+        for m in meetings:
+            time_str = m.get("time", "").strip()
+            title = m.get("original_title") or m.get("title", "")
+            url = m.get("url", "")
+            if url and url != "(dry-run)":
+                lines.append(f"• `{time_str}` *{title[:60]}* — <{url}|prep doc>")
+            else:
+                lines.append(f"• `{time_str}` *{title[:60]}*")
         lines.append("")
     else:
-        lines.append("✓ No overdue tasks. Nice.")
+        lines.append("📅 *No meetings today.*")
         lines.append("")
 
+    # 2. Needs Attention — blockers + any urgent open actions
+    needs_attention = []
     if flags_data:
-        blockers = flags_data["blockers"]
-        open_actions = flags_data["open_actions"]
+        import re as _re
+        for client_name, flag_text in flags_data["blockers"][:5]:
+            clean = _re.sub(r"^\[BLOCKER\]\s*", "", flag_text)
+            needs_attention.append(f"🚨 *{client_name}* — {clean[:150]}")
+    if needs_attention:
+        lines.append("*🚨 Needs Attention*")
+        for item in needs_attention:
+            lines.append(f"• {item}")
+        lines.append("")
 
-        if blockers:
-            lines.append(f"🚨 *Active BLOCKERs ({len(blockers)}):*")
-            for client_name, flag_text in blockers[:5]:
-                import re as _re
-                clean = _re.sub(r"^\[BLOCKER\]\s*", "", flag_text)
-                lines.append(f"• *{client_name}* — {clean[:180]}")
-            if len(blockers) > 5:
-                lines.append(f"_+ {len(blockers) - 5} more blockers_")
+    # 3. Pulse — compact stats (shown to Keegan only)
+    if show_pulse and flags_data:
+        total_blockers = len(flags_data.get("blockers", []))
+        total_actions = len(flags_data.get("open_actions", []))
+        pulse_parts = []
+        if overdue_tasks:
+            pulse_parts.append(f"*{len(overdue_tasks)}* open tasks in your queue")
+        if total_actions:
+            pulse_parts.append(f"*{total_actions}* open action items across clients")
+        if total_blockers:
+            pulse_parts.append(f"*{total_blockers}* active blockers")
+        if pulse_parts:
+            lines.append("📊 *Pulse*")
+            lines.append(" · ".join(pulse_parts))
             lines.append("")
 
-        if open_actions:
-            lines.append(f"*Top 5 Most Recent Open Actions ({len(open_actions)} total):*")
-            for client_name, flag_text in open_actions[:5]:
-                import re as _re
-                clean = _re.sub(r"^\[OPEN_ACTION\]\s*", "", flag_text)
-                lines.append(f"• *{client_name}* — {clean[:180]}")
-            lines.append("")
-            lines.append("_DM Rex: \"show all open flags for [client]\" to dig deeper._")
+    # 4. Personal tasks — only if the user has a meaningful number
+    if overdue_tasks and not show_pulse:
+        lines.append(f"*Your {len(overdue_tasks)} Open ClickUp Tasks:*")
+        for t in overdue_tasks[:5]:
+            lines.append(_format_task_line(t))
+        if len(overdue_tasks) > 5:
+            lines.append(f"_+{len(overdue_tasks) - 5} more in ClickUp_")
+        lines.append("")
 
-    lines.append("")
-    lines.append("_Tell Rex when tasks are done: \"mark [task] as complete\" or \"close the COI task\"._")
+    # 5. Footer
+    if flags_data and flags_data.get("open_actions"):
+        lines.append("_DM Rex: \"show all open flags for [client]\" to dig deeper._")
+    lines.append("_Reply to Rex: \"create task for...\", \"mark [task] complete\", \"what's on my plate?\"_")
     return "\n".join(lines)
 
 
@@ -355,10 +381,19 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
 
     notion = NotionClient(api_key=settings.notion_api_key)
 
+    # 0. Meeting prep — generate Notion prep docs for today's calendar events
+    # (only for Keegan's calendar for now — expand to team later)
+    print("\n  Generating meeting prep docs...")
+    try:
+        meeting_prep_index = await run_meeting_prep(dry=dry_run)
+    except Exception as e:
+        print(f"  ⚠ Meeting prep failed: {e}")
+        meeting_prep_index = []
+
     async with httpx.AsyncClient() as http:
         # 1. Slack IDs
         slack_ids = await _lookup_slack_ids(http)
-        print(f"  Slack IDs resolved: {len(slack_ids)}/{len(TEAM)}")
+        print(f"\n  Slack IDs resolved: {len(slack_ids)}/{len(TEAM)}")
         for email, info in TEAM.items():
             status = "✓" if email in slack_ids else "✗ (skip DM)"
             print(f"    {info['name']:10s} {email:30s} {status}")
@@ -378,7 +413,7 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
 
         # 4. Agency pulse → #general
         enriched_clients = all_clients_with_flags
-        pulse = _agency_pulse(len(tasks), flags_data, enriched_clients)
+        pulse = _agency_pulse(len(tasks), flags_data, enriched_clients, len(meeting_prep_index))
         print("\n--- AGENCY PULSE (→ #general) ---")
         print(pulse)
         if not dry_run and not skip_channel:
@@ -400,17 +435,19 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
             slack_id = slack_ids.get(email, "")
 
             overdue_tasks = grouped.get(clickup_id, [])
-            # Keegan sees agency flags; others see only their overdue
-            flags_for_user = flags_data if email == "keegan@rxmedia.io" else None
+            # Keegan sees agency flags + meetings + pulse; others see only their overdue
+            is_keegan = email == "keegan@rxmedia.io"
+            flags_for_user = flags_data if is_keegan else None
+            meetings_for_user = meeting_prep_index if is_keegan else []
 
             has_flags = flags_for_user and (flags_for_user["blockers"] or flags_for_user["open_actions"])
-            if not overdue_tasks and not has_flags:
-                print(f"  {name}: nothing to send (no overdue, no flags)")
+            if not overdue_tasks and not has_flags and not meetings_for_user:
+                print(f"  {name}: nothing to send")
                 continue
 
-            msg = _personal_briefing(name, overdue_tasks, flags_for_user)
+            msg = _personal_briefing(name, meetings_for_user, overdue_tasks, flags_for_user, show_pulse=is_keegan)
             print(f"\n  --- DM to {name} ---")
-            print(msg[:400] + ("..." if len(msg) > 400 else ""))
+            print(msg)
 
             if not slack_id:
                 print(f"  ⚠ No Slack ID for {email} — skipping DM")
