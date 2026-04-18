@@ -22,11 +22,11 @@ from src.integrations.notion import NotionClient
 # ── Claude synthesis ───────────────────────────────────────────────────────────
 
 SYNTHESIS_SYSTEM = """\
-You are analyzing email history between an agency (RxMedia, keegan@rxmedia.io) and one of its clients.
+You are analyzing email history between an agency (RxMedia — Keegan Warrington, keegan@rxmedia.io) and one of its clients.
 
 Extract THREE things:
 
-1. CLIENT LOG ENTRIES — one per substantive thread or topic. Merge back-and-forths on the same topic into one entry. Skip pure confirmations, logistics, and social chatter.
+1. CLIENT LOG ENTRIES — one per substantive thread or topic. Merge back-and-forths on the same topic into ONE rich entry. Skip pure confirmations, logistics, and social chatter.
 
 2. BUSINESS PROFILE ENRICHMENTS — new factual information about the client's business revealed in emails (staffing changes, new services, pricing decisions, tech stack, strategic shifts, etc.).
 
@@ -43,15 +43,15 @@ Output ONLY a JSON object, no preamble:
 {{
   "log_entries": [
     {{
-      "date": "YYYY-MM-DD",
+      "date": "YYYY-MM-DD (date of last message in thread)",
       "direction": "inbound | outbound | mixed",
       "subject": "email subject (from first message)",
       "thread_id": "Gmail thread ID (from thread data)",
       "message_count": N,
       "attendees": "comma-separated names + emails",
-      "summary": "2-4 sentence summary of what was discussed",
-      "key_decisions": "what was decided (empty if none)",
-      "action_items": "what was committed to (empty if none)"
+      "summary": "Structured recap — see RULES below. Always attribute by speaker and tag projects.",
+      "key_decisions": "What was DECIDED. Attribute by speaker. Tag the project each decision applies to.",
+      "action_items": "What was COMMITTED TO. Attribute by owner. Tag the project each item applies to."
     }}
   ],
   "profile_enrichments": [
@@ -63,7 +63,7 @@ Output ONLY a JSON object, no preamble:
   "flags": [
     {{
       "type": "open_action | scope_change | blocker | promise_made | strategic | rule_set",
-      "description": "what needs attention",
+      "description": "what needs attention — attribute by speaker + tag project",
       "source_date": "YYYY-MM-DD",
       "brand_field": "(for rule_set only) which Brand Guidelines field: Words to Avoid | Voice & Tone | Photography Style | Image Direction | POV Notes | CTA Style",
       "brand_value": "(for rule_set only) what to add or update"
@@ -72,14 +72,31 @@ Output ONLY a JSON object, no preamble:
   "skipped_count": N
 }}
 
-Rules:
+## ATTRIBUTION RULES (non-negotiable)
+
+Every decision, action item, and key point must explicitly name WHO said/suggested/agreed to it.
+- Use the actual sender's name: "Keegan suggested X", "Brandon confirmed Y", "Sarah requested Z".
+- Never use ambiguous phrasing like "the team agreed", "they decided", "it was confirmed". Always name the person.
+- When one party proposes and the other confirms, capture BOTH: "Keegan suggested removing the loading screen; Brandon confirmed."
+- For auto-replies or system messages, don't extract anything — skip them.
+
+## PROJECT DISAMBIGUATION RULES (critical when multiple projects are discussed)
+
+When a single thread discusses multiple distinct projects, products, or websites, each decision/action/flag MUST be tagged with the project it applies to.
+- Example: if a thread covers BOTH "Growth Code 27 website" AND "WWMP website", every action item must specify which one: "[WWMP] Fix contact form" vs. "[GC27] Build new hero image".
+- Never assume both projects share the same decision — they likely don't.
+- If you can't tell which project an item applies to, flag it in the description as "(project unclear — confirm with sender)".
+- When in doubt, split into separate log entries per project rather than merging.
+
+## GENERAL RULES
+
 - Use exact dates from the thread headers.
-- Only include facts actually stated in the emails. Do not infer.
+- Only include facts actually stated in the emails. Do not infer or embellish.
 - If a thread is pure scheduling / acknowledgement / auto-reply, skip it — increment skipped_count.
 - Do NOT duplicate any existing Client Log entry (check subjects and dates).
 - Do NOT surface enrichments already present in the existing Business Profile.
 - For rule_set flags: these are client-stated constraints like "don't use this word", "we don't offer X", "never describe us as Y", "use warmer imagery." Map to the Brand Guidelines field where it belongs.
-- Compress aggressively. Quality over quantity.
+- Compress aggressively. Quality over quantity. One rich consolidated entry beats five fragmented ones.
 """
 
 
