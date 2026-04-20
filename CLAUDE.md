@@ -552,6 +552,34 @@ Every home page must include a "How to Get Started" section, positioned after Te
 - Brand Guidelines DB: `Voice & Tone`, `Reading Level`, `Power Words`, `Words to Avoid`, `CTA Style`, `POV Notes` (all rich_text) — client style guide, read by ContentAgent at runtime
 - Content DB: `Primary Keyword` (from sitemap), `Title Tag Status` (computed select: ✓ OK / ⚠ Over 60 / ⚠ Under 55), `Internal Link Target` (rich_text), `Alt Text Status` (select: Pending / Complete / N/A)
 
+### Keyword Strategy (per-page-kind rules)
+
+Per-page-kind keyword patterns live in `config/keyword_strategy.py`. The sitemap agent injects the strategy for each page's `page_kind` into its personalization prompt, so Claude can't freestyle.
+
+**Why this exists:** Summit Therapy's home page got primary keyword `pediatric therapy clinic Frisco Texas` on its first run. Problems:
+- Summit offers Speech + OT + PT, but the keyword collapsed onto "pediatric therapy" (one service category)
+- Summit has Frisco + McKinney, but the keyword only included Frisco
+- Home keyword duplicated a service page's territory
+
+**Home page rule (the most common bug):**
+- Home must represent the FULL business — umbrella category + broadest geo
+- Multi-service → use umbrella ("pediatric therapy" for Speech+OT+PT, "behavioral health treatment" for Addiction+MH)
+- Multi-location → broaden geo ("Frisco McKinney", "north Texas", "metro area")
+- Must NOT duplicate any service hub or location page's primary keyword
+
+**Per-page-kind patterns** are defined for: home, services_hub, each service page (detox/residential/php/iop/outpatient/mat/mental_health/dual_diagnosis/sober_living/speech/ot/pt), service_substance_cms, locations (hub + individual), admissions/insurance/what_to_expect/faq, who_we_serve (hub + children + adults), about/team/gallery/contact/outcomes, blog_hub/blog_post, legal.
+
+**Post-generation audit runs automatically** (`audit_keywords()` in `config/keyword_strategy.py`):
+- Flags primary keywords used by 2+ pages (duplicates)
+- Flags keywords under 3 words (too thin)
+- Flags non-legal pages with empty primary_keyword
+- Warnings print to the sitemap run log — team reviews before approving
+
+**When adding a new vertical's template:**
+1. Add any vertical-specific page kinds to `KEYWORD_STRATEGY` dict
+2. Each entry needs `pattern` + optionally `priority`, `must_not`, `rules`, `decision_tree`
+3. Test with `audit_keywords()` on a sample output to confirm no duplicates
+
 ---
 
 ## Blog Pipeline

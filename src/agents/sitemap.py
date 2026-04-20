@@ -762,8 +762,10 @@ revise the page structure, types, or scope.
 
         # 4. Call Claude ONCE: personalize Purpose + Primary Keyword per page,
         #    AND propose Tier 3 suggestions based on client specifics
+        from config.keyword_strategy import format_strategy_for_prompt
         page_summary_for_claude = "\n".join(
-            f"- {p['title']} ({p['slug']}, {p['page_type']}, {p['section']})"
+            f"- {p['title']} ({p['slug']}, {p['page_type']}, {p['section']}, kind={p.get('page_kind', '?')})\n"
+            f"    KEYWORD STRATEGY: {format_strategy_for_prompt(p.get('page_kind', ''))}"
             for p in baseline_pages
         )
 
@@ -779,9 +781,44 @@ client's context. For each baseline page, return a CLIENT-SPECIFIC:
   - primary_keyword (best-guess primary search keyword for THIS client)
   - secondary_keywords (list of 2-4 supporting keywords)
 
-Then propose additional Tier 3 pages unique to this client. Only suggest pages
-that reflect specific, differentiated facts from the Business Profile or meeting.
-Do NOT suggest pages already in the baseline. Do NOT suggest generic pages.
+━━━━━ KEYWORD STRATEGY RULES (CRITICAL) ━━━━━
+
+Every page in the list below has a `KEYWORD STRATEGY:` line attached. You MUST apply
+that strategy to that page. Do not deviate.
+
+Before writing any keyword, first determine from the client context:
+  • MULTI-SERVICE?  Does the client offer multiple distinct service categories
+    (e.g., Speech + OT + PT, or Addiction + Mental Health, or Derm + Weight Loss)?
+  • MULTI-LOCATION? Does the client operate out of more than one city or address?
+
+These two flags drive keyword scope — especially for the HOME page.
+
+**HOME PAGE RULES (most common source of bugs):**
+  • Home must represent the FULL business, not one service or one location.
+  • If multi-service: use the UMBRELLA CATEGORY (e.g., "pediatric therapy" for Speech+OT+PT,
+    "behavioral health treatment" for Addiction+Mental Health, "dermatology clinic" for Derm).
+  • If multi-location: broaden the geo. Use "Frisco McKinney", "north Texas", or the metro
+    area — NOT just one city.
+  • Home keyword MUST NOT duplicate any service hub or location page's keyword.
+  • Bad example (Summit Therapy real bug): "pediatric therapy clinic Frisco Texas" — this is
+    actually fine AS LONG AS Frisco is the only location. If Summit has Frisco + McKinney,
+    this becomes wrong and should be "pediatric therapy Frisco McKinney" or similar.
+
+**KEYWORD UNIQUENESS:**
+  • No two pages on the site may have the identical primary_keyword.
+  • Home > Services Hub > individual service pages — each narrower than the last.
+  • Location pages each get their OWN city.
+
+**MINIMUM KEYWORD QUALITY:**
+  • Primary keywords must be at least 3 words (service + geo at minimum).
+  • Legal pages (privacy/terms/accessibility/HIPAA) get EMPTY primary_keyword — not SEO targets.
+
+━━━━━ TIER 3 SUGGESTIONS ━━━━━
+
+After personalizing baseline pages, propose additional Tier 3 pages unique to this
+client. Only suggest pages that reflect specific, differentiated facts from the
+Business Profile or meeting. Do NOT suggest pages already in the baseline. Do NOT
+suggest generic pages.
 
 Return ONLY this JSON — no preamble:
 {
@@ -857,6 +894,29 @@ Return the JSON object as specified."""
 
         # 6. Pull Tier 3 suggestions
         tier3 = data.get("tier3_suggestions", []) or []
+
+        # 7. Post-generation keyword audit — flag duplicates/missing/short keywords
+        from config.keyword_strategy import audit_keywords
+        audit = audit_keywords(baseline_pages + tier3)
+        if audit["duplicates"]:
+            self.log.warning(
+                f"⚠ Keyword duplicates detected — {len(audit['duplicates'])} keyword(s) used by 2+ pages:"
+            )
+            for kw, slugs in audit["duplicates"]:
+                self.log.warning(f"    {kw!r} → {slugs}")
+            self.log.warning(
+                "  Review these in Notion and disambiguate before approving the sitemap."
+            )
+        if audit["short"]:
+            self.log.warning(
+                f"⚠ {len(audit['short'])} page(s) have keywords under 3 words (too thin):"
+            )
+            for entry in audit["short"]:
+                self.log.warning(f"    {entry}")
+        if audit["missing"]:
+            self.log.warning(
+                f"ℹ {len(audit['missing'])} page(s) have no primary_keyword: {audit['missing']}"
+            )
 
         return baseline_pages, tier3
 
