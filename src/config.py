@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # ── Notion ─────────────────────────────────────────────────────────────────
     notion_api_key: str
     notion_workspace_root_page_id: str
+    # Optional: parent page where new client master pages are created. If unset,
+    # clients land at workspace root. Set this to the "Clients" container page
+    # so every new client nests under it in the sidebar.
+    notion_clients_container_page_id: str | None = None
+    # Optional: top-level Clients DB (the agency roster). If set, onboarding
+    # writes a new row here for every new client.
+    notion_clients_db_id: str | None = None
 
     # ── ClickUp ────────────────────────────────────────────────────────────────
     clickup_api_key: str

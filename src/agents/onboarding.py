@@ -437,7 +437,48 @@ class OnboardingAgent(BaseAgent):
         CLIENTS_JSON_PATH.write_text(json.dumps(existing, indent=2))
         self.log.info(f"  ✓ config/clients.json updated")
 
-        # ── Step 7: Mark all submissions as Active Client ─────────────────────
+        # ── Step 7: Add row to top-level Clients DB (agency roster) ───────────
+        if settings.notion_clients_db_id:
+            try:
+                service_display = {
+                    "website_build":  "Website Build",
+                    "care_plan":      "Care Plan",
+                    "seo":            "SEO",
+                    "gbp_management": "GBP Management",
+                    "blog":           "Blog",
+                    "social_media":   "Social Media",
+                    "newsletter":     "Newsletter",
+                    "paid_ads":       "Paid Ads",
+                }
+                services_multi = [
+                    {"name": service_display[k]}
+                    for k, v in services_config.items()
+                    if k in service_display and v is True
+                ]
+                from datetime import date as _date
+                roster_props: dict = {
+                    "Client Name":    self.notion.title_property(business_name),
+                    "Status":         self.notion.select_property("Onboarding"),
+                    "Services":       {"multi_select": services_multi},
+                    "Vertical":       self.notion.text_property(", ".join(active_verticals)),
+                    "Start Date":     {"date": {"start": _date.today().isoformat()}},
+                    "Client Page":    {"url": f"https://notion.so/{client_page_id.replace('-', '')}"},
+                    "Pipeline Stage": self.notion.text_property(PipelineStage.ONBOARDING_COMPLETE.value),
+                }
+                if contact_name:
+                    roster_props["Primary Contact"] = self.notion.text_property(contact_name)
+                if email:
+                    roster_props["Contact Email"] = {"email": email}
+                await self.notion.create_database_entry(
+                    settings.notion_clients_db_id, roster_props,
+                )
+                self.log.info("  ✓ Agency roster row added to top-level Clients DB")
+            except Exception as e:
+                self.log.warning(f"  ⚠ Could not add roster row: {e}")
+        else:
+            self.log.info("  (NOTION_CLIENTS_DB_ID not set — skipping roster row)")
+
+        # ── Step 8: Mark all submissions as Active Client ─────────────────────
         for page_id in submission_page_ids:
             await self.notion.update_database_entry(page_id, {
                 "Pipeline Status": self.notion.select_property("Active Client"),

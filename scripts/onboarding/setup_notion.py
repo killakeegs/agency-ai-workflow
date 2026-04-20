@@ -946,17 +946,24 @@ async def setup_client(
     notion = NotionClient(settings.notion_api_key)
 
     # ── Create client page ────────────────────────────────────────────────────
-    print("\nCreating client page...")
+    # Parent under the Clients container if configured — otherwise falls back
+    # to workspace root. Keeps all clients nested together in Notion sidebar.
+    client_parent_id = (
+        settings.notion_clients_container_page_id
+        or settings.notion_workspace_root_page_id
+    )
+    parent_label = "Clients container" if settings.notion_clients_container_page_id else "workspace root"
+    print(f"\nCreating client page under {parent_label}...")
 
     if not dry_run:
         client_page_id = await notion.create_page(
-            parent_page_id=settings.notion_workspace_root_page_id,
+            parent_page_id=client_parent_id,
             title=client_name,
         )
         print(f"  ✓ Client page: {client_page_id}")
     else:
         client_page_id = "DRY_RUN_PAGE_ID"
-        print(f"  [DRY RUN] Would create client page under {settings.notion_workspace_root_page_id}")
+        print(f"  [DRY RUN] Would create client page under {client_parent_id}")
 
     databases: dict[str, str] = {}  # name → database_id
 
