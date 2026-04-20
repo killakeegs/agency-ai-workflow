@@ -32,43 +32,6 @@ from src.integrations.notion import NotionClient
 
 # ── Stage runners ──────────────────────────────────────────────────────────────
 
-async def run_transcript_parser(client_key: str, notion: NotionClient, clickup: ClickUpClient, **_) -> dict:
-    from src.agents.transcript_parser import TranscriptParserAgent
-
-    cfg = CLIENTS[client_key]
-    agent = TranscriptParserAgent(
-        notion=notion,
-        clickup=clickup,
-        model=settings.anthropic_model,
-        max_tokens=4096,
-    )
-    return await agent.run(
-        client_id=cfg["client_id"],
-        meeting_notes_entry_id=cfg["meeting_notes_entry_id"],
-        action_items_db_id=cfg["action_items_db_id"],
-        client_info_db_id=cfg["client_info_db_id"],
-    )
-
-
-async def run_mood_board(client_key: str, notion: NotionClient, clickup: ClickUpClient, revision_notes: str = "") -> dict:
-    from src.agents.mood_board import MoodBoardAgent
-
-    cfg = CLIENTS[client_key]
-    agent = MoodBoardAgent(
-        notion=notion,
-        clickup=clickup,
-        model=settings.anthropic_model,
-        max_tokens=8192,
-    )
-    return await agent.run(
-        client_id=cfg["client_id"],
-        client_info_db_id=cfg["client_info_db_id"],
-        meeting_notes_db_id=cfg["meeting_notes_db_id"],
-        brand_guidelines_db_id=cfg["brand_guidelines_db_id"],
-        mood_board_db_id=cfg["mood_board_db_id"],
-        revision_notes=revision_notes,
-    )
-
 
 async def run_sitemap(client_key: str, notion: NotionClient, clickup: ClickUpClient, revision_notes: str = "") -> dict:
     from src.agents.sitemap import SitemapAgent
@@ -165,28 +128,6 @@ def _prompt_for_tier3_approval(suggestions: list[dict]) -> list[dict]:
     return approved
 
 
-async def run_wireframe(client_key: str, notion: NotionClient, clickup: ClickUpClient, revision_notes: str = "", **_) -> dict:
-    from src.agents.wireframe_spec import WireframeSpecAgent
-
-    cfg = CLIENTS[client_key]
-    agent = WireframeSpecAgent(
-        notion=notion,
-        clickup=clickup,
-        model=settings.anthropic_model,
-        max_tokens=8192,
-    )
-    return await agent.run(
-        client_id=cfg["client_id"],
-        client_info_db_id=cfg["client_info_db_id"],
-        brand_guidelines_db_id=cfg["brand_guidelines_db_id"],
-        sitemap_db_id=cfg["sitemap_db_id"],
-        wireframes_db_id=cfg["wireframes_db_id"],
-        content_db_id=cfg.get("content_db_id", ""),
-        mood_board_db_id=cfg["mood_board_db_id"],
-        revision_notes=revision_notes,
-    )
-
-
 async def run_content(client_key: str, notion: NotionClient, clickup: ClickUpClient, revision_notes: str = "", **_) -> dict:
     from src.agents.content import ContentAgent
 
@@ -200,21 +141,18 @@ async def run_content(client_key: str, notion: NotionClient, clickup: ClickUpCli
     return await agent.run(
         client_id=cfg["client_id"],
         client_info_db_id=cfg["client_info_db_id"],
-        meeting_notes_db_id=cfg["meeting_notes_db_id"],
+        client_log_db_id=cfg.get("client_log_db_id", ""),
         brand_guidelines_db_id=cfg["brand_guidelines_db_id"],
         sitemap_db_id=cfg["sitemap_db_id"],
-        mood_board_db_id=cfg["mood_board_db_id"],
+        business_profile_page_id=cfg.get("business_profile_page_id", ""),
         content_db_id=cfg.get("content_db_id", ""),
         revision_notes=revision_notes,
     )
 
 
 STAGE_RUNNERS = {
-    "transcript_parser": run_transcript_parser,
-    "mood_board": run_mood_board,
     "sitemap": run_sitemap,
     "content": run_content,
-    "wireframe": run_wireframe,
 }
 
 

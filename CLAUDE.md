@@ -159,22 +159,71 @@ Each client entry contains:
 
 ## Agent Architecture
 
-### Master Orchestrator (`src/agents/orchestrator.py`)
-Pure state machine — no LLM calls. Reads PipelineState from ClickUp + Notion, routes to the appropriate sub-agent, writes output to Notion, advances pipeline stage.
+### Agents vs Services — terminology
 
-### Sub-Agents
+To avoid confusion when adding new components:
 
-| Agent | File | Status | Responsibility |
-|---|---|---|---|
-| Onboarding | `src/agents/onboarding.py` | Built | Reads form submission → provisions all Notion DBs + ClickUp → writes client brief → adds to clients.json |
-| Transcript Parser | `src/agents/transcript_parser.py` | Built | Parses Gemini transcript → decisions, action items, brand preferences → Notion |
-| Mood Board | `src/agents/mood_board.py` | **Deprecated** | Replaced by Webflow template model. Code kept for reference. |
-| Sitemap | `src/agents/sitemap.py` | Built | Goals + business type → page hierarchy + section outlines → Notion |
-| Content | `src/agents/content.py` | Built | Sitemap pages → per-page copy + SEO → Notion |
-| Wireframe Spec | `src/agents/wireframe_spec.py` | Built | Sitemap + content → Relume component map → Notion (reference only in template model) |
-| Image Generation | `src/agents/image_generation.py` | Built | Brand data → AI images via Replicate (brand batch ~15, page batch ~3/page) → Notion |
-| Hi-Fi Spec | `src/agents/hifi_spec.py` | Stub | Not required in template model — designer works directly from content |
-| Approval Handler | `src/agents/approval_handler.py` | Stub | Low priority — Rex handles team notifications |
+- **Agent** (`src/agents/`) — LLM-powered, makes decisions, inherits `BaseAgent`, one `run()` method per. Examples: OnboardingAgent, SitemapAgent, ContentAgent, ImageGenerationAgent.
+- **Service** (`src/services/` or `src/integrations/`) — shared logic that agents + scripts call into. Not LLM-first. Examples: `email_enrichment.py`, `business_profile.py` populator, flag dedup helpers.
+- **Orchestrator** — not an agent, not a service. Triggers agents in response to events. Examples: `scripts/pipeline/run_pipeline_stage.py`, Railway crons (`email_monitor`, `meeting_processor`, `care_plan_report`), Rex Slack dispatcher, Make scenarios.
+- **Integration** (`src/integrations/`) — wraps external APIs. No agency logic. Examples: `notion.py`, `clickup.py`, `gmail.py`.
+
+**Rule of thumb:** if the module calls `anthropic.messages.create()`, it belongs in `src/agents/`. If it doesn't but holds shared agency logic, it's a service. If it wraps an external API only, it's an integration.
+
+### Agent Design Principles (enforce on every new agent)
+
+1. **One `run()` method per agent, returns a typed dict.** No creeping scope.
+2. **One primary Notion DB per agent's output.** Keep the blast radius narrow.
+3. **Inherit `BaseAgent`.** Shared Notion/Anthropic clients, logging, retries, rate limiting. Non-negotiable.
+4. **Agents don't start themselves.** Triggered only by: make command, Railway cron, Rex, or webhook. An agent is pure logic.
+5. **Templates and prompts live in `config/`, not agent code.** Per-vertical customization via config only (see `config/sitemap_templates.py`, `config/page_sections.py`).
+6. **Strategy vs execution separation.** A strategy agent proposes → human approves (interactive prompt or "Suggested" Notion status) → execution agent acts. Same pattern as Tier 3 sitemap suggestions.
+7. **Dry-run mode mandatory.** Every agent must support a "show me what you'd do without writing" mode.
+8. **Write to Notion, not to the file system.** Single source of truth. File-system output is only for visual review artifacts (HTML sitemaps, reports).
+9. **Agents don't truly delete.** Append, mark stale (`Archived` / `Resolved` status), or use `in_trash: True`. Always reversible.
+10. **Rex tool per agent.** Every agent gets a Rex-callable tool so the team can invoke via Slack.
+
+### Active Sub-Agents
+
+| Agent | File | Responsibility |
+|---|---|---|
+| Onboarding | `src/agents/onboarding.py` | Reads form submission → provisions Notion DBs + Business Profile → writes client brief → adds to clients.json |
+| Sitemap | `src/agents/sitemap.py` | Template-driven Tier 1/2 + AI-suggested Tier 3 per vertical → Notion Sitemap DB |
+| Content | `src/agents/content.py` | Sitemap pages → per-page copy + SEO fields → Notion Content DB |
+| Image Generation | `src/agents/image_generation.py` | Brand data → AI images via Replicate (brand batch ~15, page batch ~3/page) → Notion Images DB |
+
+### Deprecated / removed agents (do not build on these)
+
+- `TranscriptParserAgent` — removed. Meeting transcripts now flow through `scripts/enrichment/meeting_processor.py` (Railway cron + Notion AI).
+- `MoodBoardAgent` — removed. Replaced by the Webflow template model.
+- `WireframeSpecAgent` — removed. Relume workflow is text-paste from `relume_sitemap_export.txt`, no agent required.
+- `HifidelitySpecAgent` — removed. Designer works directly from approved Content DB entries.
+- `ApprovalHandlerAgent` — removed. Rex handles team notifications; approval gates are direct Notion status changes.
+- `OrchestratorAgent` — removed. Orchestration happens via Make commands, Railway crons, Rex, and Make.com scenarios — no central state-machine agent needed.
+
+### Adding a new agent — checklist
+
+Before writing code:
+- [ ] Confirm it's truly an agent (LLM-driven), not a service
+- [ ] Name it and identify which single Notion DB it writes to
+- [ ] Identify its trigger (make command / Railway cron / Rex tool)
+- [ ] Place its prompt + templates under `config/`
+- [ ] Define its return dict schema (status, stage, outputs, metadata)
+
+After writing code:
+- [ ] Inherits `BaseAgent` ✓
+- [ ] Has `run()` method ✓
+- [ ] Has dry-run mode ✓
+- [ ] Added Rex tool definition ✓
+- [ ] Added Makefile target ✓
+- [ ] Documented in this section ✓
+
+### Agent roadmap (not yet built)
+
+- **SEOAgent** — strategy, monitoring (daily rank + traffic + anomaly → Flags DB), execution (monthly battle plan refresh + content briefs), reporting. Highest leverage next build.
+- **SocialAgent** — picks topics, pulls from Business Profile, schedules IG/FB/LinkedIn/GBP. Scripts exist (`social_posts.py`, etc.), needs agent layer.
+- **BlogAgent** — editorial calendar, SEO opportunity flagging, post writing. Scripts exist, needs agent layer.
+- **PaidAdsAgent** — greenfield. LSA, Recovery.com directory, Meta/Google ads.
 
 ---
 

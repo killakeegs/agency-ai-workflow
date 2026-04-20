@@ -513,19 +513,22 @@ class ContentAgent(BaseAgent):
 
         Required kwargs:
           - client_info_db_id
-          - meeting_notes_db_id
           - brand_guidelines_db_id
           - sitemap_db_id
 
         Optional kwargs:
+          - client_log_db_id (preferred) or meeting_notes_db_id (legacy alias)
+          - business_profile_page_id: populated by meeting processor, primary source of context
           - content_db_id (str): auto-created if empty
-          - mood_board_db_id (str): reads approved creative direction
+          - mood_board_db_id (str): legacy — mood board stage was removed
           - revision_notes (str): feedback to guide regeneration
         """
         client_info_db_id = kwargs["client_info_db_id"]
-        meeting_notes_db_id = kwargs["meeting_notes_db_id"]
+        # Accept new field name or fall back to legacy
+        meeting_notes_db_id = kwargs.get("client_log_db_id") or kwargs.get("meeting_notes_db_id", "")
         brand_guidelines_db_id = kwargs["brand_guidelines_db_id"]
         sitemap_db_id = kwargs["sitemap_db_id"]
+        business_profile_page_id = kwargs.get("business_profile_page_id", "")
         content_db_id_arg = kwargs.get("content_db_id") or ""
         mood_board_db_id = kwargs.get("mood_board_db_id")
         revision_notes = kwargs.get("revision_notes", "")
@@ -579,27 +582,67 @@ class ContentAgent(BaseAgent):
             if pov_notes:   style_parts.append(f"POV Rules: {pov_notes}")
             style_context = "\n".join(style_parts)
 
-        # Meeting notes
-        meeting_context = ""
-        meeting_entries = await self.notion.query_database(meeting_notes_db_id)
-        if meeting_entries:
-            parsed = [
-                e for e in meeting_entries
-                if e["properties"].get("Parsed", {}).get("checkbox", False)
-            ]
-            target = parsed[0] if parsed else meeting_entries[0]
-            mp = target["properties"]
-            meeting_page_id = target["id"]
-            key_decisions = _get_rich_text(mp.get("Key Decisions", {}))
-            meeting_context = f"Key Decisions:\n{key_decisions}"
-            meeting_blocks = await self.notion.get_block_children(meeting_page_id)
-            meeting_body = _blocks_to_text(meeting_blocks)
-            analysis_start = meeting_body.find("AI-Parsed Meeting Analysis")
-            if analysis_start != -1:
-                meeting_context += (
-                    f"\n\nFull Meeting Analysis:\n"
-                    f"{meeting_body[analysis_start:analysis_start + 4000]}"
+        # Business Profile — primary source of client context (populated by meeting
+        # processor + email enrichment). Load this first; it usually beats raw notes.
+        business_profile_context = ""
+        if business_profile_page_id:
+            try:
+                from src.integrations.business_profile import load_business_profile
+                business_profile_context = await load_business_profile(
+                    self.notion, {"business_profile_page_id": business_profile_page_id}
                 )
+            except Exception as e:
+                self.log.warning(f"Could not load Business Profile: {e}")
+
+        # Meeting notes — new Client Log schema or legacy Meeting Notes DB
+        meeting_context = ""
+        if meeting_notes_db_id:
+            meeting_entries = await self.notion.query_database(meeting_notes_db_id)
+            if meeting_entries:
+                # Prefer Meeting-type entries (new Client Log); fall back to newest
+                meeting_rows = [
+                    e for e in meeting_entries
+                    if _get_select(e["properties"].get("Type", {})) == "Meeting"
+                ]
+                # Legacy fallback: old Meeting Notes DB had a Parsed checkbox
+                if not meeting_rows:
+                    meeting_rows = [
+                        e for e in meeting_entries
+                        if e["properties"].get("Parsed", {}).get("checkbox", False)
+                    ]
+                target = meeting_rows[0] if meeting_rows else meeting_entries[0]
+                mp = target["properties"]
+
+                summary = _get_rich_text(mp.get("Summary", {}))
+                key_decisions = _get_rich_text(mp.get("Key Decisions", {}))
+                action_items = _get_rich_text(mp.get("Action Items", {}))
+                next_steps = _get_rich_text(mp.get("Next Steps", {}))
+                parts = []
+                if summary:       parts.append(f"SUMMARY:\n{summary}")
+                if key_decisions: parts.append(f"KEY DECISIONS:\n{key_decisions}")
+                if action_items:  parts.append(f"ACTION ITEMS:\n{action_items}")
+                if next_steps:    parts.append(f"NEXT STEPS:\n{next_steps}")
+                if parts:
+                    meeting_context = "\n\n".join(parts)
+
+                # Legacy fallback: AI-Parsed Meeting Analysis block in page body
+                if not meeting_context:
+                    meeting_blocks = await self.notion.get_block_children(target["id"])
+                    meeting_body = _blocks_to_text(meeting_blocks)
+                    analysis_start = meeting_body.find("AI-Parsed Meeting Analysis")
+                    if analysis_start != -1:
+                        meeting_context = (
+                            f"Full Meeting Analysis:\n"
+                            f"{meeting_body[analysis_start:analysis_start + 4000]}"
+                        )
+
+        # Combine Business Profile + meeting recap (BP is the canonical source)
+        if business_profile_context:
+            meeting_context = (
+                f"BUSINESS PROFILE (canonical — trust this over everything else):\n"
+                f"{business_profile_context[:8000]}\n\n"
+                + (meeting_context or "")
+            )
 
         # Approved mood board direction
         mood_context = ""

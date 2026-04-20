@@ -16,14 +16,6 @@ run:
 
 # ── Direct stage shortcuts ────────────────────────────────────────────────────
 
-transcript:
-	@$(PYTHON) scripts/pipeline/run_pipeline_stage.py --stage transcript_parser --client $(CLIENT)
-
-mood-board:
-	@$(PYTHON) scripts/pipeline/run_pipeline_stage.py --stage mood_board --client $(CLIENT) \
-	  $(if $(NOTES),--revision "$(NOTES)",)
-	@$(PYTHON) scripts/pipeline/advance_pipeline.py --client $(CLIENT) --mark-pending
-
 sitemap:
 	@$(PYTHON) scripts/pipeline/run_pipeline_stage.py --stage sitemap --client $(CLIENT) \
 	  $(if $(NOTES),--revision "$(NOTES)",)
@@ -61,11 +53,6 @@ asyncio.run(run())"
 
 content:
 	@$(PYTHON) scripts/pipeline/run_pipeline_stage.py --stage content --client $(CLIENT) \
-	  $(if $(NOTES),--revision "$(NOTES)",)
-	@$(PYTHON) scripts/pipeline/advance_pipeline.py --client $(CLIENT) --mark-pending
-
-wireframe:
-	@$(PYTHON) scripts/pipeline/run_pipeline_stage.py --stage wireframe --client $(CLIENT) \
 	  $(if $(NOTES),--revision "$(NOTES)",)
 	@$(PYTHON) scripts/pipeline/advance_pipeline.py --client $(CLIENT) --mark-pending
 
@@ -274,15 +261,12 @@ help:
 	@echo "  make run              Interactive menu (easiest)"
 	@echo ""
 	@echo "  PIPELINE STAGES"
-	@echo "  make transcript       Parse meeting transcript → Notion"
-	@echo "  make sitemap          Generate sitemap → Notion"
+	@echo "  make sitemap          Generate sitemap (template-driven + Tier 3 AI suggestions) → Notion"
 	@echo "  make content          Generate page copy → Notion"
-	@echo "  make wireframe        Generate Relume component maps → Notion"
 	@echo ""
 	@echo "  REVISIONS (re-run with feedback)"
 	@echo "  make sitemap    NOTES=\"Add a FAQs page\""
 	@echo "  make content    NOTES=\"Homepage tone needs to be warmer\""
-	@echo "  make wireframe  NOTES=\"Use more split-layout components\""
 	@echo ""
 	@echo "  STOCK PHOTOGRAPHY (Pexels)"
 	@echo "  make stock-images OPEN=1             Discovery → HTML report (click Keep/Skip)"
@@ -352,7 +336,7 @@ help:
 	@echo "  make advance              Check Notion approval → run next stage"
 	@echo ""
 
-.PHONY: run transcript mood-board sitemap content wireframe check-env check-env-seo gbp-reviews \
+.PHONY: run sitemap content check-env check-env-seo gbp-reviews \
         social-posts linkedin-posts \
         stock-images images-brand images-pages \
         mood-board-visuals sitemap-visuals brand-export relume-sitemap relume-export \

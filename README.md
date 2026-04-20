@@ -116,8 +116,8 @@ Run `make help` for a full command reference.
 All agents follow the same pattern:
 
 1. `BaseAgent` (`src/agents/base_agent.py`) — abstract class with a `_run_tool_loop()` that handles the Anthropic tool-use loop (call → tool_use → execute → loop)
-2. Sub-agents implement `_execute_tool()` and `run()`. They read all client context from Notion at runtime — no client-specific content is hardcoded in prompts.
-3. `OrchestratorAgent` is a pure state machine with no LLM calls. It reads pipeline state, routes to the correct sub-agent, writes output to Notion, and advances the stage.
+2. Sub-agents implement `run()` and inherit shared Notion/Anthropic clients + retry logic. They read all client context from Notion at runtime — no client-specific content is hardcoded in prompts.
+3. Orchestration happens outside the agents: Make commands, Railway crons, Rex (Slack), and Make.com scenarios route triggers to the right agent. See the Agent Design Principles in `CLAUDE.md` for the full enforcement rules on new agents.
 
 ### Client Registry
 

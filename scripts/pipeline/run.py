@@ -19,33 +19,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 STAGES = [
     {
-        "key": "transcript_parser",
-        "label": "Parse Meeting Transcript",
-        "description": "Read the kickoff meeting recording → extract decisions, action items, preferences into Notion",
-        "supports_revision": False,
-    },
-    {
-        "key": "mood_board",
-        "label": "Generate Mood Boards",
-        "description": "Generate 4 mood board variations (colors, fonts, style direction) → Notion + Figma JSON",
-        "supports_revision": True,
-    },
-    {
         "key": "sitemap",
         "label": "Generate Sitemap",
-        "description": "Generate full site structure (pages, slugs, SEO strategy, CMS collections) → Notion + Figma JSON",
+        "description": "Template-driven Tier 1/2 baseline + AI Tier 3 suggestions with interactive approval → Notion",
         "supports_revision": True,
     },
     {
         "key": "content",
         "label": "Generate Page Copy",
         "description": "Write full copy for every page (H1s, hero, body, CTAs, title tags, meta descriptions) → Notion",
-        "supports_revision": True,
-    },
-    {
-        "key": "wireframe",
-        "label": "Generate Wireframe Specs",
-        "description": "Map every page section to a Relume component — developer-ready build blueprint → Notion",
         "supports_revision": True,
     },
 ]
@@ -119,21 +101,14 @@ async def run_stage(stage_key: str, client_key: str, revision_notes: str) -> Non
     )
 
     # Import CLIENTS config from run_pipeline_stage
-    from scripts.run_pipeline_stage import (
-        CLIENTS as CLIENT_CONFIGS,
-        run_transcript_parser,
-        run_mood_board,
+    from scripts.pipeline.run_pipeline_stage import (
         run_sitemap,
         run_content,
-        run_wireframe,
     )
 
     RUNNERS = {
-        "transcript_parser": run_transcript_parser,
-        "mood_board": run_mood_board,
         "sitemap": run_sitemap,
         "content": run_content,
-        "wireframe": run_wireframe,
     }
 
     notion = NotionClient(settings.notion_api_key)
