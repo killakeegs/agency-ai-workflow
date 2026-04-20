@@ -133,6 +133,25 @@ def _match_client_by_title(title: str, clients: dict) -> str | None:
     return None
 
 
+def _organized_by_rxmedia(event: dict) -> bool:
+    """True if this meeting was organized by an @rxmedia.io account."""
+    org = event.get("organizer", {}) or {}
+    # organizer.self is True when the calendar owner (keegan@rxmedia.io) organized
+    if org.get("self"):
+        return True
+    org_email = (org.get("email") or "").lower()
+    if org_email.endswith(f"@{RXMEDIA_DOMAIN}"):
+        return True
+    # Fallback: check creator field
+    creator = event.get("creator", {}) or {}
+    if creator.get("self"):
+        return True
+    creator_email = (creator.get("email") or "").lower()
+    if creator_email.endswith(f"@{RXMEDIA_DOMAIN}"):
+        return True
+    return False
+
+
 def classify_meeting(
     event: dict,
     clients: dict,
@@ -140,7 +159,7 @@ def classify_meeting(
     """Classify a calendar event.
 
     Returns: (type, client_key or None)
-      type is one of: "personal", "internal", "client_recurring", "onboarding", "sales", "unknown"
+      type is one of: "personal", "external_hosted", "internal", "client_recurring", "onboarding", "sales", "unknown"
     """
     title = (event.get("summary") or "")
     title_lower = title.lower()
@@ -151,6 +170,11 @@ def classify_meeting(
     # Personal: title matches personal keywords (birthday, wedding, yoga, etc.)
     if any(kw in title_lower for kw in PERSONAL_KEYWORDS):
         return "personal", None
+
+    # External-hosted: someone else organized this meeting (training, vendor demo, etc.)
+    # Skip prep — we're a guest, not the host.
+    if not _organized_by_rxmedia(event):
+        return "external_hosted", None
 
     # Internal: only RxMedia attendees OR title matches internal keywords with no external
     if not external_attendees:

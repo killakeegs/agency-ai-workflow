@@ -398,6 +398,10 @@ async def run(dry: bool = False) -> list[dict]:
             print(f"  — [{time_str}] {title}  (personal, skipped)")
             continue
 
+        if meeting_type == "external_hosted":
+            print(f"  — [{time_str}] {title}  (external-hosted, skipped — not our meeting)")
+            continue
+
         print(f"  → [{time_str}] {title}  type={meeting_type}  client={client_key or '-'}")
 
         # Internal team sync → rich team prep if it looks like RxMedia Weekly Sync
