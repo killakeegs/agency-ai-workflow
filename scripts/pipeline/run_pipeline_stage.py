@@ -80,7 +80,7 @@ async def run_sitemap(client_key: str, notion: NotionClient, clickup: ClickUpCli
         model=settings.anthropic_model,
         max_tokens=16000,
     )
-    return await agent.run(
+    result = await agent.run(
         client_id=cfg["client_id"],
         client_info_db_id=cfg["client_info_db_id"],
         client_log_db_id=cfg.get("client_log_db_id", ""),
@@ -89,6 +89,80 @@ async def run_sitemap(client_key: str, notion: NotionClient, clickup: ClickUpCli
         business_profile_page_id=cfg.get("business_profile_page_id", ""),
         revision_notes=revision_notes,
     )
+
+    # Interactive approval for Tier 3 suggestions
+    suggestions = result.get("tier3_suggestions") or []
+    if suggestions:
+        approved = _prompt_for_tier3_approval(suggestions)
+        if approved:
+            sm_db = result.get("sitemap_db_id") or cfg["sitemap_db_id"]
+            slug_to_id = result.get("slug_to_id") or {}
+            written = await agent.write_approved_suggestions(approved, sm_db, slug_to_id)
+            print(f"\n✓ Added {len(written)} Tier 3 page(s) to the sitemap as Draft.")
+            result["tier3_approved_count"] = len(written)
+            result["tier3_approved_ids"]   = written
+            result["pages_created"]        = result.get("pages_created", 0) + len(written)
+        else:
+            print("\n→ No Tier 3 suggestions added. Baseline sitemap only.")
+            result["tier3_approved_count"] = 0
+    return result
+
+
+def _prompt_for_tier3_approval(suggestions: list[dict]) -> list[dict]:
+    """Show each Tier 3 suggestion and prompt y/n. Returns the approved subset."""
+    print(f"\n{'='*70}")
+    print(f"  Tier 3 Suggestions — {len(suggestions)} client-specific pages proposed")
+    print(f"{'='*70}")
+    print(f"\nFor each suggestion below: type 'y' to add it to the sitemap,")
+    print(f"'n' to skip, 'a' to accept all remaining, or 's' to skip all remaining.\n")
+
+    approved: list[dict] = []
+    accept_all = False
+    skip_all = False
+
+    for i, page in enumerate(suggestions, 1):
+        title = page.get("title", "(no title)")
+        slug = page.get("slug", "(no slug)")
+        section = page.get("section", "?")
+        rationale = page.get("rationale", "")
+        purpose = page.get("purpose", "")
+
+        print(f"\n[{i}/{len(suggestions)}] {title}")
+        print(f"      Section: {section}   Slug: {slug}")
+        if rationale:
+            print(f"      Why: {rationale}")
+        if purpose:
+            print(f"      Purpose: {purpose[:220]}")
+
+        if accept_all:
+            print(f"      → Auto-accepted")
+            approved.append(page)
+            continue
+        if skip_all:
+            print(f"      → Auto-skipped")
+            continue
+
+        while True:
+            ans = input("      Add this page? [y/N/a/s]: ").strip().lower()
+            if ans in ("", "n"):
+                break
+            elif ans == "y":
+                approved.append(page)
+                break
+            elif ans == "a":
+                approved.append(page)
+                accept_all = True
+                break
+            elif ans == "s":
+                skip_all = True
+                break
+            else:
+                print("      (Answer with y, n, a, or s.)")
+
+    print(f"\n{'='*70}")
+    print(f"  Approved {len(approved)}/{len(suggestions)} Tier 3 pages.")
+    print(f"{'='*70}")
+    return approved
 
 
 async def run_wireframe(client_key: str, notion: NotionClient, clickup: ClickUpClient, revision_notes: str = "", **_) -> dict:

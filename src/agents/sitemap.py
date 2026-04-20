@@ -515,7 +515,10 @@ revise the page structure, types, or scope.
         for p in tier3_suggestions:
             _normalize_page(p, default_status="Suggested")
 
-        all_pages_to_write = pages + tier3_suggestions
+        # Tier 3 suggestions are NOT auto-written. They're returned to the
+        # caller (runner) for interactive review — the runner prompts the team
+        # and only writes approved ones afterward.
+        all_pages_to_write = pages
 
         for page in all_pages_to_write:
             title = page.get("title", "Untitled")
@@ -615,7 +618,94 @@ revise the page structure, types, or scope.
             "pages_created": len(created_ids),
             "notion_entry_ids": created_ids,
             "cms_collections": len(data.get("cms_collections", [])),
+            # Tier 3 suggestions — not yet written to Notion. Runner prompts
+            # for approval, then calls write_approved_suggestions() below.
+            "tier3_suggestions": tier3_suggestions,
+            "sitemap_db_id": sitemap_db_id,
+            "slug_to_id": slug_to_id,
         }
+
+    async def write_approved_suggestions(
+        self,
+        approved: list[dict],
+        sitemap_db_id: str,
+        slug_to_id: dict[str, str],
+    ) -> list[str]:
+        """Write team-approved Tier 3 suggestions to the Sitemap DB as Draft.
+
+        Resolves Parent Page relations against the existing slug→id map
+        (includes baseline pages already written).
+        """
+        written_ids: list[str] = []
+        pending_parents: list[tuple[str, str]] = []
+
+        for page in approved:
+            title = page.get("title", "Untitled")
+            slug = page.get("slug", "/")
+            parent_slug = page.get("parent_slug")
+            page_type = page.get("page_type", "Static")
+            if page_type not in ("Static", "CMS"):
+                page_type = "Static"
+            content_mode = page.get("content_mode", "AI Generated")
+            if content_mode not in ("AI Generated", "Client Provided"):
+                content_mode = "AI Generated"
+            section = page.get("section", "Core")
+            valid_sections = {"Core", "Services", "Service Subcategories", "Who We Serve",
+                              "Locations", "Programs", "Patient Resources", "Blog", "Legal"}
+            if section not in valid_sections:
+                section = "Core"
+
+            order = page.get("order", 99)
+            purpose = page.get("purpose", "")
+            key_sections = page.get("key_sections", [])
+            primary_keyword = page.get("primary_keyword", "")
+            secondary_keywords = page.get("secondary_keywords", [])
+            if isinstance(secondary_keywords, list):
+                secondary_keywords_text = ", ".join(secondary_keywords)
+            else:
+                secondary_keywords_text = str(secondary_keywords)
+
+            key_sections_text = "\n".join(f"• {s}" for s in key_sections)
+            rationale = page.get("rationale", "")
+            purpose_full = purpose
+            if rationale:
+                purpose_full += f"\n\n[Tier 3 rationale] {rationale}"
+
+            props = {
+                "Page Title":   self.notion.title_property(title),
+                "Slug":         self.notion.text_property(slug),
+                "Page Type":    self.notion.select_property(page_type),
+                "Content Mode": self.notion.select_property(content_mode),
+                "Section":      self.notion.select_property(section),
+                "Status":       self.notion.select_property("Draft"),
+                "Purpose":      self.notion.text_property(purpose_full[:2000]),
+                "Key Sections": self.notion.text_property(key_sections_text[:2000]),
+                "Order":        {"number": order},
+            }
+            if primary_keyword:
+                props["Primary Keyword"] = self.notion.text_property(primary_keyword)
+            if secondary_keywords_text:
+                props["Secondary Keywords"] = self.notion.text_property(secondary_keywords_text)
+
+            entry_id = await self.notion.create_database_entry(sitemap_db_id, props)
+            written_ids.append(entry_id)
+            slug_to_id[slug] = entry_id
+            if parent_slug:
+                pending_parents.append((entry_id, parent_slug))
+            self.log.info(f"  ✓ [Draft/Tier3] {title} ({slug})")
+
+        # Resolve parent relations
+        for child_id, parent_slug in pending_parents:
+            parent_id = slug_to_id.get(parent_slug)
+            if not parent_id:
+                self.log.warning(f"  ⚠ No parent page matched slug {parent_slug!r} for suggestion")
+                continue
+            await self.notion._client.request(
+                path=f"pages/{child_id}", method="PATCH",
+                body={"properties": {"Parent Page": {"relation": [{"id": parent_id}]}}},
+            )
+
+        return written_ids
 
     async def _build_from_template(
         self,

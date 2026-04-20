@@ -62,16 +62,9 @@ _ADDICTION_TIER1_CORE = [
         "parent_slug":  None,
         "order":        2,
         "page_kind":    "team",
-    },
-    {
-        "title":        "Staff Bio",
-        "slug":         "/team/{name}",
-        "page_type":    "CMS",
-        "content_mode": "Client Provided",
-        "section":      "Core",
-        "parent_slug":  "/team",
-        "order":        3,
-        "page_kind":    "staff_bio",
+        # Team bios are rendered inline on this page (photo + name + short bio
+        # per member, either as cards or modal pop-ups). No separate URL-level
+        # staff pages — simpler nav, no thin CMS pages.
     },
     {
         "title":        "Services",

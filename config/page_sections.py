@@ -43,9 +43,12 @@ PAGE_SECTIONS: dict[str, list[str]] = {
     ],
 
     "team": [
-        "Page Hero",
-        "Team Grid",
-        "Join Our Team CTA",
+        "Hero",
+        "Leadership & Clinical Team (inline cards with photo, name, credentials, short bio — modal or expandable for full bio)",
+        "Medical Director Spotlight (if named)",
+        "Credentials & Accreditations",
+        "Join Our Team / Careers CTA",
+        "Final CTA",
     ],
 
     "contact": [
@@ -339,14 +342,6 @@ PAGE_SECTIONS: dict[str, list[str]] = {
         "Daily Life in Treatment",
         "Family & Support",
         "Final CTA",
-    ],
-
-    "staff_bio": [
-        "Header (photo + name + credentials)",
-        "About",
-        "Specialties",
-        "Education & Certifications",
-        "Quote / Philosophy",
     ],
 
     "outcomes": [
