@@ -361,6 +361,22 @@ async def _process_one(
         except Exception as e:
             print(f"  ⚠ ClickUp task creation failed: {e}")
 
+    # Populate Business Profile sections with facts from the transcript
+    # (Skip for internal RxMedia meetings — they populate RxMedia's own profile.)
+    profile_page = cfg.get("business_profile_page_id", "")
+    if profile_page and transcript and not is_internal:
+        try:
+            from src.integrations.business_profile import populate_from_meeting
+            bp_result = await populate_from_meeting(
+                notion, profile_page, transcript,
+                meeting_date=meeting_date_str,
+                meeting_type=meeting_type,
+            )
+            if bp_result.get("total_facts", 0) > 0:
+                print(f"  ✓ Business Profile: +{bp_result['total_facts']} facts across {bp_result['sections_updated']} sections")
+        except Exception as e:
+            print(f"  ⚠ Business Profile population failed: {e}")
+
     # Write flags to Flags DB (risks, value-adds, out-of-scope requests)
     flag_dicts = _parsed_to_flags(parsed, meeting_date_str, transcript_page_id=page_id)
     if flag_dicts and FLAGS_DB_ID:
