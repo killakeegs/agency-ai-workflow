@@ -59,11 +59,12 @@ SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL_INTERNAL", "").strip()
 FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
 
 
-def _parsed_to_flags(parsed: dict, meeting_date: str) -> list[dict]:
+def _parsed_to_flags(parsed: dict, meeting_date: str, transcript_page_id: str = "") -> list[dict]:
     """Convert parsed meeting output into Flags DB entries.
 
     Only flows: risk_flags, value_add_opportunities, out-of-scope client_requests.
     Action items already become ClickUp tasks — don't duplicate as flags.
+    The transcript_page_id acts as the source_thread_id so same-meeting flags dedupe tightly.
     """
     flags: list[dict] = []
 
@@ -74,6 +75,7 @@ def _parsed_to_flags(parsed: dict, meeting_date: str) -> list[dict]:
             "type": flag_type,
             "description": rf.get("flag", "").strip(),
             "source_date": meeting_date,
+            "source_thread_id": transcript_page_id,
         })
 
     for va in parsed.get("value_add_opportunities", []) or []:
@@ -92,6 +94,7 @@ def _parsed_to_flags(parsed: dict, meeting_date: str) -> list[dict]:
             "type": "strategic",
             "description": desc,
             "source_date": meeting_date,
+            "source_thread_id": transcript_page_id,
         })
 
     for cr in parsed.get("client_requests", []) or []:
@@ -102,6 +105,7 @@ def _parsed_to_flags(parsed: dict, meeting_date: str) -> list[dict]:
                     "type": "scope_change",
                     "description": f"Out-of-scope request: {req}",
                     "source_date": meeting_date,
+                    "source_thread_id": transcript_page_id,
                 })
 
     return [f for f in flags if f.get("description")]
@@ -358,7 +362,7 @@ async def _process_one(
             print(f"  ⚠ ClickUp task creation failed: {e}")
 
     # Write flags to Flags DB (risks, value-adds, out-of-scope requests)
-    flag_dicts = _parsed_to_flags(parsed, meeting_date_str)
+    flag_dicts = _parsed_to_flags(parsed, meeting_date_str, transcript_page_id=page_id)
     if flag_dicts and FLAGS_DB_ID:
         try:
             created_flags = await write_flags_to_db(

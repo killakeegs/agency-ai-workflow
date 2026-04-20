@@ -38,6 +38,9 @@ EXISTING CLIENT LOG ENTRIES (do NOT create duplicates):
 EXISTING BUSINESS PROFILE (only surface genuinely NEW facts not already here):
 {existing_profile}
 
+EXISTING OPEN FLAGS (do NOT re-emit these — they are already tracked. Only emit a flag if it describes a GENUINELY NEW action/blocker/promise/rule that isn't covered below):
+{existing_flags}
+
 Output ONLY a JSON object, no preamble:
 
 {{
@@ -65,6 +68,7 @@ Output ONLY a JSON object, no preamble:
       "type": "open_action | scope_change | blocker | promise_made | strategic | rule_set",
       "description": "what needs attention — attribute by speaker + tag project",
       "source_date": "YYYY-MM-DD",
+      "source_thread_id": "Gmail thread ID the flag came from (REQUIRED — use the thread_id from the email thread block above)",
       "brand_field": "(for rule_set only) which Brand Guidelines field: Words to Avoid | Voice & Tone | Photography Style | Image Direction | POV Notes | CTA Style",
       "brand_value": "(for rule_set only) what to add or update"
     }}
@@ -88,6 +92,30 @@ When a single thread discusses multiple distinct projects, products, or websites
 - If you can't tell which project an item applies to, flag it in the description as "(project unclear — confirm with sender)".
 - When in doubt, split into separate log entries per project rather than merging.
 
+## FLAG QUALITY RULES (strict — flags are for the daily briefing)
+
+A flag is ONLY created when there is a concrete, unresolved item that someone must act on. Apply these tests before emitting any flag:
+
+**Each type must meet its bar:**
+- `open_action` — explicit unresolved ASK or COMMITMENT by a named person, with a clear deliverable. Not "we should consider X," not "evaluate whether Y."
+- `blocker` — a specific deliverable is STUCK on a named dependency (person, approval, external system). Not generic "progress is slow."
+- `strategic` — a non-obvious relationship/upsell/risk signal that changes how we work with this client. Not "client is happy," not "future exploration possible."
+- `promise_made` — specific commitment with a deliverable or timeframe. Not generic reassurance.
+- `scope_change` — services added / removed / paused / re-priced. Not "client asked about X."
+
+**DO NOT FLAG any of the following:**
+1. **Scheduling / logistics** — meeting times, calendar coordination, "send the invite," "let's meet Tuesday." These resolve in the next email.
+2. **Speculative or future-planning items** — "planned for future exploration," "may want to consider," "could be evaluated later," "possible down the road." Flags require commitment or explicit ask.
+3. **Verification questions** — "confirm whether X was completed," "check if Y was done," "verify status of Z." If you're not sure from the thread, that's a knowledge gap, not a flag. Note it in the log summary instead.
+4. **Items completed later in the same thread** — if Person A asked for X and Person A or B said "done" later in the same thread, no flag.
+5. **Items the client or team closed** — "no action needed," "we'll handle this," "disregard."
+6. **Pleasantries / social chatter** — thank-yous, acknowledgements, "sounds good."
+7. **RxMedia-internal coordination** with no client-facing impact.
+
+**Thread-level dedup (critical):**
+- If multiple emails in the same thread touch on the same underlying item, emit ONE flag capturing the MOST RECENT state.
+- Example: Thread evolves from "Amanda proposed 3 times" → "Keegan replied" → "Amanda confirmed Tuesday 9am." Emit ONE flag (or none, since this is scheduling — see rule 1).
+
 ## GENERAL RULES
 
 - Use exact dates from the thread headers.
@@ -105,6 +133,7 @@ async def synthesize_threads(
     client_name: str,
     existing_log_entries: list[str],
     existing_profile: str,
+    existing_flags: list[str] | None = None,
 ) -> dict:
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
@@ -124,9 +153,15 @@ async def synthesize_threads(
 
     existing_profile_str = existing_profile[:8000] if existing_profile else "(empty)"
 
+    existing_flags_str = "\n".join(
+        f"  - [{f.get('type', 'OPEN_ACTION')}] {f.get('description', '')[:200]}"
+        for f in (existing_flags or [])
+    ) if existing_flags else "(none open)"
+
     system = SYNTHESIS_SYSTEM.format(
         existing_entries=existing_entries_str,
         existing_profile=existing_profile_str,
+        existing_flags=existing_flags_str,
     )
 
     prompt = f"""Client: {client_name}
@@ -337,15 +372,54 @@ async def append_profile_enrichments(
 
 # ── Flags DB writes ────────────────────────────────────────────────────────────
 
-async def _load_open_flag_descriptions(
+_STOPWORDS = {
+    "the","a","an","to","of","in","on","for","and","or","is","be","by","with",
+    "at","as","from","that","this","it","new","any","also","must","needs","need",
+    "will","would","should","can","has","have","had","was","were","been","being",
+    "are","not","no","but","if","when","where","how","what","so","we","our","you",
+    "rxmedia","client","flag","update","confirm","currently","pending","some",
+    "all","via","per","etc","additional","related","still","other","ensure",
+}
+
+
+def _keyword_set(text: str) -> set[str]:
+    """Reduce a flag description to its content words for fuzzy matching."""
+    # Strip [TAGS], (dates), punctuation, lowercase, split, drop stopwords + tiny words
+    text = re.sub(r"\[[^\]]+\]", " ", text)
+    text = re.sub(r"\(\d{4}-\d{2}-\d{2}\)", " ", text)
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {w for w in words if len(w) > 3 and w not in _STOPWORDS}
+
+
+def _is_duplicate(new_desc: str, existing_keywords: list[set[str]], threshold: float = 0.55) -> bool:
+    """True if new_desc shares >= threshold fraction of its content words with any existing flag."""
+    new_kw = _keyword_set(new_desc)
+    if len(new_kw) < 3:
+        # Too few content words — fall back to exact-lowercased match via caller
+        return False
+    for exist_kw in existing_keywords:
+        if not exist_kw:
+            continue
+        overlap = len(new_kw & exist_kw)
+        smaller = min(len(new_kw), len(exist_kw))
+        if smaller == 0:
+            continue
+        if overlap / smaller >= threshold:
+            return True
+    return False
+
+
+async def load_open_flags(
     notion: NotionClient,
     flags_db_id: str,
     client_key: str,
-) -> set[str]:
-    """Return lowercased set of existing Open flag descriptions for this client (dedup)."""
-    existing: set[str] = set()
+) -> list[dict]:
+    """Return list of open flags for a client as {type, description, thread_id} dicts.
+    Used both for dedup on write AND as context fed to Claude during synthesis.
+    """
+    out: list[dict] = []
     if not flags_db_id or not client_key:
-        return existing
+        return out
     try:
         rows = await notion._client.request(
             path=f"databases/{flags_db_id}/query",
@@ -358,17 +432,26 @@ async def _load_open_flag_descriptions(
                         {"property": "Status", "select": {"does_not_equal": "Resolved"}},
                     ]
                 },
+                "sorts": [{"property": "Source Date", "direction": "descending"}],
             },
         )
     except Exception:
-        return existing
+        return out
     for row in rows.get("results", []):
         props = row.get("properties", {})
         desc_parts = props.get("Description", {}).get("rich_text", [])
         desc = "".join(p.get("text", {}).get("content", "") for p in desc_parts)
+        flag_type = (props.get("Type", {}).get("select") or {}).get("name", "OPEN_ACTION")
+        tid_parts = props.get("Source Thread ID", {}).get("rich_text", [])
+        thread_id = "".join(p.get("text", {}).get("content", "") for p in tid_parts)
         if desc:
-            existing.add(desc.strip().lower()[:200])
-    return existing
+            out.append({
+                "id": row["id"],
+                "type": flag_type,
+                "description": desc,
+                "thread_id": thread_id,
+            })
+    return out
 
 
 async def write_flags_to_db(
@@ -388,7 +471,17 @@ async def write_flags_to_db(
     if not actionable or not flags_db_id:
         return 0
 
-    existing = await _load_open_flag_descriptions(notion, flags_db_id, client_key)
+    existing_flags = await load_open_flags(notion, flags_db_id, client_key)
+    existing_exact = {f["description"].strip().lower()[:200] for f in existing_flags}
+    # Per-thread keyword sets — used for tighter same-thread dedup
+    existing_by_thread: dict[str, list[set[str]]] = {}
+    existing_keywords_global: list[set[str]] = []
+    for f in existing_flags:
+        kw = _keyword_set(f["description"])
+        existing_keywords_global.append(kw)
+        tid = f.get("thread_id") or ""
+        if tid:
+            existing_by_thread.setdefault(tid, []).append(kw)
     created = 0
 
     for f in actionable:
@@ -396,7 +489,20 @@ async def write_flags_to_db(
         if not description:
             continue
         key = description.lower()[:200]
-        if key in existing:
+        if key in existing_exact:
+            continue
+
+        flag_tid = (f.get("source_thread_id") or "").strip()
+
+        # Same-thread flags share context — apply very tight dedup (15% overlap)
+        # Rationale: one email thread ≈ one conversation. Multiple flags from it
+        # are overwhelmingly the same underlying task written at different thread states.
+        if flag_tid and flag_tid in existing_by_thread:
+            if _is_duplicate(description, existing_by_thread[flag_tid], threshold=0.15):
+                continue
+
+        # Cross-thread dedup — standard threshold (55%)
+        if _is_duplicate(description, existing_keywords_global, threshold=0.55):
             continue
 
         flag_type = (f.get("type") or "open_action").upper()
@@ -413,6 +519,8 @@ async def write_flags_to_db(
             "Source":      {"select": {"name": source}},
             "Source Date": {"date": {"start": source_date}},
         }
+        if flag_tid:
+            props["Source Thread ID"] = {"rich_text": [{"text": {"content": flag_tid}}]}
 
         try:
             await notion._client.request(
@@ -420,7 +528,11 @@ async def write_flags_to_db(
                 body={"parent": {"database_id": flags_db_id}, "properties": props},
             )
             created += 1
-            existing.add(key)
+            existing_exact.add(key)
+            kw = _keyword_set(description)
+            existing_keywords_global.append(kw)
+            if flag_tid:
+                existing_by_thread.setdefault(flag_tid, []).append(kw)
         except Exception as e:
             print(f"    ⚠ Failed to write flag '{title}': {e}")
 

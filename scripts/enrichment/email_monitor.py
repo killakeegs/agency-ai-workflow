@@ -50,6 +50,7 @@ from src.services.email_enrichment import (
     apply_rule_set_flags,
     update_last_contact,
     write_flags_to_db,
+    load_open_flags,
 )
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
@@ -508,9 +509,17 @@ async def tick(lookback_minutes: int = 15) -> None:
         if profile_id:
             existing_profile = await load_business_profile(notion, cfg)
 
+        # Load existing open flags so Claude doesn't re-emit them
+        existing_flags_for_synth = []
+        if FLAGS_DB_ID:
+            existing_flags_for_synth = await load_open_flags(notion, FLAGS_DB_ID, client_key)
+
         # Synthesize
         try:
-            synth = await synthesize_threads(new_threads, client_name, existing_summaries, existing_profile)
+            synth = await synthesize_threads(
+                new_threads, client_name, existing_summaries, existing_profile,
+                existing_flags=existing_flags_for_synth,
+            )
         except Exception as e:
             print(f"    ⚠ Claude synthesis failed: {e}")
             continue

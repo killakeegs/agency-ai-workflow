@@ -44,6 +44,7 @@ from src.services.email_enrichment import (
     apply_rule_set_flags,
     update_last_contact,
     write_flags_to_db,
+    load_open_flags,
 )
 
 FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
@@ -192,9 +193,16 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
         print(f"  Limiting to {max_threads} most recent threads (token budget)")
         summarized = summarized[:max_threads]
 
+    # Load existing open flags — feed them into synthesis so Claude doesn't re-emit
+    existing_flags = []
+    if FLAGS_DB_ID:
+        existing_flags = await load_open_flags(notion, FLAGS_DB_ID, client_key)
+        print(f"  Loaded {len(existing_flags)} existing open flags for dedup")
+
     print(f"\nSynthesizing with Claude...")
     synth = await synthesize_threads(
         summarized, client_name, existing_summaries, existing_profile,
+        existing_flags=existing_flags,
     )
 
     log_entries  = synth.get("log_entries", []) or []
