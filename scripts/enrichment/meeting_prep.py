@@ -395,11 +395,20 @@ async def run(dry: bool = False) -> list[dict]:
         meeting_type, client_key = gcal.classify_meeting(event, CLIENTS)
 
         if meeting_type == "personal":
-            print(f"  — [{time_str}] {title}  (personal, skipped)")
+            print(f"  — [{time_str}] {title}  (personal, skipped entirely)")
             continue
 
         if meeting_type == "external_hosted":
-            print(f"  — [{time_str}] {title}  (external-hosted, skipped — not our meeting)")
+            # Show in briefing but don't generate a prep doc
+            print(f"  → [{time_str}] {title}  (external-hosted, no prep doc)")
+            # Try to find organizer for labeling
+            org = event.get("organizer", {}) or {}
+            org_email = (org.get("email") or "").lower()
+            host_domain = org_email.split("@")[-1] if "@" in org_email else "external"
+            prep_index.append({
+                "time": time_str, "original_title": title, "prep_title": title,
+                "url": "", "type": meeting_type, "host": host_domain,
+            })
             continue
 
         print(f"  → [{time_str}] {title}  type={meeting_type}  client={client_key or '-'}")

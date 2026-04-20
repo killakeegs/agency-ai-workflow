@@ -312,8 +312,13 @@ def _personal_briefing(
             time_str = m.get("time", "").strip()
             title = m.get("original_title") or m.get("title", "")
             url = m.get("url", "")
+            mtype = m.get("type", "")
+            host = m.get("host", "")
             if url and url != "(dry-run)":
                 lines.append(f"• `{time_str}` *{title[:60]}* — <{url}|prep doc>")
+            elif mtype == "external_hosted":
+                host_label = f"hosted by {host}" if host and host != "external" else "external host"
+                lines.append(f"• `{time_str}` *{title[:60]}* _(no prep — {host_label})_")
             else:
                 lines.append(f"• `{time_str}` *{title[:60]}*")
         lines.append("")
