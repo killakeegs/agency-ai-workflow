@@ -252,22 +252,31 @@ class OnboardingAgent(BaseAgent):
             if any("content" in s or "blog" in s for s in si_lower):
                 active_services.append("blog")
 
-        # Determine verticals from practice type
-        vertical_map = {
-            "speech-language pathology": "speech_pathology",
-            "speech pathology":         "speech_pathology",
-            "occupational therapy":     "occupational_therapy",
-            "physical therapy":         "physical_therapy",
-            "addiction treatment":      "addiction_treatment",
-            "behavioral health":        "mental_health",
-            "mental health":            "mental_health",
-            "dermatology":              "dermatology",
-        }
+        # Determine verticals from practice type — substring match so
+        # "Addiction Treatment & Recovery" → addiction_treatment,
+        # "Mental Health & Therapy" → mental_health, etc.
+        vertical_keywords = [
+            ("speech-language pathology", "speech_pathology"),
+            ("speech pathology",          "speech_pathology"),
+            ("speech",                    "speech_pathology"),
+            ("occupational therapy",      "occupational_therapy"),
+            ("physical therapy",          "physical_therapy"),
+            ("addiction",                 "addiction_treatment"),
+            ("substance use",             "addiction_treatment"),
+            ("recovery",                  "addiction_treatment"),
+            ("mental health",             "mental_health"),
+            ("behavioral health",         "mental_health"),
+            ("therapy",                   "mental_health"),  # fallback — Mental Health & Therapy
+            ("dermatology",               "dermatology"),
+            ("aesthetics",                "dermatology"),
+        ]
         active_verticals = []
         for pt in practice_type:
-            v = vertical_map.get(pt.lower().strip())
-            if v and v not in active_verticals:
-                active_verticals.append(v)
+            pt_lower = pt.lower().strip()
+            for keyword, vertical in vertical_keywords:
+                if keyword in pt_lower and vertical not in active_verticals:
+                    active_verticals.append(vertical)
+                    break  # one vertical per practice type
 
         from scripts.onboarding.setup_notion import setup_client as notion_setup
         setup_result = await notion_setup(

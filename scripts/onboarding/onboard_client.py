@@ -27,10 +27,11 @@ Usage:
 import argparse
 import asyncio
 import logging
+import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.config import settings
 from src.integrations.notion import NotionClient
@@ -60,9 +61,35 @@ def _get_business_name(props: dict) -> str:
     return _get_rich_text(props.get("Business Name", {})) or _get_title(props.get("Submission", {}))
 
 
+_BUSINESS_SUFFIX_RE = re.compile(
+    r"\s*,?\s*(llc|inc\.?|incorporated|corp\.?|corporation|co\.?|company|ltd\.?|limited|l\.l\.c\.|p\.c\.|pc|pllc|plc)\b\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_business_name(name: str) -> str:
+    """Fuzzy-match key: lowercase, trim, strip common business suffixes + punctuation.
+
+    Examples:
+      'Crown Behavioral Health LLC'  → 'crown behavioral health'
+      'Crown Behavioral Health, Inc' → 'crown behavioral health'
+      'Crown Behavioral Health'      → 'crown behavioral health'
+    """
+    cleaned = name.strip().lower()
+    # Strip one suffix at a time until none match (handles "LLC, Inc" edge cases)
+    for _ in range(3):
+        new = _BUSINESS_SUFFIX_RE.sub("", cleaned).strip().rstrip(",.").strip()
+        if new == cleaned:
+            break
+        cleaned = new
+    return cleaned
+
+
 def _group_key(props: dict) -> str:
-    """Stable key for grouping submissions from the same client."""
-    name = _get_business_name(props).strip().lower()
+    """Stable key for grouping submissions from the same client.
+    Uses normalized business name so 'Crown Behavioral Health' and 'Crown Behavioral Health LLC' group together.
+    """
+    name = _normalize_business_name(_get_business_name(props))
     if name:
         return name
     core_email = _get_email(props.get("Core Intake Email", {})).strip().lower()
@@ -76,6 +103,101 @@ def _intake_sort_order(sub: dict) -> int:
     order = {"Core Business Intake": 0, "Website Build Intake": 1, "SEO + Ads Intake": 2}
     intake = _get_select(sub["properties"].get("Intake Type", {}))
     return order.get(intake, 99)
+
+
+# ── Field-presence signatures to infer Intake Type when it's blank ─────────────
+
+_CORE_BUSINESS_FIELDS = {"Mission Statement", "Core Values", "Differentiators", "Ideal Patient/Client", "Tagline / Slogan"}
+_WEBSITE_BUILD_FIELDS = {"Website Project Type", "Content Ready?", "Existing Website", "Required Pages", "Specific Pages Needed", "Blog Migration Scope"}
+_SEO_ADS_FIELDS       = {"Ad Platforms", "Ads Geo Targeting", "Monthly Ad Spend (est.)", "SEO Keywords", "Customer LTV (est.)"}
+
+
+def _has_any_filled(props: dict, field_names: set[str]) -> int:
+    """Count how many of the given fields have non-empty values."""
+    count = 0
+    for f in field_names:
+        p = props.get(f, {})
+        if not p:
+            continue
+        t = p.get("type", "")
+        if t == "rich_text" and _get_rich_text(p):
+            count += 1
+        elif t == "select" and _get_select(p):
+            count += 1
+        elif t == "multi_select" and p.get("multi_select"):
+            count += 1
+        elif t == "number" and p.get("number") is not None:
+            count += 1
+        elif t == "url" and p.get("url"):
+            count += 1
+    return count
+
+
+def _infer_intake_type(props: dict) -> str:
+    """When Intake Type is blank, guess it from which fields are populated."""
+    scores = {
+        "Core Business Intake": _has_any_filled(props, _CORE_BUSINESS_FIELDS),
+        "Website Build Intake": _has_any_filled(props, _WEBSITE_BUILD_FIELDS),
+        "SEO + Ads Intake":     _has_any_filled(props, _SEO_ADS_FIELDS),
+    }
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] >= 2 else ""
+
+
+def _submission_is_empty(props: dict) -> bool:
+    """A submission is 'empty' if Business Name + all key content fields are blank."""
+    if _get_business_name(props).strip():
+        return False
+    for f in _CORE_BUSINESS_FIELDS | _WEBSITE_BUILD_FIELDS | _SEO_ADS_FIELDS:
+        if _has_any_filled(props, {f}):
+            return False
+    # Also allow submission if email is present
+    return not (_get_email(props.get("Email", {})) or _get_email(props.get("Core Intake Email", {})))
+
+
+async def _self_heal_submissions(notion: NotionClient, entries: list[dict]) -> list[dict]:
+    """Auto-fix three common form submission issues:
+      1. Intake Type blank → infer from filled fields
+      2. Pipeline Status blank on non-empty row → set to 'New Submission'
+      3. Business Name has trailing company suffix → leave alone here (grouping handles it)
+
+    Returns the entries with updated properties in-memory (matching Notion writes).
+    """
+    for entry in entries:
+        props = entry.get("properties", {})
+        updates: dict = {}
+
+        # Skip truly empty rows entirely
+        if _submission_is_empty(props):
+            continue
+
+        intake_type = _get_select(props.get("Intake Type", {}))
+        pipeline    = _get_select(props.get("Pipeline Status", {}))
+
+        if not intake_type:
+            inferred = _infer_intake_type(props)
+            if inferred:
+                updates["Intake Type"] = {"select": {"name": inferred}}
+                # Update local copy too so grouping/sorting works without re-fetching
+                props["Intake Type"] = {"type": "select", "select": {"name": inferred}}
+
+        if not pipeline:
+            updates["Pipeline Status"] = {"select": {"name": "New Submission"}}
+            props["Pipeline Status"] = {"type": "select", "select": {"name": "New Submission"}}
+
+        if updates:
+            try:
+                await notion._client.request(
+                    path=f"pages/{entry['id']}", method="PATCH",
+                    body={"properties": updates},
+                )
+                fields_fixed = ", ".join(updates.keys())
+                biz_name = _get_business_name(props) or "(no name)"
+                print(f"  ↻ Auto-fixed {fields_fixed} on {biz_name!r} submission")
+            except Exception as e:
+                print(f"  ⚠ Couldn't patch submission {entry['id']}: {e}")
+
+    return entries
 
 
 def group_by_client(submissions: list[dict]) -> list[list[dict]]:
@@ -97,8 +219,15 @@ def group_by_client(submissions: list[dict]) -> list[list[dict]]:
 
 
 async def list_submissions(notion: NotionClient) -> list[dict]:
-    """Return all submissions with Pipeline Status = 'New Submission'."""
+    """Return all submissions with Pipeline Status = 'New Submission'.
+
+    Self-heals three common form submission issues before filtering:
+      1. Intake Type blank → inferred from field content
+      2. Pipeline Status blank (with non-empty row) → set to 'New Submission'
+      3. Company-suffix mismatches ('LLC', 'Inc') → handled at grouping time
+    """
     entries = await notion.query_database(INTAKE_DB_ID)
+    entries = await _self_heal_submissions(notion, entries)
     return [
         e for e in entries
         if _get_select(e["properties"].get("Pipeline Status", {})) == "New Submission"

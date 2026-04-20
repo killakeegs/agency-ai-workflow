@@ -886,47 +886,6 @@
     "email": "brandon@wellnessworksmp.com",
     "primary_contact_email": "brandon@wellnessworksmp.com"
   },
-  "crown_behavioral_health": {
-    "client_id": "crown_behavioral_health",
-    "name": "Crown Behavioral Health",
-    "services": {
-      "website_build": false,
-      "care_plan": false,
-      "seo": false,
-      "gbp_management": false,
-      "gbp_posts_per_month": 8,
-      "blog": false,
-      "blog_posts_per_month": 0,
-      "social_media": false,
-      "social_posts_per_month": 8,
-      "linkedin_posts_per_month": 2,
-      "newsletter": false,
-      "paid_ads": false
-    },
-    "vertical": [
-      "addiction_treatment,mental_health"
-    ],
-    "client_info_db_id": "344f7f45-333e-8188-99ee-f8d362ee7baa",
-    "client_log_db_id": "344f7f45-333e-81e1-b77a-d6c58f21d3df",
-    "brand_guidelines_db_id": "344f7f45-333e-81ff-97c3-c315d7c482fb",
-    "care_plan_db_id": "344f7f45-333e-8144-8900-ce43487c2ca4",
-    "business_profile_page_id": "344f7f45-333e-81fd-88a3-d895fed9c800",
-    "sitemap_db_id": "",
-    "content_db_id": "",
-    "images_db_id": "",
-    "competitors_db_id": "",
-    "keywords_db_id": "",
-    "seo_metrics_db_id": "",
-    "gbp_posts_db_id": "",
-    "blog_posts_db_id": "",
-    "social_posts_db_id": "",
-    "gbp_location_id": "",
-    "clickup_review_list_id": "901817114950",
-    "migration_source": "google_drive",
-    "email": "savannah@purelifebehavioralhealth.com",
-    "primary_contact_email": "savannah@purelifebehavioralhealth.com",
-    "primary_contact": "Savannah Fyfe"
-  },
   "wellwell": {
     "client_id": "wellwell",
     "name": "WellWell",
@@ -1005,5 +964,47 @@
     "internal": true,
     "email": "",
     "primary_contact_email": ""
+  },
+  "crown_behavioral_health": {
+    "client_id": "crown_behavioral_health",
+    "name": "Crown Behavioral Health",
+    "services": {
+      "website_build": true,
+      "care_plan": true,
+      "seo": false,
+      "gbp_management": false,
+      "gbp_posts_per_month": 8,
+      "blog": false,
+      "blog_posts_per_month": 0,
+      "social_media": false,
+      "social_posts_per_month": 8,
+      "linkedin_posts_per_month": 2,
+      "newsletter": false,
+      "paid_ads": false
+    },
+    "vertical": [
+      "addiction_treatment"
+    ],
+    "intake_submission_ids": [
+      "348f7f45-333e-81a1-9920-e1fa9bb5c8b5",
+      "348f7f45-333e-814f-8a19-cae7cabcbfde"
+    ],
+    "client_info_db_id": "348f7f45-333e-8130-8f21-cdf29f270ebc",
+    "client_log_db_id": "348f7f45-333e-81f5-afe7-eeaecbea32de",
+    "brand_guidelines_db_id": "348f7f45-333e-81de-9295-f64fdd18fdfa",
+    "care_plan_db_id": "348f7f45-333e-81fd-a875-fb6331f72b5e",
+    "business_profile_page_id": "348f7f45-333e-811f-80d5-c9b6cd0292b5",
+    "sitemap_db_id": "348f7f45-333e-8197-a7fb-db572403baeb",
+    "content_db_id": "348f7f45-333e-81bb-9051-e3f77e42732f",
+    "images_db_id": "348f7f45-333e-812b-adba-f83c21e65ee3",
+    "competitors_db_id": "",
+    "keywords_db_id": "",
+    "seo_metrics_db_id": "",
+    "gbp_posts_db_id": "",
+    "blog_posts_db_id": "",
+    "social_posts_db_id": "",
+    "gbp_location_id": "",
+    "clickup_review_list_id": "",
+    "meeting_notes_entry_id": ""
   }
 }
