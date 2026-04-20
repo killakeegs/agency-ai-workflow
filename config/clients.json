@@ -1005,6 +1005,9 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "",
-    "meeting_notes_entry_id": ""
+    "meeting_notes_entry_id": "",
+    "email": "savannah@purelifebehavioralhealth.com",
+    "primary_contact_email": "savannah@purelifebehavioralhealth.com",
+    "primary_contact": "Savannah Fyfe"
   }
 }

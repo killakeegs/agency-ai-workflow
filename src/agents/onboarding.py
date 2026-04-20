@@ -402,6 +402,10 @@ class OnboardingAgent(BaseAgent):
         new_client_config = {
             "client_id":   client_key,
             "name":        business_name,
+            "email":       email,
+            "primary_contact_email": email,
+            "primary_contact":       contact_name,
+            "phone":       phone,
             "services":    services_config,
             "vertical":    active_verticals,
             "intake_submission_ids":     submission_page_ids,
