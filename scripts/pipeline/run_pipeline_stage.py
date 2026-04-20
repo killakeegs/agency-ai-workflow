@@ -23,7 +23,7 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config.clients import CLIENTS
 from src.config import settings
@@ -83,10 +83,10 @@ async def run_sitemap(client_key: str, notion: NotionClient, clickup: ClickUpCli
     return await agent.run(
         client_id=cfg["client_id"],
         client_info_db_id=cfg["client_info_db_id"],
-        meeting_notes_db_id=cfg["meeting_notes_db_id"],
+        client_log_db_id=cfg.get("client_log_db_id", ""),
         brand_guidelines_db_id=cfg["brand_guidelines_db_id"],
         sitemap_db_id=cfg["sitemap_db_id"],
-        mood_board_db_id=cfg["mood_board_db_id"],
+        business_profile_page_id=cfg.get("business_profile_page_id", ""),
         revision_notes=revision_notes,
     )
 

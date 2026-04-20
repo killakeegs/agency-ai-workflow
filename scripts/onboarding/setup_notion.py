@@ -213,6 +213,21 @@ def sitemap_schema() -> dict:
                 ]
             }
         },
+        "Section": {
+            "select": {
+                "options": [
+                    {"name": "Core",                 "color": "blue"},
+                    {"name": "Services",             "color": "green"},
+                    {"name": "Service Subcategories","color": "purple"},
+                    {"name": "Who We Serve",         "color": "yellow"},
+                    {"name": "Locations",            "color": "orange"},
+                    {"name": "Programs",             "color": "pink"},
+                    {"name": "Patient Resources",    "color": "brown"},
+                    {"name": "Blog",                 "color": "gray"},
+                    {"name": "Legal",                "color": "red"},
+                ]
+            }
+        },
         "Status": {
             "select": {
                 "options": [

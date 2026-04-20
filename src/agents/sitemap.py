@@ -221,6 +221,23 @@ class SitemapAgent(BaseAgent):
                 }
             }
 
+        if "Section" not in existing:
+            to_add["Section"] = {
+                "select": {
+                    "options": [
+                        {"name": "Core",                 "color": "blue"},
+                        {"name": "Services",             "color": "green"},
+                        {"name": "Service Subcategories","color": "purple"},
+                        {"name": "Who We Serve",         "color": "yellow"},
+                        {"name": "Locations",            "color": "orange"},
+                        {"name": "Programs",             "color": "pink"},
+                        {"name": "Patient Resources",    "color": "brown"},
+                        {"name": "Blog",                 "color": "gray"},
+                        {"name": "Legal",                "color": "red"},
+                    ]
+                }
+            }
+
         if to_add:
             await self.notion._client.request(
                 path=f"databases/{sitemap_db_id}",
@@ -235,18 +252,22 @@ class SitemapAgent(BaseAgent):
 
         Required kwargs:
           - client_info_db_id
-          - meeting_notes_db_id
           - brand_guidelines_db_id
           - sitemap_db_id
 
         Optional kwargs:
-          - mood_board_db_id: reads approved direction if available
+          - client_log_db_id: queried for meeting context (preferred)
+          - meeting_notes_db_id: legacy alias for client_log_db_id
+          - business_profile_page_id: populated automatically by meeting processor
+          - mood_board_db_id: legacy — mood board stage was removed
           - revision_notes (str): feedback from previous run to guide regeneration
         """
         client_info_db_id = kwargs["client_info_db_id"]
-        meeting_notes_db_id = kwargs["meeting_notes_db_id"]
+        # Accept either client_log_db_id (new) or meeting_notes_db_id (legacy alias)
+        meeting_notes_db_id = kwargs.get("client_log_db_id") or kwargs.get("meeting_notes_db_id", "")
         brand_guidelines_db_id = kwargs["brand_guidelines_db_id"]
         sitemap_db_id = kwargs["sitemap_db_id"]
+        business_profile_page_id = kwargs.get("business_profile_page_id", "")
         mood_board_db_id = kwargs.get("mood_board_db_id")
         revision_notes = kwargs.get("revision_notes", "")
 
@@ -288,26 +309,62 @@ class SitemapAgent(BaseAgent):
             raw = _get_rich_text(bp.get("Raw Guidelines", {}))
             brand_context = f"Tone: {tone}\n{raw[:2000]}"
 
-        # Meeting notes — find parsed entry
-        meeting_entries = await self.notion.query_database(meeting_notes_db_id)
+        # Business Profile — the richest source of client context (populated by
+        # meeting processor + email enrichment). Load this first; if present, it
+        # usually beats digging through raw meeting notes.
+        business_profile_context = ""
+        if business_profile_page_id:
+            try:
+                from src.integrations.business_profile import load_business_profile
+                business_profile_context = await load_business_profile(
+                    self.notion, {"business_profile_page_id": business_profile_page_id}
+                )
+            except Exception as e:
+                self.log.warning(f"Could not load Business Profile: {e}")
+
+        # Meeting notes — pulls from Client Log DB (new schema) or legacy Meeting Notes DB
         meeting_context = ""
-        if meeting_entries:
-            parsed_entries = [
-                e for e in meeting_entries
-                if e["properties"].get("Parsed", {}).get("checkbox", False)
-            ]
-            target = parsed_entries[0] if parsed_entries else meeting_entries[0]
-            mp = target["properties"]
-            meeting_page_id = target["id"]
+        if meeting_notes_db_id:
+            meeting_entries = await self.notion.query_database(meeting_notes_db_id)
+            if meeting_entries:
+                # Prefer Meeting-type entries; fall back to whatever's newest
+                meeting_rows = [
+                    e for e in meeting_entries
+                    if _get_select(e["properties"].get("Type", {})) == "Meeting"
+                ]
+                # Legacy fallback: Parsed checkbox on the old Meeting Notes DB
+                if not meeting_rows:
+                    meeting_rows = [
+                        e for e in meeting_entries
+                        if e["properties"].get("Parsed", {}).get("checkbox", False)
+                    ]
+                target = meeting_rows[0] if meeting_rows else meeting_entries[0]
+                mp = target["properties"]
 
-            key_decisions = _get_rich_text(mp.get("Key Decisions", {}))
-            meeting_context = f"KEY DECISIONS:\n{key_decisions}"
+                # Client Log DB stores recap as structured fields
+                summary = _get_rich_text(mp.get("Summary", {}))
+                key_decisions = _get_rich_text(mp.get("Key Decisions", {}))
+                action_items = _get_rich_text(mp.get("Action Items", {}))
+                next_steps = _get_rich_text(mp.get("Next Steps", {}))
+                parts = []
+                if summary:       parts.append(f"SUMMARY:\n{summary}")
+                if key_decisions: parts.append(f"KEY DECISIONS:\n{key_decisions}")
+                if action_items:  parts.append(f"ACTION ITEMS:\n{action_items}")
+                if next_steps:    parts.append(f"NEXT STEPS:\n{next_steps}")
+                if parts:
+                    meeting_context = "\n\n".join(parts)
 
-            meeting_blocks = await self.notion.get_block_children(meeting_page_id)
-            meeting_body = _blocks_to_text(meeting_blocks)
-            analysis_start = meeting_body.find("AI-Parsed Meeting Analysis")
-            if analysis_start != -1:
-                meeting_context += f"\n\nFULL ANALYSIS:\n{meeting_body[analysis_start:analysis_start+5000]}"
+                # Legacy body fallback: look for "AI-Parsed Meeting Analysis" block
+                if not meeting_context:
+                    meeting_blocks = await self.notion.get_block_children(target["id"])
+                    meeting_body = _blocks_to_text(meeting_blocks)
+                    analysis_start = meeting_body.find("AI-Parsed Meeting Analysis")
+                    if analysis_start != -1:
+                        meeting_context = f"FULL ANALYSIS:\n{meeting_body[analysis_start:analysis_start+5000]}"
+
+        # Combine Business Profile + meeting context (BP first, it's the primary source)
+        if business_profile_context:
+            meeting_context = f"BUSINESS PROFILE (the canonical source — trust this over everything else):\n{business_profile_context[:8000]}\n\n" + (meeting_context or "")
 
         # Mood board direction (if available)
         mood_context = ""
