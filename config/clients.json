@@ -82,7 +82,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810266598",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "m.camacho@cielotreatmentcenter.com",
+    "primary_contact_email": "m.camacho@cielotreatmentcenter.com",
+    "primary_contact": "Martin Camacho"
   },
   "another_chance": {
     "client_id": "another_chance",
@@ -160,7 +163,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810266726",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "shane@lotusrecoverysc.com",
+    "primary_contact_email": "shane@lotusrecoverysc.com",
+    "primary_contact": "Shane Brunson"
   },
   "atlas_addiction_treatment_center": {
     "client_id": "atlas_addiction_treatment_center",
@@ -198,7 +204,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810265773",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "david@atlastreatmentcenter.com",
+    "primary_contact_email": "david@atlastreatmentcenter.com",
+    "primary_contact": "David Soulier"
   },
   "arc_network": {
     "client_id": "arc_network",
@@ -236,7 +245,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "info@projectsoar.us",
+    "primary_contact_email": "info@projectsoar.us",
+    "primary_contact": "Michael Aulbach"
   },
   "dmab_law": {
     "client_id": "dmab_law",
@@ -272,7 +284,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810266623",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "bwashington@dmablaw.com",
+    "primary_contact_email": "bwashington@dmablaw.com",
+    "primary_contact": "Brandon Washington"
   },
   "bloom_recovery": {
     "client_id": "bloom_recovery",
@@ -310,7 +325,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810515456",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "eric@bloomhouserecovery.com",
+    "primary_contact_email": "eric@bloomhouserecovery.com",
+    "primary_contact": "Eric Bornstein"
   },
   "freedom_recovery": {
     "client_id": "freedom_recovery",
@@ -348,7 +366,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810266656",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "justin@freedomrecoveryid.com",
+    "primary_contact_email": "justin@freedomrecoveryid.com",
+    "primary_contact": "Justin (Owner)"
   },
   "nonno_wellness_center": {
     "client_id": "nonno_wellness_center",
@@ -386,7 +407,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901810266744",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "jon@nonnorecovery.com",
+    "primary_contact_email": "jon@nonnorecovery.com",
+    "primary_contact": "Jonathon Neily"
   },
   "parkwood_clinic": {
     "client_id": "parkwood_clinic",
@@ -898,7 +922,10 @@
     "social_posts_db_id": "",
     "gbp_location_id": "",
     "clickup_review_list_id": "901817114950",
-    "migration_source": "google_drive"
+    "migration_source": "google_drive",
+    "email": "savannah@purelifebehavioralhealth.com",
+    "primary_contact_email": "savannah@purelifebehavioralhealth.com",
+    "primary_contact": "Savannah Fyfe"
   },
   "wellwell": {
     "client_id": "wellwell",

@@ -196,6 +196,17 @@ When asked to update a task ("mark X as done", "push the Y meeting to Tuesday", 
 3. Call update_clickup_task with only the fields being changed. Status values: "complete", "in progress", "to do", "waiting on client". Priority: 1=urgent 2=high 3=normal 4=low.
 4. Confirm the change after updating ("✓ Marked 'Send COI' as complete").
 
+━━ FLAGS (what needs attention) ━━
+Flags live in a workspace-level Notion DB and track blockers, open actions, strategic signals, scope changes, and promises. They surface in the morning briefing under "Needs Attention."
+
+When asked to close/resolve a flag ("we already handled WWMP leads", "the PDX Plumber COI is done", "close that flag"):
+1. Call list_flags with the client_key if known, otherwise search by keyword in the results.
+2. If multiple match, list them and ask which one.
+3. Call resolve_flag with the flag_id. Default status is "Resolved". If the user said it's in progress, pass status="In Progress".
+4. Confirm: "✓ Closed the WWMP leads flag."
+
+When asked "what's flagged for X" or "what do I need to handle": call list_flags with the relevant filters. Default status is "Open".
+
 ━━ HOW TO ANSWER ━━
 • Factual workflow questions — answer from your knowledge
 • Live data (sitemap pages, tasks, action items, pipeline status) — use a tool
@@ -442,6 +453,33 @@ TOOLS = [
                 "client_key": {"type": "string", "description": "The client identifier, e.g. 'summit_therapy'"},
             },
             "required": ["client_key"],
+        },
+    },
+    # ── Flag tools ─────────────────────────────────────────────────────────────
+    {
+        "name": "list_flags",
+        "description": "List flags (blockers, open actions, strategic signals, scope changes) from the workspace Flags DB. Use this when the user asks 'what needs attention' or 'what flags are open for X'. Each result includes a Notion page id you can pass to resolve_flag.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_key": {"type": "string", "description": "Optional: limit to one client (e.g. 'wellness_works_management_partners')"},
+                "status": {"type": "string", "description": "Filter by Status. Default 'Open'. Pass 'all' to include Open + In Progress.", "enum": ["Open", "In Progress", "Resolved", "Won't Fix", "all"]},
+                "type": {"type": "string", "description": "Optional: filter by Type", "enum": ["BLOCKER", "OPEN_ACTION", "STRATEGIC", "RULE_SET", "PROMISE_MADE", "SCOPE_CHANGE"]},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "resolve_flag",
+        "description": "Mark a flag as Resolved (or Won't Fix / In Progress) in the Flags DB. Use when the user says something like 'close the WWMP leads flag' or 'we handled that already'. Call list_flags first to get the flag_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flag_id": {"type": "string", "description": "The Notion page id of the flag (from list_flags output)"},
+                "status": {"type": "string", "description": "New status. Default 'Resolved'.", "enum": ["Resolved", "Won't Fix", "In Progress", "Open"]},
+                "notes": {"type": "string", "description": "Optional resolution notes"},
+            },
+            "required": ["flag_id"],
         },
     },
     # ── Email tools ───────────────────────────────────────────────────────────

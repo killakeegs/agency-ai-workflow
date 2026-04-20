@@ -49,26 +49,144 @@ from src.services.email_enrichment import (
     append_profile_enrichments,
     apply_rule_set_flags,
     update_last_contact,
+    write_flags_to_db,
 )
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL_INTERNAL", "").strip()
+FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
 
 MONITOR_DB_NAME = "Email Monitor State"
 
 
 # ── Client domain registry ─────────────────────────────────────────────────────
 
-def _build_domain_to_client_map() -> dict[str, str]:
-    """Map email domains → client keys for fast lookup."""
-    mapping: dict[str, str] = {}
+GENERIC_DOMAINS = {"gmail.com", "rxmedia.io", "google.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"}
+EMAIL_RE = re.compile(r"[\w\.-]+@[\w\.-]+\.\w+")
+
+
+async def _load_extra_contacts_for_client(notion: NotionClient, cfg: dict) -> list[str]:
+    """Read Client Contacts field from a client's Client Info DB. Returns list of emails."""
+    ci_db = cfg.get("client_info_db_id", "")
+    if not ci_db:
+        return []
+    try:
+        rows = await notion._client.request(
+            path=f"databases/{ci_db}/query", method="POST", body={"page_size": 1},
+        )
+    except Exception:
+        return []
+    if not rows.get("results"):
+        return []
+    props = rows["results"][0].get("properties", {})
+    for field_name in ("Client Contacts", "Contacts"):
+        field = props.get(field_name, {})
+        text = "".join(p.get("text", {}).get("content", "") for p in field.get("rich_text", []))
+        if text:
+            return [e.lower() for e in EMAIL_RE.findall(text)]
+    return []
+
+
+async def _load_clients_db_contacts(notion: NotionClient) -> dict[str, list[str]]:
+    """Read top-level Clients DB for Contact Email + Secondary Contacts per client.
+    Returns {client_key: [email, email, ...]} by matching on client name.
+    """
+    clients_db_id = os.environ.get("NOTION_CLIENTS_DB_ID", "").strip()
+    if not clients_db_id:
+        return {}
+
+    # Map Notion client-name → our config key
+    name_to_key: dict[str, str] = {}
     for key, cfg in CLIENTS.items():
+        if cfg.get("internal"):
+            continue
+        n = (cfg.get("name") or "").strip().lower()
+        if n:
+            name_to_key[n] = key
+
+    out: dict[str, list[str]] = {}
+    cursor = None
+    while True:
+        body: dict = {"page_size": 100}
+        if cursor:
+            body["start_cursor"] = cursor
+        try:
+            r = await notion._client.request(path=f"databases/{clients_db_id}/query", method="POST", body=body)
+        except Exception:
+            return out
+        for row in r.get("results", []):
+            props = row.get("properties", {})
+            name_parts = props.get("Client Name", {}).get("title", [])
+            name = "".join(p.get("text", {}).get("content", "") for p in name_parts).strip().lower()
+            key = name_to_key.get(name)
+            if not key:
+                continue
+            emails: list[str] = []
+            primary = (props.get("Contact Email", {}).get("email") or "").lower()
+            if primary:
+                emails.append(primary)
+            sec_text = "".join(p.get("text", {}).get("content", "") for p in props.get("Secondary Contacts", {}).get("rich_text", []))
+            emails.extend(e.lower() for e in EMAIL_RE.findall(sec_text))
+            out[key] = emails
+        if not r.get("has_more"):
+            break
+        cursor = r.get("next_cursor")
+    return out
+
+
+async def _build_client_maps(notion: NotionClient) -> tuple[dict[str, str], dict[str, str]]:
+    """Build (domain_map, email_map) from three sources, in order of precedence:
+      1. clients.json (email, primary_contact_email)
+      2. Top-level Clients DB (Contact Email + Secondary Contacts rich_text)
+      3. Per-client Client Info DB (Client Contacts rich_text)
+
+    Pulls Notion fresh every tick so contact edits propagate within ≤15 min.
+    """
+    domain_map: dict[str, str] = {}
+    email_map: dict[str, str] = {}
+
+    import asyncio as _asyncio
+    per_client_task = []
+    keys = []
+    for key, cfg in CLIENTS.items():
+        if cfg.get("internal"):
+            continue
+        per_client_task.append(_load_extra_contacts_for_client(notion, cfg))
+        keys.append(key)
+
+    clients_db_task = _load_clients_db_contacts(notion)
+    per_client_results, clients_db_contacts = await _asyncio.gather(
+        _asyncio.gather(*per_client_task, return_exceptions=True),
+        clients_db_task,
+    )
+
+    for key, extras in zip(keys, per_client_results):
+        cfg = CLIENTS[key]
+        emails: set[str] = set()
+
+        # Source 1: clients.json
         for field in ("email", "primary_contact_email"):
-            email = cfg.get(field, "") or ""
+            v = (cfg.get(field, "") or "").lower().strip()
+            if v:
+                emails.add(v)
+
+        # Source 2: top-level Clients DB
+        for e in clients_db_contacts.get(key, []):
+            emails.add(e)
+
+        # Source 3: per-client Client Info DB
+        if isinstance(extras, list):
+            emails.update(extras)
+
+        for email in emails:
+            if not email or email == "keegan@rxmedia.io":
+                continue
+            email_map[email] = key
             domain = gmail.extract_domain(email)
-            if domain and domain not in ("gmail.com", "rxmedia.io", "google.com", "yahoo.com", "hotmail.com", "outlook.com"):
-                mapping[domain] = key
-    return mapping
+            if domain and domain not in GENERIC_DOMAINS:
+                domain_map[domain] = key
+
+    return domain_map, email_map
 
 
 def _match_message_to_client(message: dict, domain_map: dict[str, str], email_map: dict[str, str]) -> str | None:
@@ -78,25 +196,12 @@ def _match_message_to_client(message: dict, domain_map: dict[str, str], email_ma
         addrs = re.findall(r"[\w\.-]+@[\w\.-]+", headers.get(field, ""))
         for addr in addrs:
             addr_lower = addr.lower()
-            # Check exact email first (handles gmail.com clients like WellWell)
             if addr_lower in email_map:
                 return email_map[addr_lower]
-            # Then check domain
             domain = gmail.extract_domain(addr_lower)
             if domain in domain_map:
                 return domain_map[domain]
     return None
-
-
-def _build_email_to_client_map() -> dict[str, str]:
-    """Map exact email addresses → client keys (for gmail.com clients)."""
-    mapping: dict[str, str] = {}
-    for key, cfg in CLIENTS.items():
-        for field in ("email", "primary_contact_email"):
-            email = (cfg.get(field, "") or "").lower().strip()
-            if email and email != "keegan@rxmedia.io":
-                mapping[email] = key
-    return mapping
 
 
 # ── Notion state management ────────────────────────────────────────────────────
@@ -286,9 +391,8 @@ async def tick(lookback_minutes: int = 15) -> None:
     minutes_ago = int((now - since).total_seconds() / 60)
     print(f"  Checking emails since: {since.strftime('%Y-%m-%d %H:%M UTC')} ({minutes_ago} min ago)")
 
-    # Build client lookup maps
-    domain_map = _build_domain_to_client_map()
-    email_map = _build_email_to_client_map()
+    # Build client lookup maps (pulls Client Contacts live from Notion each tick)
+    domain_map, email_map = await _build_client_maps(notion)
     print(f"  Tracking {len(domain_map)} domains + {len(email_map)} exact emails across {len(CLIENTS)} clients")
 
     # ONE Gmail search for everything
@@ -423,10 +527,16 @@ async def tick(lookback_minutes: int = 15) -> None:
             total_log += created + updated_count
             print(f"    ✓ {created} new + {updated_count} updated log entries")
 
-        if (enrichments or other_flags) and profile_id:
+        if enrichments and profile_id:
             await append_profile_enrichments(notion, profile_id, enrichments, flags, minutes_ago)
             total_enrichments += len(enrichments)
-            print(f"    ✓ {len(enrichments)} enrichments + {len(other_flags)} flags")
+            print(f"    ✓ {len(enrichments)} enrichments → Business Profile")
+
+        if other_flags and FLAGS_DB_ID:
+            created_flags = await write_flags_to_db(
+                notion, FLAGS_DB_ID, client_name, client_key, other_flags, source="Email",
+            )
+            print(f"    ✓ {created_flags} flags → Flags DB (skipped {len(other_flags) - created_flags} dupes)")
 
         if rule_flags and brand_db_id:
             applied = await apply_rule_set_flags(notion, brand_db_id, rule_flags)

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -42,7 +43,10 @@ from src.services.email_enrichment import (
     append_profile_enrichments,
     apply_rule_set_flags,
     update_last_contact,
+    write_flags_to_db,
 )
+
+FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
 
 
 def _collect_client_emails(cfg: dict) -> list[str]:
@@ -224,11 +228,19 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
     elif not log_db_id:
         print("  ⚠ No client_log_db_id — skipping Client Log")
 
-    if (enrichments or other_flags) and profile_id:
+    if enrichments and profile_id:
         await append_profile_enrichments(notion, profile_id, enrichments, flags, days)
-        print(f"  ✓ {len(enrichments)} enrichments + {len(other_flags)} flags → Business Profile")
-    elif not profile_id:
+        print(f"  ✓ {len(enrichments)} enrichments → Business Profile")
+    elif not profile_id and enrichments:
         print("  ⚠ No business_profile_page_id — skipping profile append")
+
+    if other_flags and FLAGS_DB_ID:
+        created_flags = await write_flags_to_db(
+            notion, FLAGS_DB_ID, client_name, client_key, other_flags, source="Email",
+        )
+        print(f"  ✓ {created_flags} flags → Flags DB (skipped {len(other_flags) - created_flags} dupes)")
+    elif other_flags:
+        print("  ⚠ NOTION_FLAGS_DB_ID not set — skipping Flags DB writes")
 
     if rule_flags and brand_db_id:
         applied = await apply_rule_set_flags(notion, brand_db_id, rule_flags)

@@ -31,11 +31,93 @@ NOTION_TOOL_NAMES = {
     "get_keywords",
     "get_competitors",
     "get_gbp_posts",
+    "list_flags",
+    "resolve_flag",
 }
+
+
+import os
+from datetime import date as _date
+
+FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
 
 
 async def execute_notion_tool(name: str, tool_input: dict, clients: dict, notion) -> str:
     """Dispatch a Notion tool call and return a formatted result string."""
+
+    # Flag tools run against the workspace-level Flags DB and don't require a client_key.
+    if name == "list_flags":
+        if not FLAGS_DB_ID:
+            return "NOTION_FLAGS_DB_ID not configured."
+        client_filter = tool_input.get("client_key", "").strip()
+        status_filter = tool_input.get("status", "Open").strip()
+        type_filter   = tool_input.get("type", "").strip()
+
+        filters: list[dict] = []
+        if status_filter.lower() == "all":
+            filters.append({"property": "Status", "select": {"does_not_equal": "Resolved"}})
+            filters.append({"property": "Status", "select": {"does_not_equal": "Won't Fix"}})
+        else:
+            filters.append({"property": "Status", "select": {"equals": status_filter}})
+        if client_filter:
+            cfg = clients.get(client_filter, {})
+            key_value = client_filter
+            filters.append({"property": "Client Key", "rich_text": {"equals": key_value}})
+        if type_filter:
+            filters.append({"property": "Type", "select": {"equals": type_filter.upper()}})
+
+        body = {
+            "page_size": 50,
+            "filter": {"and": filters} if len(filters) > 1 else filters[0],
+            "sorts": [{"property": "Source Date", "direction": "descending"}],
+        }
+        try:
+            r = await notion._client.request(
+                path=f"databases/{FLAGS_DB_ID}/query", method="POST", body=body,
+            )
+        except Exception as e:
+            return f"Failed to query Flags DB: {e}"
+
+        rows = r.get("results", [])
+        if not rows:
+            return "No flags match those filters."
+
+        lines = [f"Flags ({len(rows)} {status_filter}):"]
+        for row in rows:
+            props = row.get("properties", {})
+            client_parts = props.get("Client", {}).get("rich_text", [])
+            client_name = "".join(p.get("text", {}).get("content", "") for p in client_parts)
+            desc_parts = props.get("Description", {}).get("rich_text", [])
+            desc = "".join(p.get("text", {}).get("content", "") for p in desc_parts)
+            type_sel = (props.get("Type", {}).get("select") or {}).get("name", "")
+            status_sel = (props.get("Status", {}).get("select") or {}).get("name", "")
+            date_obj = props.get("Source Date", {}).get("date")
+            src_date = date_obj.get("start", "") if date_obj else ""
+            flag_id = row.get("id", "")
+            lines.append(f"• [{type_sel}] {client_name} ({src_date}) — {desc[:160]} | id: {flag_id}")
+        return "\n".join(lines)
+
+    if name == "resolve_flag":
+        flag_id = tool_input.get("flag_id", "").strip()
+        new_status = tool_input.get("status", "Resolved").strip()
+        notes = tool_input.get("notes", "").strip()
+        if not flag_id:
+            return "flag_id is required. Use list_flags first to find the id."
+
+        props: dict = {"Status": {"select": {"name": new_status}}}
+        if new_status in ("Resolved", "Won't Fix"):
+            props["Resolved Date"] = {"date": {"start": _date.today().isoformat()}}
+        if notes:
+            props["Notes"] = {"rich_text": [{"text": {"content": notes[:2000]}}]}
+
+        try:
+            await notion._client.request(
+                path=f"pages/{flag_id}", method="PATCH",
+                body={"properties": props},
+            )
+        except Exception as e:
+            return f"Failed to update flag: {e}"
+        return f"✓ Flag marked {new_status}" + (f" with note: {notes}" if notes else "")
 
     if name == "list_clients":
         lines = []

@@ -190,79 +190,67 @@ def _format_task_line(t: dict) -> str:
 
 # ── Notion: recent flags + today's meetings ────────────────────────────────────
 
+FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
+
+
 async def _fetch_flagged_profiles(notion: NotionClient) -> dict:
-    """Scan each client's Business Profile for recent Email Enrichment flags.
-    Returns dict with deduped + categorized flags:
-      {"blockers": [(client, text)], "open_actions": [(client, text)], "total_before_dedupe": N}
+    """Query the Flags DB for all Open + In Progress flags.
+    Returns dict: {"blockers": [(client, text)], "open_actions": [(client, text)], ...}
     """
-    all_raw_flags: list[tuple[str, str]] = []
-    cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    if not FLAGS_DB_ID:
+        return {"blockers": [], "open_actions": [], "total_before_dedupe": 0, "total_after_dedupe": 0}
 
-    for client_key, cfg in CLIENTS.items():
-        if cfg.get("internal"):
-            continue
-        profile_id = cfg.get("business_profile_page_id", "")
-        if not profile_id:
-            continue
-        try:
-            blocks_resp = await notion._client.request(
-                path=f"blocks/{profile_id}/children?page_size=100", method="GET",
+    rows_all: list[dict] = []
+    cursor: str | None = None
+    try:
+        while True:
+            body: dict = {
+                "page_size": 100,
+                "filter": {
+                    "and": [
+                        {"property": "Status", "select": {"does_not_equal": "Resolved"}},
+                        {"property": "Status", "select": {"does_not_equal": "Won't Fix"}},
+                    ]
+                },
+                "sorts": [{"property": "Source Date", "direction": "descending"}],
+            }
+            if cursor:
+                body["start_cursor"] = cursor
+            r = await notion._client.request(
+                path=f"databases/{FLAGS_DB_ID}/query", method="POST", body=body,
             )
-        except Exception:
-            continue
+            rows_all.extend(r.get("results", []))
+            if not r.get("has_more"):
+                break
+            cursor = r.get("next_cursor")
+    except Exception as e:
+        print(f"  ⚠ Failed to query Flags DB: {e}")
+        return {"blockers": [], "open_actions": [], "total_before_dedupe": 0, "total_after_dedupe": 0}
 
-        blocks = blocks_resp.get("results", [])
-        in_recent_enrichment = False
-        in_flags_section = False
-        for b in blocks:
-            btype = b.get("type", "")
-            if btype == "heading_2":
-                text = "".join(p.get("text", {}).get("content", "") for p in b.get("heading_2", {}).get("rich_text", []))
-                if "Email Enrichment" in text:
-                    parts = text.split(" — ")
-                    date_str = parts[-1].strip() if len(parts) > 1 else ""
-                    in_recent_enrichment = date_str >= cutoff_date
-                    in_flags_section = False
-                else:
-                    in_recent_enrichment = False
-                    in_flags_section = False
-            elif btype == "heading_3" and in_recent_enrichment:
-                text = "".join(p.get("text", {}).get("content", "") for p in b.get("heading_3", {}).get("rich_text", []))
-                in_flags_section = "Flags" in text
-            elif btype == "bulleted_list_item" and in_recent_enrichment and in_flags_section:
-                text = "".join(p.get("text", {}).get("content", "") for p in b.get("bulleted_list_item", {}).get("rich_text", []))
-                if text and ("OPEN_ACTION" in text or "BLOCKER" in text):
-                    all_raw_flags.append((cfg.get("name", client_key), text[:250]))
+    blockers: list[tuple[str, str]] = []
+    open_actions: list[tuple[str, str]] = []
 
-    # Dedupe by (client, description core text — ignoring date prefix)
-    seen: set[tuple[str, str]] = set()
-    deduped: list[tuple[str, str]] = []
-    for client_name, flag_text in all_raw_flags:
-        # Extract core description (strip [TYPE] and (date) prefixes)
-        import re as _re
-        core = _re.sub(r"^\[[^\]]+\]\s*(\(\d{4}-\d{2}-\d{2}\)\s*)?", "", flag_text).strip().lower()
-        key = (client_name, core[:120])
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append((client_name, flag_text))
+    for row in rows_all:
+        props = row.get("properties", {})
+        client_parts = props.get("Client", {}).get("rich_text", [])
+        client_name = "".join(p.get("text", {}).get("content", "") for p in client_parts)
+        desc_parts = props.get("Description", {}).get("rich_text", [])
+        desc = "".join(p.get("text", {}).get("content", "") for p in desc_parts)
+        type_sel = (props.get("Type", {}).get("select") or {}).get("name", "")
+        date_obj = props.get("Source Date", {}).get("date")
+        source_date = date_obj.get("start", "") if date_obj else ""
 
-    blockers = [f for f in deduped if "BLOCKER" in f[1]]
-    open_actions = [f for f in deduped if "OPEN_ACTION" in f[1]]
-
-    # Sort open actions by date (most recent first)
-    def _extract_date(flag_text: str) -> str:
-        import re as _re
-        m = _re.search(r"\((\d{4}-\d{2}-\d{2})\)", flag_text)
-        return m.group(1) if m else ""
-    open_actions.sort(key=lambda f: _extract_date(f[1]), reverse=True)
-    blockers.sort(key=lambda f: _extract_date(f[1]), reverse=True)
+        display = f"[{type_sel}] ({source_date}) {desc}"[:250]
+        if type_sel == "BLOCKER":
+            blockers.append((client_name, display))
+        elif type_sel == "OPEN_ACTION":
+            open_actions.append((client_name, display))
 
     return {
         "blockers": blockers,
         "open_actions": open_actions,
-        "total_before_dedupe": len(all_raw_flags),
-        "total_after_dedupe": len(deduped),
+        "total_before_dedupe": len(rows_all),
+        "total_after_dedupe": len(blockers) + len(open_actions),
     }
 
 

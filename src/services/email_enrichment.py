@@ -290,12 +290,9 @@ async def append_profile_enrichments(
     flags: list[dict],
     days: int,
 ) -> None:
-    if not enrichments and not flags:
-        return
-
-    non_rule_flags = [f for f in flags if f.get("type") != "rule_set"]
-
-    if not enrichments and not non_rule_flags:
+    """Append new factual enrichments to Business Profile. Flags go to the Flags DB,
+    not bullet lists on the profile page."""
+    if not enrichments:
         return
 
     today = datetime.now().strftime("%Y-%m-%d")
@@ -317,31 +314,18 @@ async def append_profile_enrichments(
                 }}],
             },
         },
-    ]
-
-    if enrichments:
-        blocks.append({
+        {
             "object": "block", "type": "heading_3",
             "heading_3": {"rich_text": [{"type": "text", "text": {"content": "New Facts"}}]},
-        })
-        for e in enrichments:
-            content = f"[{e.get('section', 'General')}] {e.get('fact', '')}"
-            blocks.append({
-                "object": "block", "type": "bulleted_list_item",
-                "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": content[:1900]}}]},
-            })
+        },
+    ]
 
-    if non_rule_flags:
+    for e in enrichments:
+        content = f"[{e.get('section', 'General')}] {e.get('fact', '')}"
         blocks.append({
-            "object": "block", "type": "heading_3",
-            "heading_3": {"rich_text": [{"type": "text", "text": {"content": "Flags — Needs Attention"}}]},
+            "object": "block", "type": "bulleted_list_item",
+            "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": content[:1900]}}]},
         })
-        for f in non_rule_flags:
-            content = f"[{f.get('type', 'flag').upper()}] ({f.get('source_date', '')}) {f.get('description', '')}"
-            blocks.append({
-                "object": "block", "type": "bulleted_list_item",
-                "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": content[:1900]}}]},
-            })
 
     for i in range(0, len(blocks), 100):
         await notion._client.request(
@@ -349,6 +333,98 @@ async def append_profile_enrichments(
             method="PATCH",
             body={"children": blocks[i : i + 100]},
         )
+
+
+# ── Flags DB writes ────────────────────────────────────────────────────────────
+
+async def _load_open_flag_descriptions(
+    notion: NotionClient,
+    flags_db_id: str,
+    client_key: str,
+) -> set[str]:
+    """Return lowercased set of existing Open flag descriptions for this client (dedup)."""
+    existing: set[str] = set()
+    if not flags_db_id or not client_key:
+        return existing
+    try:
+        rows = await notion._client.request(
+            path=f"databases/{flags_db_id}/query",
+            method="POST",
+            body={
+                "page_size": 100,
+                "filter": {
+                    "and": [
+                        {"property": "Client Key", "rich_text": {"equals": client_key}},
+                        {"property": "Status", "select": {"does_not_equal": "Resolved"}},
+                    ]
+                },
+            },
+        )
+    except Exception:
+        return existing
+    for row in rows.get("results", []):
+        props = row.get("properties", {})
+        desc_parts = props.get("Description", {}).get("rich_text", [])
+        desc = "".join(p.get("text", {}).get("content", "") for p in desc_parts)
+        if desc:
+            existing.add(desc.strip().lower()[:200])
+    return existing
+
+
+async def write_flags_to_db(
+    notion: NotionClient,
+    flags_db_id: str,
+    client_name: str,
+    client_key: str,
+    flags: list[dict],
+    source: str = "Email",
+) -> int:
+    """Write non-rule_set flags to the workspace Flags DB. Returns count created.
+
+    Dedups against existing Open/In Progress flags for the same client by description.
+    rule_set flags are skipped here (they flow to Brand Guidelines via apply_rule_set_flags).
+    """
+    actionable = [f for f in flags if f.get("type") != "rule_set"]
+    if not actionable or not flags_db_id:
+        return 0
+
+    existing = await _load_open_flag_descriptions(notion, flags_db_id, client_key)
+    created = 0
+
+    for f in actionable:
+        description = (f.get("description") or "").strip()
+        if not description:
+            continue
+        key = description.lower()[:200]
+        if key in existing:
+            continue
+
+        flag_type = (f.get("type") or "open_action").upper()
+        source_date = f.get("source_date") or datetime.now().strftime("%Y-%m-%d")
+        title = description[:80]
+
+        props: dict = {
+            "Title":       {"title": [{"text": {"content": title}}]},
+            "Client":      {"rich_text": [{"text": {"content": client_name}}]},
+            "Client Key":  {"rich_text": [{"text": {"content": client_key}}]},
+            "Type":        {"select": {"name": flag_type}},
+            "Status":      {"select": {"name": "Open"}},
+            "Description": {"rich_text": [{"text": {"content": description[:2000]}}]},
+            "Source":      {"select": {"name": source}},
+            "Source Date": {"date": {"start": source_date}},
+        }
+
+        try:
+            await notion._client.request(
+                path="pages", method="POST",
+                body={"parent": {"database_id": flags_db_id}, "properties": props},
+            )
+            created += 1
+            existing.add(key)
+        except Exception as e:
+            print(f"    ⚠ Failed to write flag '{title}': {e}")
+
+    return created
 
 
 # ── rule_set → Brand Guidelines auto-write ─────────────────────────────────────

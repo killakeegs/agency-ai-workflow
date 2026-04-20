@@ -47,6 +47,7 @@ from rex.tools.meeting_tools import (
     _draft_follow_up_email,
 )
 from rex.tools.email_tools import send_email, create_gmail_draft
+from src.services.email_enrichment import write_flags_to_db
 
 MEETING_TRANSCRIPTS_DB = os.environ.get(
     "NOTION_MEETING_TRANSCRIPTS_DB_ID",
@@ -55,6 +56,55 @@ MEETING_TRANSCRIPTS_DB = os.environ.get(
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL_INTERNAL", "").strip()
+FLAGS_DB_ID = os.environ.get("NOTION_FLAGS_DB_ID", "").strip()
+
+
+def _parsed_to_flags(parsed: dict, meeting_date: str) -> list[dict]:
+    """Convert parsed meeting output into Flags DB entries.
+
+    Only flows: risk_flags, value_add_opportunities, out-of-scope client_requests.
+    Action items already become ClickUp tasks — don't duplicate as flags.
+    """
+    flags: list[dict] = []
+
+    for rf in parsed.get("risk_flags", []) or []:
+        severity = (rf.get("severity", "") or "").lower()
+        flag_type = "blocker" if severity == "high" else "strategic"
+        flags.append({
+            "type": flag_type,
+            "description": rf.get("flag", "").strip(),
+            "source_date": meeting_date,
+        })
+
+    for va in parsed.get("value_add_opportunities", []) or []:
+        opp = va.get("opportunity", "").strip()
+        potential = va.get("potential_service", "").strip()
+        current = va.get("current_service", "").strip()
+        if not opp:
+            continue
+        desc = opp
+        if potential:
+            desc += f" (potential: {potential}"
+            if current:
+                desc += f"; current: {current}"
+            desc += ")"
+        flags.append({
+            "type": "strategic",
+            "description": desc,
+            "source_date": meeting_date,
+        })
+
+    for cr in parsed.get("client_requests", []) or []:
+        if cr.get("in_scope") is False:
+            req = cr.get("request", "").strip()
+            if req:
+                flags.append({
+                    "type": "scope_change",
+                    "description": f"Out-of-scope request: {req}",
+                    "source_date": meeting_date,
+                })
+
+    return [f for f in flags if f.get("description")]
 
 
 # ── Read Notion AI transcription blocks ────────────────────────────────────────
@@ -306,6 +356,19 @@ async def _process_one(
             print(f"  ✓ {len(created_tasks)} tasks created")
         except Exception as e:
             print(f"  ⚠ ClickUp task creation failed: {e}")
+
+    # Write flags to Flags DB (risks, value-adds, out-of-scope requests)
+    flag_dicts = _parsed_to_flags(parsed, meeting_date_str)
+    if flag_dicts and FLAGS_DB_ID:
+        try:
+            created_flags = await write_flags_to_db(
+                notion, FLAGS_DB_ID, client_name, client_key, flag_dicts, source="Meeting",
+            )
+            print(f"  ✓ {created_flags} flags → Flags DB (skipped {len(flag_dicts) - created_flags} dupes)")
+        except Exception as e:
+            print(f"  ⚠ Flags DB write failed: {e}")
+    elif flag_dicts:
+        print(f"  ⚠ NOTION_FLAGS_DB_ID not set — skipping {len(flag_dicts)} flag writes")
 
     # Draft follow-up email (skip for internal meetings)
     email = {}
