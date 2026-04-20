@@ -38,6 +38,10 @@ from src.integrations.notion import NotionClient
 from src.integrations import google_calendar as gcal
 
 ROOT_PAGE_ID = os.environ.get("NOTION_WORKSPACE_ROOT_PAGE_ID", "").strip()
+MEETING_PREP_PARENT_ID = (
+    os.environ.get("NOTION_MEETING_PREP_PAGE_ID", "").strip()
+    or ROOT_PAGE_ID
+)
 
 
 # ── Prep doc content generation ────────────────────────────────────────────────
@@ -444,12 +448,12 @@ async def run(dry: bool = False) -> list[dict]:
             })
             continue
 
-        # Create Notion page under root
+        # Create Notion page under Meeting Prep Docs parent
         try:
             r = await notion._client.request(
                 path="pages", method="POST",
                 body={
-                    "parent": {"type": "page_id", "page_id": ROOT_PAGE_ID},
+                    "parent": {"type": "page_id", "page_id": MEETING_PREP_PARENT_ID},
                     "properties": {"title": {"title": [{"text": {"content": prep_title}}]}},
                     "children": blocks[:100],  # Notion caps at 100 blocks per create
                 },
