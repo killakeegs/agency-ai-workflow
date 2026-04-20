@@ -10,8 +10,11 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
+
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
@@ -90,8 +93,8 @@ def extract_event_datetime(event: dict) -> tuple[datetime | None, str]:
             dt = datetime.fromisoformat(dt_str + "T00:00:00+00:00")
     except ValueError:
         return None, ""
-    # Local time formatting (assume PDT/PST)
-    local_dt = dt.astimezone()
+    # Force Pacific time regardless of where the script runs (Railway uses UTC)
+    local_dt = dt.astimezone(PACIFIC_TZ)
     time_str = local_dt.strftime("%I:%M %p").lstrip("0").lower()
     return dt, time_str
 

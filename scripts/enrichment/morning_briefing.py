@@ -384,11 +384,16 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
     # 0. Meeting prep — generate Notion prep docs for today's calendar events
     # (only for Keegan's calendar for now — expand to team later)
     print("\n  Generating meeting prep docs...")
+    meeting_prep_error: str | None = None
     try:
         meeting_prep_index = await run_meeting_prep(dry=dry_run)
     except Exception as e:
-        print(f"  ⚠ Meeting prep failed: {e}")
+        import traceback
+        err_text = str(e)[:200]
+        print(f"  ⚠ Meeting prep failed: {err_text}")
+        traceback.print_exc()
         meeting_prep_index = []
+        meeting_prep_error = err_text
 
     async with httpx.AsyncClient() as http:
         # 1. Slack IDs
