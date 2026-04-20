@@ -169,6 +169,194 @@ PAGE_SECTIONS: dict[str, list[str]] = {
         "Body Content",
         "Contact Information",
     ],
+
+    # ── Addiction Treatment ───────────────────────────────────────────────────
+    # Service pages follow a consistent pattern — what it is, who it's for,
+    # what happens day-to-day, who treats it, insurance, and conversion.
+
+    "services_hub": [
+        "Hero",
+        "Overview — Full Continuum of Care",
+        "Level of Care Cards (PHP / IOP / OP / MAT / etc.)",
+        "Our Treatment Philosophy",
+        "Insurance Accepted",
+        "What Makes Us Different",
+        "Final CTA",
+    ],
+
+    "service_detox": [
+        "Hero",
+        "What Is Medical Detox",
+        "Substances We Detox From",
+        "Medical Supervision & Safety",
+        "Medications Used During Detox",
+        "Typical Length of Stay",
+        "Next Steps After Detox",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_residential": [
+        "Hero",
+        "What Is Residential Treatment",
+        "Who It's For",
+        "Daily Schedule",
+        "Amenities & Environment",
+        "Typical Length of Stay",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_php": [
+        "Hero",
+        "What Is PHP",
+        "Who PHP Is For",
+        "Daily Schedule",
+        "Typical Length of Stay",
+        "Insurance & Cost",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_iop": [
+        "Hero",
+        "What Is IOP",
+        "Who IOP Is For",
+        "Weekly Schedule",
+        "What Happens in Sessions",
+        "Length of Program",
+        "Insurance & Cost",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_outpatient": [
+        "Hero",
+        "What Is Outpatient Treatment",
+        "Who It's For",
+        "Session Frequency",
+        "What Happens in Sessions",
+        "Insurance & Cost",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_mat": [
+        "Hero",
+        "What Is MAT",
+        "Medications We Use (Suboxone, Vivitrol, Naltrexone)",
+        "How MAT Fits Into Treatment",
+        "Myths About MAT",
+        "Our Prescribers",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_mental_health": [
+        "Hero",
+        "Conditions We Treat",
+        "Our Approach",
+        "Therapy Modalities Offered",
+        "Individual vs Group Therapy",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_dual_diagnosis": [
+        "Hero",
+        "What Is Dual Diagnosis",
+        "Why Integrated Treatment Matters",
+        "Conditions We Treat Alongside SUD",
+        "Our Clinical Team",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    "service_sober_living": [
+        "Hero",
+        "About Our Sober Living",
+        "Who It's For",
+        "Daily Structure & House Rules",
+        "Length of Stay",
+        "Gallery / Virtual Tour",
+        "How to Apply",
+        "Final CTA",
+    ],
+
+    "service_substance_cms": [
+        "Hero — [Service] for [Substance] Addiction",
+        "About [Substance] Addiction",
+        "Signs & Symptoms",
+        "How We Treat [Substance] Addiction",
+        "What to Expect in Treatment",
+        "Reviewed by [Medical Director]",
+        "Final CTA",
+    ],
+
+    # Admissions flow
+    "admissions": [
+        "Hero",
+        "How to Get Started (3-step)",
+        "What Happens on the First Call",
+        "Pre-Admission Assessment",
+        "Day One at Our Program",
+        "Family Involvement",
+        "Final CTA",
+    ],
+
+    "what_to_expect": [
+        "Hero",
+        "Your First Day",
+        "Your First Week",
+        "Weekly Schedule",
+        "Who You'll Meet",
+        "What to Bring",
+        "Final CTA",
+    ],
+
+    # Other
+    "who_we_serve_hub": [
+        "Hero",
+        "Populations We Serve",
+        "Specialized Focus Areas",
+        "Final CTA",
+    ],
+
+    "gallery": [
+        "Hero",
+        "Facility Photos",
+        "Common Areas",
+        "Therapy Spaces",
+        "Outdoor / Recreation",
+        "Virtual Tour CTA",
+    ],
+
+    "faq": [
+        "Hero",
+        "Getting Started",
+        "Treatment & Clinical",
+        "Insurance & Cost",
+        "Daily Life in Treatment",
+        "Family & Support",
+        "Final CTA",
+    ],
+
+    "staff_bio": [
+        "Header (photo + name + credentials)",
+        "About",
+        "Specialties",
+        "Education & Certifications",
+        "Quote / Philosophy",
+    ],
+
+    "outcomes": [
+        "Hero",
+        "Completion Rates",
+        "Patient Satisfaction",
+        "Methodology",
+        "Testimonial Highlight",
+        "Final CTA",
+    ],
 }
 
 

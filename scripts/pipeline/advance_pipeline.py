@@ -36,7 +36,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config.clients import CLIENTS as _BASE_CLIENTS
 from src.config import settings
