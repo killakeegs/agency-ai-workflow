@@ -38,8 +38,17 @@ EXISTING CLIENT LOG ENTRIES (do NOT create duplicates):
 EXISTING BUSINESS PROFILE (only surface genuinely NEW facts not already here):
 {existing_profile}
 
-EXISTING OPEN FLAGS (do NOT re-emit these — they are already tracked. Only emit a flag if it describes a GENUINELY NEW action/blocker/promise/rule that isn't covered below):
-{existing_flags}
+EXISTING OPEN FLAGS — FROM THE THREADS BELOW (numbered; for EACH decide: still active or resolved?):
+{flags_in_batch}
+
+EXISTING OPEN FLAGS — FROM OTHER THREADS (for dedup context only; do not re-emit, do not evaluate):
+{flags_other}
+
+For each flag in "FROM THE THREADS BELOW":
+- If it's still active based on the current thread state, do NOT re-emit it (already tracked).
+- If the current thread state shows it is RESOLVED (promised thing delivered, blocker cleared, action completed, scope confirmed, question answered), include its flag_index in the resolved_flags output with a brief reason.
+
+CRITICAL: Only close a flag when resolution is EXPLICIT in a later message of the threads shown below. If you have any doubt, keep it open — false closures erode trust more than keeping a flag open an extra cycle.
 
 Output ONLY a JSON object, no preamble:
 
@@ -71,6 +80,12 @@ Output ONLY a JSON object, no preamble:
       "source_thread_id": "Gmail thread ID the flag came from (REQUIRED — use the thread_id from the email thread block above)",
       "brand_field": "(for rule_set only) which Brand Guidelines field: Words to Avoid | Voice & Tone | Photography Style | Image Direction | POV Notes | CTA Style",
       "brand_value": "(for rule_set only) what to add or update"
+    }}
+  ],
+  "resolved_flags": [
+    {{
+      "flag_index": N (1-based — matches the # in "EXISTING OPEN FLAGS — FROM THE THREADS BELOW" above),
+      "reason": "1-sentence explanation of what in the thread resolves this"
     }}
   ],
   "skipped_count": N
@@ -153,15 +168,33 @@ async def synthesize_threads(
 
     existing_profile_str = existing_profile[:8000] if existing_profile else "(empty)"
 
-    existing_flags_str = "\n".join(
+    # Split existing flags into "from these threads" (candidates for auto-close)
+    # vs "from other threads" (dedup context only — Claude shouldn't judge them).
+    thread_ids_in_batch = {t.get("thread_id") for t in threads if t.get("thread_id")}
+    flags_in_batch = [
+        f for f in (existing_flags or [])
+        if f.get("thread_id") and f.get("thread_id") in thread_ids_in_batch
+    ]
+    flags_other = [
+        f for f in (existing_flags or [])
+        if not f.get("thread_id") or f.get("thread_id") not in thread_ids_in_batch
+    ]
+
+    flags_in_batch_str = "\n".join(
+        f"  flag #{i+1}: [{f.get('type', 'OPEN_ACTION')}] {f.get('description', '')[:200]}"
+        for i, f in enumerate(flags_in_batch)
+    ) if flags_in_batch else "(none from these threads)"
+
+    flags_other_str = "\n".join(
         f"  - [{f.get('type', 'OPEN_ACTION')}] {f.get('description', '')[:200]}"
-        for f in (existing_flags or [])
-    ) if existing_flags else "(none open)"
+        for f in flags_other
+    ) if flags_other else "(none)"
 
     system = SYNTHESIS_SYSTEM.format(
         existing_entries=existing_entries_str,
         existing_profile=existing_profile_str,
-        existing_flags=existing_flags_str,
+        flags_in_batch=flags_in_batch_str,
+        flags_other=flags_other_str,
     )
 
     prompt = f"""Client: {client_name}
@@ -182,7 +215,26 @@ Return the JSON object as specified."""
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         raise ValueError("Could not parse Claude response as JSON")
-    return json.loads(match.group(0))
+    result = json.loads(match.group(0))
+
+    # Enrich resolved_flags with the actual Notion page ID + description, so the
+    # caller can PATCH them directly without re-looking up by index.
+    resolved_raw = result.get("resolved_flags", []) or []
+    resolved_enriched: list[dict] = []
+    for r in resolved_raw:
+        try:
+            idx = int(r.get("flag_index", 0)) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(flags_in_batch):
+            src = flags_in_batch[idx]
+            resolved_enriched.append({
+                "flag_id":          src.get("id", ""),
+                "flag_description": src.get("description", ""),
+                "reason":           (r.get("reason") or "").strip(),
+            })
+    result["resolved_flags"] = resolved_enriched
+    return result
 
 
 # ── Dedup: load existing Client Log entries ────────────────────────────────────
@@ -537,6 +589,63 @@ async def write_flags_to_db(
             print(f"    ⚠ Failed to write flag '{title}': {e}")
 
     return created
+
+
+# ── Auto-close resolved flags ──────────────────────────────────────────────────
+
+async def auto_close_resolved_flags(
+    notion: NotionClient,
+    flags_db_id: str,
+    resolved: list[dict],
+    dry_run: bool = False,
+) -> int:
+    """Mark flags as Resolved when a later message in the source thread shows
+    them resolved. Each item in `resolved` must carry flag_id + reason (as
+    enriched by synthesize_threads). Returns count closed (or would-close in
+    dry run). Appends an auditable note; never overwrites existing Notes.
+    """
+    if not resolved or not flags_db_id:
+        return 0
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    closed = 0
+
+    for r in resolved:
+        flag_id = (r.get("flag_id") or "").strip()
+        reason  = (r.get("reason") or "").strip() or "resolved in thread update"
+        if not flag_id:
+            continue
+
+        preview = (r.get("flag_description") or "")[:80]
+
+        if dry_run:
+            print(f"    [DRY RUN] would close: {preview} — {reason[:140]}")
+            closed += 1
+            continue
+
+        try:
+            existing = await notion._client.request(path=f"pages/{flag_id}", method="GET")
+            existing_notes = "".join(
+                p.get("text", {}).get("content", "")
+                for p in existing.get("properties", {}).get("Notes", {}).get("rich_text", [])
+            )
+            auto_note = f"auto-closed {today}: {reason[:400]}"
+            new_notes = f"{existing_notes}\n\n{auto_note}" if existing_notes.strip() else auto_note
+
+            await notion._client.request(
+                path=f"pages/{flag_id}",
+                method="PATCH",
+                body={"properties": {
+                    "Status":        {"select": {"name": "Resolved"}},
+                    "Resolved Date": {"date": {"start": today}},
+                    "Notes":         {"rich_text": [{"text": {"content": new_notes[:2000]}}]},
+                }},
+            )
+            closed += 1
+        except Exception as e:
+            print(f"    ⚠ Failed to auto-close flag {flag_id[:8]}: {e}")
+
+    return closed
 
 
 # ── rule_set → Brand Guidelines auto-write ─────────────────────────────────────

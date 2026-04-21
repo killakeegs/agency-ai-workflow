@@ -51,6 +51,7 @@ from src.services.email_enrichment import (
     update_last_contact,
     write_flags_to_db,
     load_open_flags,
+    auto_close_resolved_flags,
 )
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
@@ -364,7 +365,7 @@ def _format_urgent_alert(client_name: str, thread: dict, matched: list[str]) -> 
 
 # ── Main tick ──────────────────────────────────────────────────────────────────
 
-async def tick(lookback_minutes: int = 15) -> None:
+async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> None:
     if not gmail.GMAIL_REFRESH_TOKEN:
         print("⚠ GOOGLE_GMAIL_REFRESH_TOKEN not set")
         sys.exit(1)
@@ -445,6 +446,7 @@ async def tick(lookback_minutes: int = 15) -> None:
     total_log = 0
     total_enrichments = 0
     total_flags = 0
+    total_auto_closed = 0
 
     for client_key in matched_clients:
         cfg = CLIENTS.get(client_key)
@@ -527,8 +529,21 @@ async def tick(lookback_minutes: int = 15) -> None:
         log_entries = synth.get("log_entries", []) or []
         enrichments = synth.get("profile_enrichments", []) or []
         flags = synth.get("flags", []) or []
+        resolved_flags = synth.get("resolved_flags", []) or []
         rule_flags = [f for f in flags if f.get("type") == "rule_set"]
         other_flags = [f for f in flags if f.get("type") != "rule_set"]
+
+        # Auto-close flags Claude judged as resolved in the latest thread state.
+        # Runs BEFORE write_flags_to_db so dedup sees the closures.
+        if resolved_flags and FLAGS_DB_ID:
+            closed = await auto_close_resolved_flags(
+                notion, FLAGS_DB_ID, resolved_flags, dry_run=dry_run_auto_close,
+            )
+            if closed:
+                verb = "would auto-close" if dry_run_auto_close else "auto-closed"
+                print(f"    ✓ {verb} {closed} resolved flags")
+                if not dry_run_auto_close:
+                    total_auto_closed += closed
 
         # Write to Notion
         if log_entries and log_db_id:
@@ -567,13 +582,17 @@ async def tick(lookback_minutes: int = 15) -> None:
             await _post_to_slack(alert)
 
     # Update state
-    status = f"OK — {total_log} logs, {total_enrichments} enrichments, {total_flags} flags"
+    status = (
+        f"OK — {total_log} logs, {total_enrichments} enrichments, "
+        f"{total_flags} flags, {total_auto_closed} auto-closed"
+    )
     await _write_state(notion, state_db_id, state.get("page_id"),
                        now.isoformat(), total_matched, clients_enriched, status)
 
     print(f"\n{'='*50}")
     print(f"  Done. {len(clients_enriched)} clients enriched.")
-    print(f"  {total_log} log entries | {total_enrichments} enrichments | {total_flags} flags")
+    print(f"  {total_log} log entries | {total_enrichments} enrichments | "
+          f"{total_flags} flags | {total_auto_closed} auto-closed")
     print(f"{'='*50}")
 
 
@@ -605,13 +624,18 @@ def main() -> None:
     parser.add_argument("--setup", action="store_true", help="Create state DB only")
     parser.add_argument("--lookback", type=int, default=60,
                         help="First-run lookback in minutes (default 60)")
+    parser.add_argument("--dry-run-auto-close", action="store_true",
+                        help="Show which flags would auto-close without actually closing them")
     args = parser.parse_args()
 
     if args.setup:
         asyncio.run(setup_only())
     else:
         try:
-            asyncio.run(tick(lookback_minutes=args.lookback))
+            asyncio.run(tick(
+                lookback_minutes=args.lookback,
+                dry_run_auto_close=args.dry_run_auto_close,
+            ))
         except Exception as e:
             import traceback
             error = traceback.format_exc()
