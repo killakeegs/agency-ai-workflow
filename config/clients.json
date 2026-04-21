@@ -458,7 +458,8 @@
     "clickup_review_list_id": "901810266753",
     "migration_source": "google_drive",
     "email": "info@parkwoodclinic.com",
-    "primary_contact_email": "info@parkwoodclinic.com"
+    "primary_contact_email": "info@parkwoodclinic.com",
+    "slack_channel": "#parkwood-clinic"
   },
   "pdx_plumber": {
     "client_id": "pdx_plumber",
