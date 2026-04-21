@@ -503,7 +503,31 @@ async def _process_one(
     # Read transcript
     transcript = await _read_transcript_content(notion, page_id)
     if len(transcript.strip()) < 100:
-        return {"status": "skipped", "reason": f"Transcript too short ({len(transcript)} chars)"}
+        # Notion AI created the page but the transcription engine didn't fire
+        # (transcription_not_started). Alert the client's Slack channel so the
+        # Gemini transcript can be shared for manual processing. Mark
+        # Processed=True to prevent re-alerts on every cron tick.
+        page_url = f"https://www.notion.so/{page_id.replace('-', '')}"
+        client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
+        alert = (
+            f"⚠️ *{client_name} — Meeting Transcript Didn't Record*\n"
+            f"Meeting: {title}\n"
+            f"Date: {meeting_date_str or 'unknown'}\n"
+            f"Notion AI created the page but transcription never started "
+            f"({len(transcript)} chars). This is a Notion AI glitch.\n\n"
+            f"📄 Transcript page: {page_url}\n\n"
+            f"*Next step:* paste the Gemini transcript into Claude Code to process "
+            f"it (Client Log entry + Gmail draft + flags)."
+        )
+        await _post_to_slack(alert, channel=client_channel)
+        await notion._client.request(
+            path=f"pages/{page_id}", method="PATCH",
+            body={"properties": {
+                "Processed": {"checkbox": True},
+                "Processed Date": {"date": {"start": date.today().isoformat()}},
+            }},
+        )
+        return {"status": "alerted", "reason": f"Blank transcript ({len(transcript)} chars) — Slack alert posted"}
     print(f"  Transcript: {len(transcript):,} chars")
 
     # Determine active services
