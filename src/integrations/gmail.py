@@ -140,13 +140,32 @@ def is_dnl(subject: str, body: str) -> bool:
     return any(m in combined for m in DNL_MARKERS)
 
 
+# Infrastructure alert senders — deploy/build/monitoring notifications.
+# Filtered because they're ephemeral ops events, not client action items.
+# Keep this list narrow: only add senders that have caused flag-pollution in practice.
+INFRA_SENDERS = [
+    "notify.railway.app",   # Railway build + deploy notifications
+    "github.com",           # GitHub Actions / security alerts (workflow failures)
+    "vercel.com",           # Vercel deploy notifications
+    "sentry.io",            # Error tracking digests
+]
+
+
 def is_automated_noise(subject: str, from_addr: str, body: str) -> bool:
+    from_lower = from_addr.lower()
+
     noise_from = [
         "noreply", "no-reply", "notification@", "notifications@",
         "support@calendly", "calendar-notification", "meet-notification",
         "invites@gmail", "mailer-daemon", "postmaster",
     ]
-    if any(p in from_addr.lower() for p in noise_from):
+    if any(p in from_lower for p in noise_from):
+        return True
+
+    # Infrastructure / ops alerts — deploy failures, build notifications, etc.
+    # These create flag noise (e.g. Railway "build failed" emails) and should
+    # never reach synthesis. Handled at the same layer as other automated noise.
+    if any(p in from_lower for p in INFRA_SENDERS):
         return True
 
     noise_subjects = [
