@@ -32,7 +32,7 @@ const marqueeLogos = [...logos, ...logos];
 
     <div class="marquee-track flex gap-16 whitespace-nowrap">
       {marqueeLogos.map((logo, i) => (
-        <div class="flex shrink-0 items-center justify-center">
+        <div class="logo-wrap flex shrink-0 items-center justify-center">
           <img
             src={logo.src}
             alt={i < logos.length ? logo.alt : ''}
@@ -40,7 +40,7 @@ const marqueeLogos = [...logos, ...logos];
             loading="lazy"
             width="140"
             height="70"
-            class="h-14 w-auto max-w-[140px] object-contain opacity-70 transition hover:opacity-100"
+            class="logo-img h-14 w-auto max-w-[140px] object-contain opacity-70"
           />
         </div>
       ))}
@@ -64,9 +64,42 @@ const marqueeLogos = [...logos, ...logos];
       transform: translateX(-50%);
     }
   }
+
+  /* Per-logo hover: enlarge + bring forward + full opacity.
+     Wrap lifts its z-index on hover so the growing logo overlaps
+     its neighbors instead of being clipped behind them. */
+  .logo-wrap {
+    position: relative;
+    z-index: 1;
+    transition: z-index 0s 0.3s;
+  }
+  .logo-wrap:hover {
+    z-index: 20;
+    transition-delay: 0s;
+  }
+  .logo-img {
+    cursor: pointer;
+    transform-origin: center;
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+                opacity 0.25s ease,
+                filter 0.25s ease;
+    will-change: transform;
+  }
+  .logo-wrap:hover .logo-img {
+    transform: scale(1.5);
+    opacity: 1;
+    filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.4));
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .marquee-track {
       animation: none;
+    }
+    .logo-img {
+      transition: opacity 0.2s ease;
+    }
+    .logo-wrap:hover .logo-img {
+      transform: none;
     }
   }
 </style>

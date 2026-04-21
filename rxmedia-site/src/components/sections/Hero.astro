@@ -1,23 +1,19 @@
 ---
 // Hero section — reference/html/index.html: "More Admissions. Less Marketing Stress."
 // Lottie animation on live site is skipped in Phase 1; static hero-illustration.avif used instead.
+import HeroMesh from '../HeroMesh.astro';
 ---
 <section id="hero" class="relative overflow-hidden bg-[color:var(--color-bg)]">
-  <!-- Soft radial glow behind content -->
-  <div
-    class="pointer-events-none absolute inset-0 opacity-40"
-    style="background: radial-gradient(ellipse at 20% 10%, rgba(191,247,71,0.18), transparent 55%), radial-gradient(ellipse at 85% 70%, rgba(47,169,224,0.18), transparent 50%);"
-    aria-hidden="true"
-  ></div>
+  <HeroMesh />
 
-  <div class="relative mx-auto max-w-7xl px-6 pt-16 pb-24 md:pt-24 md:pb-32">
+  <div class="relative z-10 mx-auto max-w-7xl px-6 pt-16 pb-24 md:pt-24 md:pb-32">
     <div class="grid items-center gap-12 lg:grid-cols-12">
       <div class="lg:col-span-7">
         <p class="mb-6 inline-flex items-center gap-2 rounded-full border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-accent)]">
           Absolutely Free
         </p>
         <h1 class="mb-6 text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-[65px] lg:leading-[71.5px]">
-          More Admissions.<br />
+          <span class="rainbow-cycle">More Admissions.</span><br />
           <span class="text-[color:var(--color-accent)]">Less Marketing Stress.</span>
         </h1>
         <p class="mb-8 max-w-xl text-base text-[color:var(--color-fg-subtle)] md:text-lg md:leading-[28px]">
@@ -131,7 +127,8 @@
             </div>
             <button
               type="submit"
-              class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-6 py-4 text-sm font-semibold uppercase tracking-wider text-black transition hover:brightness-95"
+              data-cta-fireworks
+              class="cta-sweep group inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold uppercase tracking-wider text-black transition-all duration-500"
             >
               Claim My Free Plan
               <span class="transition group-hover:translate-x-1" aria-hidden="true">→</span>
@@ -151,6 +148,8 @@
 </section>
 
 <script>
+  import confetti from 'canvas-confetti';
+
   const form = document.querySelector<HTMLFormElement>('[data-hero-form]');
   const success = document.querySelector<HTMLElement>('[data-hero-success]');
   form?.addEventListener('submit', (e) => {
@@ -159,4 +158,112 @@
     success?.classList.remove('hidden');
     form.reset();
   });
+
+  // Fireworks burst when the CTA is hovered. One burst per enter,
+  // with a cooldown so repeated in/out doesn't spam the screen.
+  const cta = document.querySelector<HTMLButtonElement>('[data-cta-fireworks]');
+  if (cta && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const COLORS = ['#bff747', '#ff3e9e', '#ffffff', '#2fa9e0'];
+    let cooldown = false;
+
+    const fireFrom = (originX: number, originY: number) => {
+      // Upward burst from the button (angle ~90 = straight up)
+      confetti({
+        particleCount: 60,
+        spread: 70,
+        startVelocity: 45,
+        angle: 90,
+        origin: { x: originX, y: originY },
+        colors: COLORS,
+        scalar: 0.9,
+        gravity: 1.1,
+        ticks: 200,
+      });
+      // Small side-bursts for a "firework" feel
+      setTimeout(() => {
+        confetti({
+          particleCount: 30,
+          spread: 60,
+          startVelocity: 35,
+          angle: 60,
+          origin: { x: originX - 0.06, y: originY },
+          colors: COLORS,
+          scalar: 0.8,
+          ticks: 180,
+        });
+        confetti({
+          particleCount: 30,
+          spread: 60,
+          startVelocity: 35,
+          angle: 120,
+          origin: { x: originX + 0.06, y: originY },
+          colors: COLORS,
+          scalar: 0.8,
+          ticks: 180,
+        });
+      }, 120);
+    };
+
+    cta.addEventListener('mouseenter', () => {
+      if (cooldown) return;
+      cooldown = true;
+      const rect = cta.getBoundingClientRect();
+      const x = (rect.left + rect.width / 2) / window.innerWidth;
+      const y = (rect.top + rect.height / 2) / window.innerHeight;
+      fireFrom(x, y);
+      // ~1.2s before another burst can fire
+      setTimeout(() => { cooldown = false; }, 1200);
+    });
+  }
 </script>
+
+<style>
+  /* "More Admissions." cycles through rainbow colors continuously.
+     Uses `color` on keyframes so each hue is unambiguous (vs a gradient
+     wave which can feel muddy). 6s loop — slow enough to be noticeable,
+     fast enough to feel alive. */
+  .rainbow-cycle {
+    animation: rainbow-hue 6s linear infinite;
+    display: inline-block;
+  }
+  @keyframes rainbow-hue {
+    0%   { color: #ffffff; }
+    16%  { color: #ff3e9e; }  /* pink */
+    33%  { color: #ff7a1a; }  /* orange */
+    50%  { color: #bff747; }  /* lime */
+    66%  { color: #2fa9e0; }  /* electric blue */
+    83%  { color: #a855f7; }  /* violet */
+    100% { color: #ffffff; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rainbow-cycle { animation: none; color: #ffffff; }
+  }
+
+  /* CTA sweep: background is a 200%-wide lime→blue gradient. Default
+     position shows the lime half; on hover the background slides left
+     so the blue half moves into view. Keeps text readable (black works
+     on both lime and electric-blue accent). */
+  .cta-sweep {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-accent) 0%,
+      var(--color-accent) 50%,
+      var(--color-accent-pink) 100%
+    );
+    background-size: 200% 100%;
+    background-position: 0% 0%;
+    box-shadow: 0 0 0 0 rgba(191, 247, 71, 0);
+  }
+  .cta-sweep:hover,
+  .cta-sweep:focus-visible {
+    background-position: 100% 0%;
+    box-shadow: 0 10px 30px -8px rgba(255, 62, 158, 0.55);
+    color: #fff;
+    outline: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cta-sweep {
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+  }
+</style>

@@ -1,0 +1,143 @@
+---
+// HeroMesh — animated gradient blob background for the Hero section.
+// Pure CSS + a few lines of JS for mouse tracking. No runtime deps.
+// Design: 4 blurred radial blobs drift slowly in different orbits; one
+// blob tracks the cursor (subtle parallax). Uses the brand palette
+// (lime accent + electric-blue accent + soft violet). Blends additively
+// against the dark body via `mix-blend-mode: screen`.
+//
+// Degrades via `prefers-reduced-motion` (animations disabled, static).
+---
+<div class="hero-mesh" aria-hidden="true">
+  <div class="blob blob-lime"></div>
+  <div class="blob blob-blue"></div>
+  <div class="blob blob-violet"></div>
+  <div class="blob blob-cursor" data-cursor-blob></div>
+</div>
+
+<script>
+  // One cursor-tracked blob gives the mesh a tactile, alive feel without
+  // going full cursor-follower. Smoothed via requestAnimationFrame + lerp
+  // so it feels buttery instead of twitchy.
+  const blob = document.querySelector<HTMLElement>('[data-cursor-blob]');
+  if (blob && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let targetX = 0.5;
+    let targetY = 0.4;
+    let currentX = 0.5;
+    let currentY = 0.4;
+    const hero = blob.closest('#hero') || document.body;
+
+    const update = () => {
+      // Ease current toward target (smoother than snapping)
+      currentX += (targetX - currentX) * 0.06;
+      currentY += (targetY - currentY) * 0.06;
+      blob.style.setProperty('--mx', `${currentX * 100}%`);
+      blob.style.setProperty('--my', `${currentY * 100}%`);
+      requestAnimationFrame(update);
+    };
+    update();
+
+    hero.addEventListener('pointermove', (e: Event) => {
+      const pe = e as PointerEvent;
+      const rect = (hero as HTMLElement).getBoundingClientRect();
+      targetX = (pe.clientX - rect.left) / rect.width;
+      targetY = (pe.clientY - rect.top) / rect.height;
+    });
+
+    // Drift gently back toward center when the cursor leaves
+    hero.addEventListener('pointerleave', () => {
+      targetX = 0.5;
+      targetY = 0.4;
+    });
+  }
+</script>
+
+<style>
+  .hero-mesh {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    mix-blend-mode: screen;
+    will-change: transform;
+    opacity: 0.9;
+  }
+
+  /* Lime — top-left orbit */
+  .blob-lime {
+    width: 620px;
+    height: 620px;
+    top: -140px;
+    left: -120px;
+    background: radial-gradient(circle, rgba(191, 247, 71, 1) 0%, rgba(191, 247, 71, 0) 65%);
+    animation: drift-lime 22s ease-in-out infinite;
+  }
+  @keyframes drift-lime {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    33%      { transform: translate3d(80px, 40px, 0) scale(1.08); }
+    66%      { transform: translate3d(-30px, 100px, 0) scale(0.95); }
+  }
+
+  /* Electric blue — bottom-right orbit */
+  .blob-blue {
+    width: 680px;
+    height: 680px;
+    right: -160px;
+    bottom: -180px;
+    background: radial-gradient(circle, rgba(47, 169, 224, 0.95) 0%, rgba(47, 169, 224, 0) 65%);
+    animation: drift-blue 26s ease-in-out infinite;
+    animation-delay: -6s;
+  }
+  @keyframes drift-blue {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    40%      { transform: translate3d(-70px, -60px, 0) scale(1.1); }
+    75%      { transform: translate3d(40px, -120px, 0) scale(0.92); }
+  }
+
+  /* Soft violet — middle-right */
+  .blob-violet {
+    width: 500px;
+    height: 500px;
+    top: 25%;
+    right: 8%;
+    background: radial-gradient(circle, rgba(140, 110, 255, 0.75) 0%, rgba(140, 110, 255, 0) 65%);
+    animation: drift-violet 34s ease-in-out infinite;
+    animation-delay: -12s;
+    opacity: 0.7;
+  }
+  @keyframes drift-violet {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(-120px, 80px, 0) scale(1.12); }
+  }
+
+  /* Cursor-tracked blob — sits under cursor (--mx, --my set by JS). */
+  .blob-cursor {
+    --mx: 50%;
+    --my: 40%;
+    width: 420px;
+    height: 420px;
+    left: var(--mx);
+    top: var(--my);
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(191, 247, 71, 0.7) 0%, rgba(191, 247, 71, 0) 70%);
+    transition: opacity 0.4s ease;
+    opacity: 0.8;
+  }
+
+  /* Honor user motion preferences: freeze all drift + cursor follow */
+  @media (prefers-reduced-motion: reduce) {
+    .blob {
+      animation: none !important;
+    }
+    .blob-cursor {
+      display: none;
+    }
+  }
+</style>

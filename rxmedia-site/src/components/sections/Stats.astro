@@ -1,22 +1,30 @@
 ---
 // Stats overview — four hard numbers across four dimensions:
 // scale / outcome / credibility / demand.
+//
+// Each value is parsed into (prefix, number, suffix) so the counter
+// script can animate the numeric portion on scroll-in while keeping
+// symbols fixed. Example: "$100M+" → prefix "$", target 100, suffix "M+"
 const stats = [
-  { value: '$100M+', label: 'Ad Spend Managed' },
-  { value: '5x', label: 'Avg Return on Ad Spend' },
-  { value: '12 yrs', label: 'Healthcare Marketing Specialization' },
-  { value: '50,000+', label: 'Patient Inquiries Generated' },
+  { prefix: '$', target: 100, suffix: 'M+', label: 'Ad Spend Managed' },
+  { prefix: '', target: 5, suffix: 'x', label: 'Avg Return on Ad Spend' },
+  { prefix: '', target: 12, suffix: ' yrs', label: 'Healthcare Marketing Specialization' },
+  { prefix: '', target: 50000, suffix: '+', label: 'Patient Inquiries Generated', format: 'comma' },
 ];
 ---
-<section id="stats" class="relative bg-[color:var(--color-bg)] py-20 md:py-24">
+<section id="stats" class="relative bg-[color:var(--color-bg)] py-20 md:py-24" data-stats-section>
   <div class="mx-auto max-w-7xl px-6">
     <div class="grid grid-cols-2 gap-y-12 md:grid-cols-4 md:gap-x-8">
-      {stats.map(({ value, label }, i) => (
+      {stats.map(({ prefix, target, suffix, label, format }, i) => (
         <div
           class={`flex flex-col items-center text-center md:items-start md:text-left ${i > 0 ? 'md:border-l md:border-[color:var(--color-border)] md:pl-8' : ''}`}
         >
           <div class="text-5xl font-bold leading-none tracking-tight text-[color:var(--color-fg)] md:text-6xl lg:text-[72px]">
-            {value}
+            <span>{prefix}</span><span
+              class="stat-number"
+              data-target={target}
+              data-format={format ?? 'plain'}
+            >0</span><span>{suffix}</span>
           </div>
           <div class="mt-4 max-w-[18ch] text-sm font-medium uppercase tracking-wider text-[color:var(--color-fg-muted)] md:text-xs lg:text-sm">
             {label}
@@ -26,3 +34,51 @@ const stats = [
     </div>
   </div>
 </section>
+
+<script>
+  // Animate number counters when the Stats section enters the viewport.
+  // easeOutQuart for a nice decelerating feel. Fires once per page load.
+  const section = document.querySelector<HTMLElement>('[data-stats-section]');
+  if (section) {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const nodes = section.querySelectorAll<HTMLElement>('.stat-number');
+
+    const formatNumber = (n: number, format: string) => {
+      if (format === 'comma') return Math.round(n).toLocaleString('en-US');
+      return Math.round(n).toString();
+    };
+
+    const animate = (el: HTMLElement) => {
+      const target = Number(el.dataset.target || 0);
+      const format = el.dataset.format || 'plain';
+      if (reduced) {
+        el.textContent = formatNumber(target, format);
+        return;
+      }
+      const duration = 1800;
+      const start = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / duration);
+        // easeOutQuart — starts fast, settles smooth
+        const eased = 1 - Math.pow(1 - t, 4);
+        el.textContent = formatNumber(target * eased, format);
+        if (t < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            nodes.forEach((n) => animate(n));
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(section);
+  }
+</script>

@@ -20,6 +20,7 @@
   --color-accent: #bff747;        /* primary lime/green accent */
   --color-accent-ink: #8ab334;    /* deeper green for text on light bg */
   --color-accent-alt: #2fa9e0;    /* secondary blue accent */
+  --color-accent-pink: #ff3e9e;   /* vibrant pink — reserved for celebratory / hover states */
 
   /* Type scale — matches rxmedia.io computed sizes */
   --text-h1: 65px;
