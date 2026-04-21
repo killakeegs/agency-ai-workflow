@@ -25,7 +25,7 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -481,7 +481,7 @@ async def _process_one(
     }
 
 
-async def run(client_filter: str = "") -> None:
+async def run(client_filter: str = "", force: bool = False) -> None:
     notion = NotionClient(api_key=settings.notion_api_key)
     now = datetime.now()
 
@@ -508,12 +508,33 @@ async def run(client_filter: str = "") -> None:
         return
 
     processed_count = 0
+    # Stability threshold: transcripts whose last edit is within this window
+    # are still being written by Notion AI — wait for them to stabilize.
+    STABILITY_MIN = 5
+    now_utc = datetime.now(timezone.utc)
+
     for row in results:
         props = row.get("properties", {})
         title = "".join(
             p.get("text", {}).get("content", "")
             for p in props.get("Title", {}).get("title", [])
         )
+
+        # Skip transcripts Notion AI is still writing. Picking these up early
+        # produced partial-meeting drafts (e.g. Summit 2026-04-21 at 9:05).
+        # --force bypasses for ad-hoc runs (e.g. reprocessing a flipped transcript
+        # whose last_edited_time reflects our PATCH, not real Notion AI activity).
+        last_edited_str = row.get("last_edited_time", "")
+        if not force and last_edited_str:
+            try:
+                last_edited = datetime.fromisoformat(last_edited_str.replace("Z", "+00:00"))
+                age_min = (now_utc - last_edited).total_seconds() / 60
+                if age_min < STABILITY_MIN:
+                    print(f"\n  ⏳ Skipping (transcript still updating, last edit "
+                          f"{int(age_min)} min ago): {title[:60]}")
+                    continue
+            except ValueError:
+                pass
         client_field = "".join(
             p.get("text", {}).get("content", "")
             for p in props.get("Client", {}).get("rich_text", [])
@@ -599,9 +620,12 @@ async def _alert_failure(error: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Process meeting transcripts")
     parser.add_argument("--client", default="", help="Only process for this client key")
+    parser.add_argument("--force", action="store_true",
+                        help="Bypass the stability gate (useful for re-processing a transcript "
+                             "whose last_edited_time reflects a manual flip, not Notion AI activity)")
     args = parser.parse_args()
     try:
-        asyncio.run(run(client_filter=args.client))
+        asyncio.run(run(client_filter=args.client, force=args.force))
     except Exception as e:
         import traceback
         error = traceback.format_exc()
