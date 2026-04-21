@@ -302,15 +302,16 @@ async def _write_state(
 
 # ── Slack alerts ───────────────────────────────────────────────────────────────
 
-async def _post_to_slack(text: str) -> None:
-    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL:
+async def _post_to_slack(text: str, channel: str = "") -> None:
+    ch = channel or SLACK_CHANNEL
+    if not SLACK_BOT_TOKEN or not ch:
         return
     try:
         async with httpx.AsyncClient() as http:
             await http.post(
                 "https://slack.com/api/chat.postMessage",
                 headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-                json={"channel": SLACK_CHANNEL, "text": text},
+                json={"channel": ch, "text": text},
                 timeout=10.0,
             )
     except Exception:
@@ -483,7 +484,8 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             matched = _detect_urgency(thread.get("subject", ""), thread.get("body", ""))
             if matched and SLACK_BOT_TOKEN:
                 alert = _format_urgent_alert(client_name, thread, matched)
-                await _post_to_slack(alert)
+                client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
+                await _post_to_slack(alert, channel=client_channel)
                 print(f"  🚨 Urgent alert sent: {thread.get('subject', '')[:60]} (matched: {', '.join(matched[:3])})")
 
         print(f"\n  Processing {client_name}: {len(summarized)} threads from {len(msgs)} messages")
@@ -576,10 +578,11 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             if latest:
                 await update_last_contact(notion, client_name, latest)
 
-        # Slack alert for flags
+        # Slack alert for flags — posted to the client's dedicated channel
         if flags and SLACK_BOT_TOKEN:
+            client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
             alert = _format_slack_alert(client_name, flags)
-            await _post_to_slack(alert)
+            await _post_to_slack(alert, channel=client_channel)
 
     # Update state
     status = (

@@ -447,15 +447,16 @@ Return ONLY a JSON array. Empty array if nothing is resolved:
 
 # ── Slack ──────────────────────────────────────────────────────────────────────
 
-async def _post_to_slack(text: str) -> None:
-    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL:
+async def _post_to_slack(text: str, channel: str = "") -> None:
+    ch = channel or SLACK_CHANNEL
+    if not SLACK_BOT_TOKEN or not ch:
         return
     try:
         async with httpx.AsyncClient() as http:
             await http.post(
                 "https://slack.com/api/chat.postMessage",
                 headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-                json={"channel": SLACK_CHANNEL, "text": text},
+                json={"channel": ch, "text": text},
                 timeout=10.0,
             )
     except Exception:
@@ -686,7 +687,8 @@ async def _process_one(
         ])
 
     slack_msg = "\n".join(slack_parts)
-    await _post_to_slack(slack_msg)
+    client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
+    await _post_to_slack(slack_msg, channel=client_channel)
     print("  ✓ Posted to Slack")
 
     return {
