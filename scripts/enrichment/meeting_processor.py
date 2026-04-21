@@ -216,8 +216,23 @@ _DOMAIN_MAP, _EMAIL_MAP = _build_client_email_map()
 
 
 def _match_client(client_field: str, attendees_text: str = "") -> str | None:
-    """Match to a client by name field OR attendee emails."""
-    # First try name matching
+    """Match to a client. Attendee email domains take precedence over Notion AI's client_field.
+
+    Email-first ordering matters: Notion AI sometimes mis-populates the Client field on
+    transcripts (e.g. tagging an internal marketing meeting as "Summit Therapy"). Attendee
+    emails reflect who was actually on the call and are a harder signal.
+    """
+    # Email-first: match by attendee email domain
+    if attendees_text:
+        emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
+        for email in emails:
+            if email in _EMAIL_MAP:
+                return _EMAIL_MAP[email]
+            domain = email.split("@")[-1]
+            if domain in _DOMAIN_MAP:
+                return _DOMAIN_MAP[domain]
+
+    # Fallback: name field matching (Notion AI's client field — may be mis-tagged)
     if client_field:
         client_lower = client_field.strip().lower()
         for key, cfg in CLIENTS.items():
@@ -229,44 +244,52 @@ def _match_client(client_field: str, attendees_text: str = "") -> str | None:
             if key.replace("_", " ") in client_lower:
                 return key
 
-    # Fallback: match by attendee email domain
-    if attendees_text:
-        emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
-        for email in emails:
-            if email in _EMAIL_MAP:
-                return _EMAIL_MAP[email]
-            domain = email.split("@")[-1]
-            if domain in _DOMAIN_MAP:
-                return _DOMAIN_MAP[domain]
-
     return None
 
 
 def _detect_meeting_type(client_field: str, title: str, attendees_text: str) -> str:
     """Determine if a meeting is client, internal, or unrelated.
     Returns: 'client', 'internal', or 'skip'.
+
+    Attendee data is evaluated BEFORE the Notion AI client_field. Notion AI sometimes
+    pre-populates the Client field incorrectly (e.g. an internal marketing session tagged
+    as "Summit Therapy"). Checking attendees first catches and corrects these mis-tags.
     """
-    # If client field or attendee emails match a known client
-    if _match_client(client_field, attendees_text):
+    # Parse attendee emails first — they're more authoritative than Notion AI's field
+    attendee_emails: list[str] = []
+    if attendees_text:
+        attendee_emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
+
+    if attendee_emails:
+        external = [
+            e for e in attendee_emails
+            if not any(e.endswith(f"@{d}") for d in RXMEDIA_DOMAINS)
+        ]
+
+        # All attendees are RxMedia → internal, regardless of what Notion AI tagged
+        if not external:
+            return "internal"
+
+        # External attendees — try to match by email domain
+        email_client = _match_client("", " ".join(external))
+        if email_client:
+            # Cross-check: warn when Notion AI's client field disagrees with attendees
+            name_client = _match_client(client_field, "") if client_field else None
+            if name_client and name_client != email_client:
+                print(f"  ⚠ Mis-tag: Notion AI tagged '{client_field}' but attendee "
+                      f"emails suggest '{email_client}'. Using attendee match.")
+            return "client"
+
+    # No attendee data (or no external attendees matched) — fall back to name/title
+    if _match_client(client_field, ""):
         return "client"
 
-    # Check attendees — if all are RxMedia team, it's internal
-    if attendees_text:
-        emails = re.findall(r"[\w\.-]+@[\w\.-]+", attendees_text.lower())
-        if emails:
-            all_internal = all(
-                any(d in e for d in RXMEDIA_DOMAINS) for e in emails
-            )
-            if all_internal:
-                return "internal"
-
-    # Check title for internal signals
+    # Title-based internal signals
     title_lower = (title or "").lower()
     internal_signals = ["standup", "team meeting", "internal", "rxmedia", "strategy", "planning"]
     if any(s in title_lower for s in internal_signals):
         return "internal"
 
-    # Check if any team member name is in the client field
     if client_field:
         cl = client_field.lower()
         if any(name in cl for name in RXMEDIA_TEAM):
@@ -338,6 +361,88 @@ def _determine_recipients(
             cc_seen.add(addr)
 
     return to, ", ".join(cc_list)
+
+
+# ── Meeting-flag auto-close ────────────────────────────────────────────────────
+
+async def _evaluate_meeting_flags(
+    parsed: dict,
+    open_flags: list[dict],
+    meeting_date: str,
+) -> list[dict]:
+    """Ask Claude whether this meeting's outcomes resolve any prior open flags.
+
+    Returns list of {flag_id, flag_description, reason} for flags to close.
+    Only passes flags to Claude — never auto-closes without Claude's explicit judgment.
+    """
+    if not open_flags:
+        return []
+
+    import anthropic as _anthropic
+    client = _anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    flags_block = "\n".join(
+        f"  flag #{i+1} [id={f['id'][:8]}]: [{f['type']}] {f['description'][:200]}"
+        for i, f in enumerate(open_flags[:20])  # cap at 20 to keep prompt tight
+    )
+    flags_subset = open_flags[:20]
+
+    summary = parsed.get("summary", "")[:600]
+    decisions = json.dumps(parsed.get("key_decisions", []) or [], indent=2)[:1200]
+    approvals = json.dumps(parsed.get("approvals_given", []) or [], indent=2)[:600]
+    action_items = json.dumps(parsed.get("action_items", []) or [], indent=2)[:1200]
+
+    prompt = f"""A meeting was processed on {meeting_date}.
+
+SUMMARY: {summary}
+
+KEY DECISIONS:
+{decisions}
+
+APPROVALS GIVEN:
+{approvals}
+
+ACTION ITEMS:
+{action_items}
+
+OPEN FLAGS FROM PRIOR INTERACTIONS (numbered):
+{flags_block}
+
+For each flag: does this meeting's content EXPLICITLY resolve it?
+Only mark resolved when the meeting clearly closes the item — a decision made, approval given, blocker cleared, or concern addressed.
+If in any doubt, leave it open. False closures are worse than leaving a flag open an extra cycle.
+
+Return ONLY a JSON array. Empty array if nothing is resolved:
+[{{"flag_index": N, "reason": "one sentence why this meeting resolves it"}}]"""
+
+    try:
+        response = client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        match = re.search(r"\[.*\]", raw, re.DOTALL)
+        if not match:
+            return []
+        resolved_raw = json.loads(match.group(0))
+        result: list[dict] = []
+        for r in resolved_raw:
+            try:
+                idx = int(r.get("flag_index", 0)) - 1
+            except (TypeError, ValueError):
+                continue
+            if 0 <= idx < len(flags_subset):
+                src = flags_subset[idx]
+                result.append({
+                    "flag_id":          src["id"],
+                    "flag_description": src["description"],
+                    "reason":           (r.get("reason") or "").strip(),
+                })
+        return result
+    except Exception as e:
+        print(f"  ⚠ Flag auto-close evaluation failed: {e}")
+        return []
 
 
 # ── Slack ──────────────────────────────────────────────────────────────────────
@@ -460,6 +565,23 @@ async def _process_one(
             print(f"  ⚠ Flags DB write failed: {e}")
     elif flag_dicts:
         print(f"  ⚠ NOTION_FLAGS_DB_ID not set — skipping {len(flag_dicts)} flag writes")
+
+    # Auto-close prior flags that this meeting resolves
+    # Same pattern as email monitor: re-evaluate open flags whenever new data arrives.
+    # Skipped for internal meetings — they don't carry client resolution signals.
+    if FLAGS_DB_ID and not is_internal:
+        try:
+            from src.services.email_enrichment import load_open_flags, auto_close_resolved_flags
+            open_flags = await load_open_flags(notion, FLAGS_DB_ID, client_key)
+            if open_flags:
+                to_close = await _evaluate_meeting_flags(parsed, open_flags, meeting_date_str)
+                if to_close:
+                    closed = await auto_close_resolved_flags(notion, FLAGS_DB_ID, to_close)
+                    print(f"  ✓ Auto-closed {closed} flag(s) resolved by this meeting")
+                else:
+                    print(f"  ✓ {len(open_flags)} open flag(s) reviewed — none resolved by this meeting")
+        except Exception as e:
+            print(f"  ⚠ Meeting flag auto-close failed: {e}")
 
     # Draft follow-up email (skip for internal meetings)
     email = {}
