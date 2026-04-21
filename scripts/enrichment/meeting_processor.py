@@ -275,6 +275,71 @@ def _detect_meeting_type(client_field: str, title: str, attendees_text: str) -> 
     return "skip"
 
 
+# ── Recipient selection for follow-up emails ──────────────────────────────────
+
+# Always CC these RxMedia internal addresses on every client follow-up email.
+# Keep tight — these are the roles who read every client update by policy.
+RXMEDIA_ALWAYS_CC = {"content@rxmedia.io"}
+
+# Never put these in TO or CC (they're senders or bots, not recipients).
+# Default sender is keegan@rxmedia.io — including him anywhere CC's the sender.
+RXMEDIA_NEVER_CC = {"keegan@rxmedia.io"}
+
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w+")
+
+
+def _determine_recipients(
+    attendees_text: str,
+    parsed_attendee_emails: list[str],
+    cfg: dict,
+) -> tuple[str, str]:
+    """Return (to, cc_csv) for the follow-up email.
+
+    Logic:
+    - Collect every email visible in `attendees_text` + `parsed_attendee_emails`.
+    - Filter out RxMedia internal addresses (anything @rxmedia.io).
+    - If the client's primary contact email is among attendees → use as To.
+    - Else first client-side attendee email → To.
+    - Else fall back to cfg.primary_contact_email / cfg.email.
+    - CC = remaining client attendees + RXMEDIA_ALWAYS_CC, minus To + NEVER_CC.
+    - All addresses de-duped, lowercased.
+    """
+    primary = (cfg.get("primary_contact_email") or cfg.get("email") or "").lower().strip()
+
+    # Collect candidate emails
+    raw = set(_EMAIL_RE.findall(attendees_text or ""))
+    for e in parsed_attendee_emails or []:
+        if e:
+            raw.add(e)
+    raw = {e.lower().strip() for e in raw if e}
+
+    # Exclude RxMedia internal addresses from the client-side attendee set
+    client_attendees = [e for e in raw if not e.endswith("@rxmedia.io")]
+    # Stable sort for determinism
+    client_attendees.sort()
+
+    # Pick To
+    if primary and primary in client_attendees:
+        to = primary
+        others = [e for e in client_attendees if e != primary]
+    elif client_attendees:
+        to = client_attendees[0]
+        others = client_attendees[1:]
+    else:
+        to = primary  # fallback — may be empty string
+        others = []
+
+    # Build CC
+    cc_seen = {to, ""} | RXMEDIA_NEVER_CC
+    cc_list: list[str] = []
+    for addr in list(others) + list(RXMEDIA_ALWAYS_CC):
+        if addr and addr not in cc_seen:
+            cc_list.append(addr)
+            cc_seen.add(addr)
+
+    return to, ", ".join(cc_list)
+
+
 # ── Slack ──────────────────────────────────────────────────────────────────────
 
 async def _post_to_slack(text: str) -> None:
@@ -302,8 +367,14 @@ async def _process_one(
     meeting_date_str: str,
     is_internal: bool = False,
     attendees_text: str = "",
+    meeting_time: datetime | None = None,
 ) -> dict:
-    """Process a single meeting transcript. Returns summary dict."""
+    """Process a single meeting transcript. Returns summary dict.
+
+    ``meeting_time`` is the transcript page's created_time (close to when
+    Notion AI joined the meeting). Used to look up the calendar event for
+    recipient routing.
+    """
 
     # Match client
     if is_internal:
@@ -395,10 +466,34 @@ async def _process_one(
     if not is_internal:
         print("  Drafting follow-up email...")
         email = await _draft_follow_up_email(parsed, client_name, meeting_date_str)
-        if not email.get("to"):
-            email["to"] = cfg.get("primary_contact_email") or cfg.get("email", "")
-        if not email.get("cc"):
-            email["cc"] = "keegan@rxmedia.io"
+
+        # Pull calendar invitees for this meeting — authoritative source for
+        # who was actually on the call (transcript body rarely has emails).
+        calendar_emails: list[str] = []
+        if meeting_time is not None:
+            try:
+                from src.integrations.google_calendar import (
+                    find_event_near_time, extract_attendee_emails as _cal_emails,
+                )
+                event = await find_event_near_time(client_name, meeting_time)
+                if event:
+                    calendar_emails = _cal_emails(event)
+                    print(f"  ✓ Calendar event matched: {len(calendar_emails)} invitee(s)")
+                else:
+                    print(f"  ⚠ No calendar event matched for {client_name}")
+            except Exception as e:
+                print(f"  ⚠ Calendar lookup failed: {e}")
+
+        # Determine recipients — calendar invitees first, then transcript-extracted
+        # emails, then the configured primary contact as last resort.
+        combined_emails = list(calendar_emails) + list(parsed.get("attendee_emails", []) or [])
+        to_addr, cc_csv = _determine_recipients(
+            attendees_text or "",
+            combined_emails,
+            cfg,
+        )
+        email["to"] = to_addr
+        email["cc"] = cc_csv
 
         # Auto-create Gmail draft
         html_body = email.get("html_body", email.get("body", ""))
@@ -420,6 +515,8 @@ async def _process_one(
         print("  Internal meeting — skipping email draft")
     print(f"  ✓ Subject: {email.get('subject', '')}")
     print(f"  ✓ To: {email.get('to', '')}")
+    if email.get("cc"):
+        print(f"  ✓ CC: {email.get('cc', '')}")
 
     # Mark as processed
     await notion._client.request(
@@ -542,6 +639,16 @@ async def run(client_filter: str = "", force: bool = False) -> None:
         date_obj = props.get("Meeting Date", {}).get("date")
         meeting_date = date_obj.get("start", "") if date_obj else ""
 
+        # created_time is close to when Notion AI joined the meeting — used for
+        # looking up the calendar event in _process_one.
+        created_str = row.get("created_time", "")
+        created_dt: datetime | None = None
+        if created_str:
+            try:
+                created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            except ValueError:
+                created_dt = None
+
         # Smart routing: client, internal, or skip
         # Read attendees from page for detection (if available)
         attendees_text = ""
@@ -585,11 +692,13 @@ async def run(client_filter: str = "", force: bool = False) -> None:
             result = await _process_one(
                 notion, row["id"], title, "RxMedia", meeting_date,
                 is_internal=True, attendees_text=attendees_text,
+                meeting_time=created_dt,
             )
         else:
             result = await _process_one(
                 notion, row["id"], title, client_field, meeting_date,
                 attendees_text=attendees_text,
+                meeting_time=created_dt,
             )
 
         if result["status"] == "processed":

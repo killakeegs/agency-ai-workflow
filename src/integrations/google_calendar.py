@@ -80,6 +80,80 @@ def extract_attendee_emails(event: dict) -> list[str]:
     return emails
 
 
+async def find_event_near_time(
+    client_name: str,
+    target_time: datetime,
+    window_hours: int = 4,
+) -> dict | None:
+    """Find the calendar event matching a given meeting.
+
+    Queries events within ``window_hours`` of ``target_time``, filters to those
+    whose title shares a meaningful word with ``client_name``, and returns the
+    one whose end time is closest to ``target_time``. Returns None if no match.
+
+    Used by the meeting processor to resolve who was actually invited to a
+    meeting (calendar is authoritative) instead of defaulting to the client's
+    configured primary contact.
+    """
+    if target_time.tzinfo is None:
+        target_time = target_time.replace(tzinfo=timezone.utc)
+
+    time_min = (target_time - timedelta(hours=window_hours)).astimezone(timezone.utc).isoformat()
+    time_max = (target_time + timedelta(hours=window_hours)).astimezone(timezone.utc).isoformat()
+
+    token = await get_access_token()
+    async with httpx.AsyncClient() as http:
+        r = await http.get(
+            f"{BASE}/calendars/primary/events",
+            params={
+                "timeMin":      time_min,
+                "timeMax":      time_max,
+                "q":            client_name,
+                "singleEvents": "true",
+                "orderBy":      "startTime",
+                "maxResults":   20,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+
+    if r.status_code != 200:
+        return None
+
+    events = r.json().get("items", [])
+    if not events:
+        return None
+
+    # Filter to events whose title shares a meaningful word with client_name.
+    # "q" search is loose — ensure the match isn't coincidental.
+    name_words = {w for w in client_name.lower().split() if len(w) > 3}
+    candidates: list[tuple[float, dict]] = []
+
+    for ev in events:
+        title = (ev.get("summary") or "").lower()
+        if name_words and not any(w in title for w in name_words):
+            continue
+
+        end_raw = ev.get("end", {}).get("dateTime") or ev.get("end", {}).get("date")
+        if not end_raw:
+            continue
+        try:
+            end_dt = datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+        distance = abs((end_dt - target_time.astimezone(timezone.utc)).total_seconds())
+        candidates.append((distance, ev))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
 def extract_event_datetime(event: dict) -> tuple[datetime | None, str]:
     """Return (start datetime UTC, formatted time string)."""
     start = event.get("start", {})

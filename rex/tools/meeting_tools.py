@@ -59,6 +59,7 @@ Return this exact JSON structure:
   "meeting_type": "Kickoff" | "Pipeline Review" | "Content Review" | "Design Review" | "Check-in" | "Ad Hoc",
   "duration_minutes": <estimated from transcript length>,
   "attendees": ["Name 1", "Name 2"],
+  "attendee_emails": ["name1@example.com", "name2@example.com"],
   "summary": "3-5 sentences summarizing what this meeting was about",
   "key_decisions": [
     {{"decision": "what was decided", "reasoning": "why this direction was chosen"}}
@@ -99,6 +100,10 @@ Return this exact JSON structure:
 
 Be specific — use names, dates, and details from the transcript. Don't invent
 information that isn't in the transcript. If a section has nothing, use an empty array [].
+
+For attendee_emails: extract every email address visible in the transcript (both
+client-side and RxMedia-side). Empty list [] if none are visible. These are used
+to route the follow-up email to people who actually attended the meeting.
 """
 
 # ── Follow-up email prompt ────────────────────────────────────────────────────
