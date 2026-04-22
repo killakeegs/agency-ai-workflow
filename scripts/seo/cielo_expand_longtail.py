@@ -399,7 +399,7 @@ async def write_candidates_to_notion(
                 "Competitor Positions":   _rt(f"(long-tail expansion of seed: {c['seed']})"),
                 "Priority":               _select("Medium"),
                 "Gap Type":               _select("Create"),
-                "Status":                 _select("Target"),
+                "Status":                 _select("Proposed"),
                 "Notes":                  _rt(notes),
             },
         )

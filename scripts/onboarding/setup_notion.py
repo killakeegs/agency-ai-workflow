@@ -435,6 +435,19 @@ def competitors_schema() -> dict:
             }
         },
         "Website":         {"url": {}},
+        # Approval lifecycle. Auto-discovered competitors (from SERP aggregation
+        # on our priority keywords) land as Proposed; team reviews and flips
+        # to Active for real competitors or Dismissed for false positives.
+        # Downstream agents only read Active (never Proposed).
+        "Status": {
+            "select": {
+                "options": [
+                    {"name": "Proposed",  "color": "blue"},
+                    {"name": "Active",    "color": "green"},
+                    {"name": "Dismissed", "color": "red"},
+                ]
+            }
+        },
         "Threat": {
             "select": {
                 "options": [
@@ -550,12 +563,18 @@ def keywords_schema() -> dict:
         },
         "Target Page":       {"rich_text": {}},  # which page should rank for this
         "Location Modifier": {"rich_text": {}},  # e.g. "Portland OR", "NE Portland"
+        # Approval lifecycle. System-generated proposals always land as
+        # Proposed; team reviews and flips to Target for approved keywords
+        # or Dismissed for off-strategy. Downstream agents only read Target
+        # (never Proposed) so unreviewed proposals never feed content work.
         "Status": {
             "select": {
                 "options": [
-                    {"name": "Target",   "color": "gray"},
-                    {"name": "Ranking",  "color": "yellow"},
-                    {"name": "Won",      "color": "green"},
+                    {"name": "Proposed",  "color": "blue"},
+                    {"name": "Target",    "color": "gray"},
+                    {"name": "Ranking",   "color": "yellow"},
+                    {"name": "Won",       "color": "green"},
+                    {"name": "Dismissed", "color": "red"},
                 ]
             }
         },
