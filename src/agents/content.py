@@ -102,6 +102,12 @@ CONTENT_DB_SCHEMA: dict[str, Any] = {
         }
     },
     "Word Count": {"number": {}},
+    # Team writes the "why" here when approving or requesting revisions.
+    # The Style Reference sweep reads this field to log teaching examples.
+    "Feedback": {"rich_text": {}},
+    # Set by the Style Reference sweep once an entry has been logged so we
+    # never double-log. Uncheck manually to re-log after a follow-up edit.
+    "Style Logged": {"checkbox": {}},
 }
 
 # ── System prompt ─────────────────────────────────────────────────────────────
