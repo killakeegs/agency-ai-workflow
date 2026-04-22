@@ -172,6 +172,10 @@ seo-activate:
 	  $(if $(GA4_ID),--ga4-property-id "$(GA4_ID)",) \
 	  $(if $(SA_PROJECT),--search-atlas-project-id "$(SA_PROJECT)",)
 
+# Create the Style Reference DB — agent feedback loop (approvals/rejections/edits)
+style-reference-init:
+	@$(PYTHON) scripts/seo/style_reference_init.py --client $(CLIENT)
+
 # ── Onboarding ────────────────────────────────────────────────────────────────
 
 check-env:

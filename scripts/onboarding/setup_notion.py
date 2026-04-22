@@ -620,6 +620,72 @@ def blog_posts_schema() -> dict:
     }
 
 
+def style_reference_schema() -> dict:
+    """
+    Schema for the Style Reference DB — the agent feedback loop.
+    One row per approval, rejection, or edit of an agent output. Agents
+    read recent entries for their agent+asset type at the start of a run
+    to prime generation with examples the team has already validated for
+    THIS client. This is how per-client voice compounds over time instead
+    of drifting back to generic LLM output each run.
+    Created by `make style-reference-init`, not at initial onboarding.
+    """
+    return {
+        "Title": {"title": {}},
+        "Agent": {
+            "select": {
+                "options": [
+                    {"name": "ContentAgent",           "color": "blue"},
+                    {"name": "SitemapAgent",           "color": "green"},
+                    {"name": "BlogAgent",              "color": "orange"},
+                    {"name": "GBPPostAgent",           "color": "purple"},
+                    {"name": "ReviewResponseAgent",    "color": "pink"},
+                    {"name": "SocialAgent",            "color": "yellow"},
+                    {"name": "ImageGenAgent",          "color": "brown"},
+                    {"name": "KeywordResearchAgent",   "color": "red"},
+                    {"name": "Other",                  "color": "gray"},
+                ]
+            }
+        },
+        "Asset Type": {
+            "select": {
+                "options": [
+                    {"name": "Blog Post",          "color": "blue"},
+                    {"name": "Service Page",       "color": "green"},
+                    {"name": "Home Page",          "color": "green"},
+                    {"name": "About Page",         "color": "green"},
+                    {"name": "Location Page",      "color": "green"},
+                    {"name": "GBP Post",           "color": "purple"},
+                    {"name": "Review Response",    "color": "pink"},
+                    {"name": "Social Post",        "color": "yellow"},
+                    {"name": "Meta Tags",          "color": "gray"},
+                    {"name": "Email Draft",        "color": "brown"},
+                    {"name": "FAQ Entry",          "color": "orange"},
+                    {"name": "Image Prompt",       "color": "red"},
+                    {"name": "Keyword Cluster",    "color": "default"},
+                    {"name": "Other",              "color": "default"},
+                ]
+            }
+        },
+        "Decision": {
+            "select": {
+                "options": [
+                    {"name": "Approved",             "color": "green"},
+                    {"name": "Approved with Edits",  "color": "yellow"},
+                    {"name": "Rejected",             "color": "red"},
+                    {"name": "Escalated",            "color": "orange"},
+                ]
+            }
+        },
+        "Reason":          {"rich_text": {}},
+        "Original Output": {"rich_text": {}},
+        "Final Output":    {"rich_text": {}},
+        "Target":          {"rich_text": {}},
+        "Reviewer":        {"rich_text": {}},
+        "Logged Date":     {"date": {}},
+    }
+
+
 def _stage_color(stage: PipelineStage) -> str:
     colors = ["gray", "blue", "green", "yellow", "orange", "purple", "red", "pink"]
     stages = list(PipelineStage)

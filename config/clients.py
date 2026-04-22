@@ -71,6 +71,7 @@ _MANUAL: dict[str, dict] = {
     #     "competitors_db_id":       "",
     #     "keywords_db_id":          "",
     #     "seo_metrics_db_id":       "",
+    #     "style_reference_db_id":   "",  # agent feedback loop; set by make style-reference-init
     #     "gbp_posts_db_id":         "",  # auto-created on first make gbp-posts run
     #     # ── Blog (if blog in services) ────────────────────────────────────────
     #     "blog_posts_db_id":        "",  # auto-created on first make blog-ideas run

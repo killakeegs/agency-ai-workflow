@@ -35,6 +35,10 @@ import re
 from typing import Any
 
 from ..models.pipeline import PipelineStage
+from ..services.style_reference import (
+    format_examples_for_prompt,
+    get_recent_examples,
+)
 from .base_agent import AgentError, BaseAgent
 from .tools import CONTENT_TOOLS
 
@@ -530,6 +534,7 @@ class ContentAgent(BaseAgent):
         sitemap_db_id = kwargs["sitemap_db_id"]
         business_profile_page_id = kwargs.get("business_profile_page_id", "")
         content_db_id_arg = kwargs.get("content_db_id") or ""
+        style_reference_db_id = kwargs.get("style_reference_db_id") or ""
         mood_board_db_id = kwargs.get("mood_board_db_id")
         revision_notes = kwargs.get("revision_notes", "")
 
@@ -665,6 +670,34 @@ class ContentAgent(BaseAgent):
                     f"{_get_rich_text(mp2.get('Color Palette Description', {}))}"
                 )
 
+        # Style Reference — recent team-approved examples for this client.
+        # Agents prime from these so per-client voice compounds over time instead
+        # of drifting back to generic output each run. Missing DB = no-op.
+        style_reference_block = ""
+        if style_reference_db_id:
+            try:
+                examples = await get_recent_examples(
+                    notion=self.notion,
+                    style_reference_db_id=style_reference_db_id,
+                    agent="ContentAgent",
+                    asset_type=None,  # v1: no asset filter; later iterations can filter per-page
+                    limit=5,
+                )
+                formatted = format_examples_for_prompt(examples)
+                self.log.info(f"Style Reference — loaded {len(examples)} example(s)")
+                style_reference_block = (
+                    "PRIOR APPROVED EXAMPLES — the team has approved the following "
+                    "copy for THIS client before. Match the voice, tone, and editorial "
+                    "decisions shown in the WHY reasons. These reflect how this client "
+                    "actually sounds, and supersede any generic defaults you'd reach "
+                    "for from the brand guidelines alone.\n\n"
+                    f"{formatted}"
+                )
+            except Exception as e:
+                self.log.warning(f"Could not load Style Reference examples: {e}")
+        else:
+            self.log.info("Style Reference — no DB configured for this client; generating from first principles")
+
         self.log.info("Context loaded — reading sitemap...")
 
         # ── Step 2: Read all sitemap pages ────────────────────────────────────
@@ -786,6 +819,8 @@ MEETING CONTEXT:
 
 ONBOARDING CONTEXT:
 {client_notes[:1000]}
+
+{style_reference_block}
 
 Generate full, publish-ready page copy for the following {len(batch)} pages:
 {page_list}

@@ -87,7 +87,10 @@
     "email": "m.camacho@cielotreatmentcenter.com",
     "primary_contact_email": "m.camacho@cielotreatmentcenter.com",
     "primary_contact": "Martin Camacho",
-    "slack_channel": "#cielo-recovery"
+    "slack_channel": "#cielo-recovery",
+    "style_reference_db_id": "34af7f45-333e-81ed-9738-d321d3833b2f",
+    "gsc_site_url": "https://www.cielotreatmentcenter.com/",
+    "ga4_property_id": "356641770"
   },
   "another_chance": {
     "client_id": "another_chance",

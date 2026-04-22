@@ -146,6 +146,7 @@ async def run_content(client_key: str, notion: NotionClient, clickup: ClickUpCli
         sitemap_db_id=cfg["sitemap_db_id"],
         business_profile_page_id=cfg.get("business_profile_page_id", ""),
         content_db_id=cfg.get("content_db_id", ""),
+        style_reference_db_id=cfg.get("style_reference_db_id", ""),
         revision_notes=revision_notes,
     )
 
