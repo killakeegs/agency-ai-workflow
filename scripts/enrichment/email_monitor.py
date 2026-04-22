@@ -242,6 +242,7 @@ async def _get_or_create_state_db(notion: NotionClient) -> str:
                 "Status": {"rich_text": {}},
                 "Emails Processed": {"number": {}},
                 "Clients Enriched": {"rich_text": {}},
+                "Alerted Thread IDs": {"rich_text": {}},
             },
         },
     )
@@ -250,8 +251,21 @@ async def _get_or_create_state_db(notion: NotionClient) -> str:
     return db_id
 
 
+async def _ensure_alerted_field(notion: NotionClient, db_id: str) -> None:
+    """Self-heal: add Alerted Thread IDs field to the state DB if missing.
+    State DBs provisioned before dedup was added won't have this property.
+    """
+    db = await notion._client.request(path=f"databases/{db_id}", method="GET")
+    if "Alerted Thread IDs" not in db.get("properties", {}):
+        await notion._client.request(
+            path=f"databases/{db_id}",
+            method="PATCH",
+            body={"properties": {"Alerted Thread IDs": {"rich_text": {}}}},
+        )
+
+
 async def _read_state(notion: NotionClient, db_id: str) -> dict:
-    """Read monitor state (last_checked_at, etc.)."""
+    """Read monitor state (last_checked_at, alerted threads, etc.)."""
     rows = await notion._client.request(
         path=f"databases/{db_id}/query",
         method="POST",
@@ -262,9 +276,20 @@ async def _read_state(notion: NotionClient, db_id: str) -> dict:
         props = row.get("properties", {})
         date_obj = props.get("Last Checked", {}).get("date")
         last_checked = date_obj.get("start", "") if date_obj else ""
+        alerted_raw = "".join(
+            p.get("text", {}).get("content", "")
+            for p in props.get("Alerted Thread IDs", {}).get("rich_text", [])
+        )
+        alerted_threads: dict[str, str] = {}
+        if alerted_raw.strip():
+            try:
+                alerted_threads = json.loads(alerted_raw)
+            except json.JSONDecodeError:
+                alerted_threads = {}
         return {
             "page_id": row["id"],
             "last_checked": last_checked,
+            "alerted_threads": alerted_threads,
         }
     return {}
 
@@ -277,13 +302,16 @@ async def _write_state(
     emails_processed: int,
     clients_enriched: list[str],
     status: str,
+    alerted_threads: dict[str, str] | None = None,
 ) -> None:
+    alerted_json = json.dumps(alerted_threads or {}, separators=(",", ":"))
     props = {
         "Key": {"title": [{"text": {"content": "monitor_state"}}]},
         "Last Checked": {"date": {"start": last_checked}},
         "Status": {"rich_text": [{"text": {"content": status[:2000]}}]},
         "Emails Processed": {"number": emails_processed},
         "Clients Enriched": {"rich_text": [{"text": {"content": ", ".join(clients_enriched)[:2000]}}]},
+        "Alerted Thread IDs": {"rich_text": [{"text": {"content": alerted_json[:2000]}}]},
     }
 
     if page_id:
@@ -328,20 +356,51 @@ def _format_slack_alert(client_name: str, flags: list[dict]) -> str:
     return "\n".join(lines)
 
 
-# Keyword-based urgency detection — fires even when Claude doesn't flag
+# Keyword-based urgency detection — fires even when Claude doesn't flag.
+# Kept intentionally strong. Words like "immediately" were dropped because
+# they appear constantly in polite business replies ("please respond
+# immediately", "I will follow up immediately") and produced false positives.
 URGENCY_KEYWORDS = [
     "not working", "stopped working", "broken", "down", "outage",
-    "urgent", "asap", "emergency", "critical", "immediately",
+    "urgent", "asap", "emergency", "critical",
     "can't access", "cannot access", "can't log in", "cannot log in",
-    "not receiving", "no one is available", "not available",
+    "not receiving", "no one is available",
     "please help", "need help", "help!",
     "issue with", "problem with", "something wrong",
 ]
 
 
+def _strip_quoted_reply(body: str) -> str:
+    """Return just the new message portion of an email body, stripping the
+    quoted history below it. Without this, urgency keywords in a prior
+    message (e.g. "please respond immediately" from our original send) get
+    matched against the incoming reply that was actually calm.
+    """
+    lines = []
+    for line in body.splitlines():
+        stripped = line.lstrip()
+        # Quoted reply lines start with >
+        if stripped.startswith('>'):
+            break
+        # Standard Gmail reply attribution: "On [date] <person> wrote:"
+        if re.match(r'^On\s+.+\bwrote:\s*$', stripped):
+            break
+        # Outlook-style "From: ... Sent: ... To: ... Subject:" header block
+        if re.match(r'^(From|De):\s*', stripped) and any(
+            re.match(rf'^{kw}:\s*', l.lstrip())
+            for l in lines[-3:] + []
+            for kw in ('Sent', 'To', 'Subject')
+        ):
+            break
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def _detect_urgency(subject: str, body: str) -> list[str]:
-    """Return list of urgency keywords matched in subject or body."""
-    combined = f"{subject}\n{body[:1500]}".lower()
+    """Return list of urgency keywords matched in subject or the new-message
+    portion of the body (quoted history is stripped first)."""
+    clean_body = _strip_quoted_reply(body)
+    combined = f"{subject}\n{clean_body[:1500]}".lower()
     return [kw for kw in URGENCY_KEYWORDS if kw in combined]
 
 
@@ -380,7 +439,15 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
 
     # State
     state_db_id = await _get_or_create_state_db(notion)
+    await _ensure_alerted_field(notion, state_db_id)
     state = await _read_state(notion, state_db_id)
+
+    # Alerted-thread dedup cache: prevents re-alerting on the same thread
+    # every tick. Entries older than 7 days are pruned so the field stays
+    # bounded.
+    alerted_threads: dict[str, str] = state.get("alerted_threads", {})
+    cutoff_iso = (now - timedelta(days=7)).isoformat()
+    alerted_threads = {tid: ts for tid, ts in alerted_threads.items() if ts > cutoff_iso}
 
     if state.get("last_checked"):
         since = datetime.fromisoformat(state["last_checked"].replace("Z", "+00:00"))
@@ -408,7 +475,8 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
 
         if not msg_ids:
             await _write_state(notion, state_db_id, state.get("page_id"),
-                               now.isoformat(), 0, [], "No new emails")
+                               now.isoformat(), 0, [], "No new emails",
+                               alerted_threads=alerted_threads)
             print("  No new emails. Done.")
             return
 
@@ -438,7 +506,8 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
 
     if not matched_clients:
         await _write_state(notion, state_db_id, state.get("page_id"),
-                           now.isoformat(), len(msg_ids), [], "No client emails")
+                           now.isoformat(), len(msg_ids), [], "No client emails",
+                           alerted_threads=alerted_threads)
         print("  No client emails. Done.")
         return
 
@@ -479,13 +548,20 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
         if not summarized:
             continue
 
-        # Urgency keyword safety net — fires regardless of Claude's flag decisions
+        # Urgency keyword safety net — fires regardless of Claude's flag decisions.
+        # Deduped against alerted_threads so the same thread doesn't re-alert
+        # on every 15-min tick for a week.
         for thread in summarized:
+            tid = thread.get("thread_id", "")
+            if tid and tid in alerted_threads:
+                continue
             matched = _detect_urgency(thread.get("subject", ""), thread.get("body", ""))
             if matched and SLACK_BOT_TOKEN:
                 alert = _format_urgent_alert(client_name, thread, matched)
                 client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
                 await _post_to_slack(alert, channel=client_channel)
+                if tid:
+                    alerted_threads[tid] = now.isoformat()
                 print(f"  🚨 Urgent alert sent: {thread.get('subject', '')[:60]} (matched: {', '.join(matched[:3])})")
 
         print(f"\n  Processing {client_name}: {len(summarized)} threads from {len(msgs)} messages")
@@ -590,7 +666,8 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
         f"{total_flags} flags, {total_auto_closed} auto-closed"
     )
     await _write_state(notion, state_db_id, state.get("page_id"),
-                       now.isoformat(), total_matched, clients_enriched, status)
+                       now.isoformat(), total_matched, clients_enriched, status,
+                       alerted_threads=alerted_threads)
 
     print(f"\n{'='*50}")
     print(f"  Done. {len(clients_enriched)} clients enriched.")
