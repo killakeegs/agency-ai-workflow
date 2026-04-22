@@ -176,11 +176,15 @@ seo-activate:
 style-reference-init:
 	@$(PYTHON) scripts/seo/style_reference_init.py --client $(CLIENT)
 
-# Sweep Content DB approvals/revisions → Style Reference (agent feedback loop)
-# Default: sweep all eligible clients. CLIENT=x to scope. DRY=1 to preview.
+# Sweep Content DB + Blog Posts DB → Style Reference (agent feedback loop)
+# Default: sweep all eligible clients, both DBs.
+#   CLIENT=x            — scope to one client
+#   TARGET=content|blog — scope to one DB only (default: both)
+#   DRY=1               — preview without writing
 style-sweep:
 	@$(PYTHON) scripts/seo/style_reference_sweep.py \
 	  $(if $(CLIENT),--client $(CLIENT),) \
+	  $(if $(TARGET),--target $(TARGET),) \
 	  $(if $(DRY),--dry-run,)
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
