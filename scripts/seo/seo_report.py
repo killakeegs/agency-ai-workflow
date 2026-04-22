@@ -41,7 +41,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import anthropic
 import httpx
@@ -50,8 +50,8 @@ from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
 
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
-CLIENTS_JSON_PATH = Path(__file__).parent.parent / "config" / "clients.json"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
+CLIENTS_JSON_PATH = Path(__file__).parent.parent.parent / "config" / "clients.json"
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DATAFORSEO_BASE  = "https://api.dataforseo.com/v3"
@@ -462,43 +462,56 @@ def _generate_summary(
 ) -> str:
     """Ask Claude to write a 2–3 paragraph plain-English summary of the report data."""
 
+    def _n(v):
+        """Comma-format a number. Returns 'N/A' for missing / non-numeric values
+        so data source gaps (e.g. GBP pre-API-approval) don't crash the formatter."""
+        if v is None:
+            return "N/A"
+        try:
+            return f"{int(v):,}"
+        except (ValueError, TypeError):
+            return str(v)
+
+    def _pct(v):
+        return "N/A" if v is None else f"{v}"
+
     data_block = f"""
 Business: {business_name}
 Report type: {report_type}
 Date range: {date_range}
 
 SEARCH CONSOLE:
-- Impressions: {gsc.get('impressions', 'N/A'):,}
-- Clicks: {gsc.get('clicks', 'N/A'):,}
-- CTR: {gsc.get('ctr', 'N/A')}%
-- Avg Position: {gsc.get('avg_position', 'N/A')}
-- Branded impressions: {gsc.get('branded_pct', 'N/A')}% | Non-branded: {gsc.get('unbranded_pct', 'N/A')}%
+- Impressions: {_n(gsc.get('impressions'))}
+- Clicks: {_n(gsc.get('clicks'))}
+- CTR: {_pct(gsc.get('ctr'))}%
+- Avg Position: {_pct(gsc.get('avg_position'))}
+- Branded impressions: {_pct(gsc.get('branded_pct'))}% | Non-branded: {_pct(gsc.get('unbranded_pct'))}%
 
 ANALYTICS (GA4):
-- Total sessions: {ga4.get('total_sessions', 'N/A'):,}
-- Organic sessions: {ga4.get('organic_sessions', 'N/A'):,} ({ga4.get('organic_pct', 'N/A')}% of total)
-- Users: {ga4.get('total_users', 'N/A'):,}
-- Engagement rate: {ga4.get('engagement_rate', 'N/A')}%
+- Total sessions: {_n(ga4.get('total_sessions'))}
+- Organic sessions: {_n(ga4.get('organic_sessions'))} ({_pct(ga4.get('organic_pct'))}% of total)
+- Users: {_n(ga4.get('total_users'))}
+- Engagement rate: {_pct(ga4.get('engagement_rate'))}%
 
 GOOGLE BUSINESS PROFILE:
-- Impressions: {gbp.get('impressions', 'N/A'):,}
-- Calls: {gbp.get('calls', 'N/A'):,}
-- Direction requests: {gbp.get('directions', 'N/A'):,}
-- Website clicks: {gbp.get('website_clicks', 'N/A'):,}
+- Impressions: {_n(gbp.get('impressions'))}
+- Calls: {_n(gbp.get('calls'))}
+- Direction requests: {_n(gbp.get('directions'))}
+- Website clicks: {_n(gbp.get('website_clicks'))}
 
 DOMAIN AUTHORITY (DataForSEO, 0–1000 scale):
-- Authority score: {authority.get('authority_score', 'N/A')}
-- Referring domains: {authority.get('referring_domains', 'N/A'):,}
-- Total backlinks: {authority.get('backlinks', 'N/A'):,}
+- Authority score: {_pct(authority.get('authority_score'))}
+- Referring domains: {_n(authority.get('referring_domains'))}
+- Total backlinks: {_n(authority.get('backlinks'))}
 """
 
     if search_atlas:
         data_block += f"""
 SEARCH ATLAS RANK TRACKER:
-- Tracked keywords: {search_atlas.get('tracked_keywords', 'N/A')}
-- Top 3 rankings: {search_atlas.get('top_3_rankings', 'N/A')}
-- Top 10 rankings: {search_atlas.get('top_10_rankings', 'N/A')}
-- Estimated monthly traffic: {search_atlas.get('estimated_traffic', 'N/A'):,}
+- Tracked keywords: {_pct(search_atlas.get('tracked_keywords'))}
+- Top 3 rankings: {_pct(search_atlas.get('top_3_rankings'))}
+- Top 10 rankings: {_pct(search_atlas.get('top_10_rankings'))}
+- Estimated monthly traffic: {_n(search_atlas.get('estimated_traffic'))}
 """
 
     prompt = f"""You are an SEO analyst writing a plain-English summary for a digital marketing agency's internal report.
@@ -601,7 +614,7 @@ async def _ensure_seo_metrics_db(
         if client_key not in data:
             data[client_key] = {}
         data[client_key]["seo_metrics_db_id"] = new_id
-        CLIENTS_JSON_PATH.write_text(json.dumps(data, indent=4))
+        CLIENTS_JSON_PATH.write_text(json.dumps(data, indent=2))
     except Exception as e:
         print(f"  ⚠ Could not save seo_metrics_db_id: {e}")
 
