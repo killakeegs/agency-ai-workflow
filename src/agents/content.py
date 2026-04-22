@@ -256,6 +256,50 @@ Contact page specifically:
 - Map section: one line of directional context maximum. The map embed does the work.
 - No FAQs on the Contact page. FAQs belong on service pages and New Patient Resources.
 
+STRUCTURAL SECTIONS — placeholders, not prose:
+
+Some sections exist to hold a rendered component or client data, not copy.
+Their job is to be a structural container. The visual content (the map,
+the team grid, the service cards, the gallery) is built in the template —
+your job is to provide placeholders, not invent content around them.
+
+Apply this to sections like:
+- Our Location / Visit Us / Find Us (the map is the content)
+- Meet the Team / Our Providers / Staff (the team grid is the content)
+- Program Overview / Services Grid / Level of Care Cards (the cards are the content)
+- Gallery / Photo Tour (the images are the content)
+- Hours of Operation / Contact Info / Address (labeled fields, not sentences)
+
+For these sections, the section body must be:
+- ONE short warm intro sentence maximum, OR nothing at all
+- Placeholder tokens in brackets where components will render:
+  - [Insert Map]
+  - [Insert Team Member Name]
+  - [Insert Team Member Bio]
+  - [Insert Team Member Credentials]
+  - [Insert Staff Photo]
+  - [Insert Service Card]
+  - [Insert Gallery Image]
+  - [Insert Address]
+  - [Insert Phone]
+  - [Insert Hours]
+
+Do NOT invent:
+- Team member names, titles, or biographical narrative
+- Addresses, phone numbers, or hours
+- Staff credentials, quotes, or years of experience
+- Specific service details that belong on dedicated service pages
+
+Note in internal_notes that the section is a component-backed container
+and list which placeholders are being used so the developer knows what
+data bindings are expected.
+
+Why: the template binds real client data to these placeholders. Prose that
+invents names, addresses, or bios creates cleanup work for the team and
+risks wrong information reaching staging. The Contact page rule (labeled
+fields, no surrounding sentences) applies everywhere the section's
+purpose is to hold data.
+
 - Only return the JSON object — no markdown code fences, no preamble, no commentary
 """
 
