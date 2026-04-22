@@ -5,13 +5,15 @@ Notion page under the RxMedia Agency workspace root. Mirror of
 docs/ARCHITECTURE.md for team-facing access.
 
 Usage:
-    python3 scripts/util/create_architecture_notion_page.py
+    python3 scripts/util/create_architecture_notion_page.py            # Create (refuse if exists)
+    python3 scripts/util/create_architecture_notion_page.py --refresh  # Archive old, create new
 
 Canonical source stays in docs/ARCHITECTURE.md; this page is a mirror.
 Header callout notes the last-synced date and links back to GitHub.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
@@ -244,8 +246,9 @@ def build_blocks() -> list[dict]:
         ),
         bullet_rich(
             _rt("style_reference.py", code=True),
-            _rt(" — feedback-loop service. Agents log approved/rejected outputs; future runs pull recent examples. "),
-            _rt("Not yet wired into agents.", bold=True),
+            _rt(" — feedback-loop service. Agents log approved/rejected outputs to a Style Reference DB; future runs pull recent examples to prime per-client voice. "),
+            _rt("Active:", bold=True),
+            _rt(" ContentAgent + BlogAgent both prime from it. Auto-sweeps Content DB and Blog Posts DB approvals. Not yet consumed by SocialAgent or future SEO agents."),
         ),
         bullet_rich(
             _rt("gemini_meeting.py", code=True),
@@ -280,6 +283,51 @@ def build_blocks() -> list[dict]:
         bullet_rich(_rt("SocialAgent", bold=True), _rt(" → would own Social Posts DB (currently 2 scripts instead)")),
         bullet_rich(_rt("PaidAdsAgent", bold=True), _rt(" → greenfield, zero code yet")),
     ])
+
+    blocks.append(h3("Content-generating agents — scope rule"))
+    blocks.append(callout_rich(
+        "⚡", "yellow_background",
+        _rt("ContentAgent, BlogAgent, and SocialAgent are siblings, not modes of one agent.", bold=True),
+    ))
+    blocks.append(p(_rt(
+        "The single ContentAgent generates website copy only (Sitemap → Page Content DB). "
+        "It does NOT handle blog posts, social posts, GBP posts, or email copy. "
+        "Those are separate agents because:"
+    )))
+    blocks.extend([
+        bullet_rich(_rt("Voice is fundamentally different — ", bold=True),
+                    _rt("website speaks as the practice; blog is first-person clinician; social is platform-punchy. Merging into one system prompt degrades all three outputs.")),
+        bullet_rich(_rt("Approval gates differ — ", bold=True),
+                    _rt("blog has medical reviewer attribution (YMYL E-E-A-T); social has none; website has sitemap/content approval cycles.")),
+        bullet_rich(_rt("Cadence differs — ", bold=True),
+                    _rt("website is one-time per project; blog is quarterly batches; social is weekly/monthly.")),
+        bullet_rich(_rt("Publishing targets differ — ", bold=True),
+                    _rt("website → Webflow static; blog → Webflow CMS; social → IG/FB/LinkedIn/GBP APIs.")),
+        bullet_rich(_rt("Style Reference signals collide if merged — ", bold=True),
+                    _rt("feedback on blog-style copy would train website voice incorrectly. Per-agent scoping prevents this.")),
+    ])
+    blocks.append(h3("Guardrails"))
+    blocks.extend([
+        numbered("Don't add blog or social generation to ContentAgent as a mode. If that impulse comes up, push back."),
+        numbered("BlogAgent and SocialAgent are siblings — they share BaseAgent, not ContentAgent. No parent/child inheritance between content agents."),
+        numbered("One primary DB per agent. Page Content, Blog Posts, Social Posts are three DBs → three agents."),
+        numbered("When cross-cutting logic emerges (brand voice loading, SEO rules, structural-sections rule, Notion block formatting), extract to src/services/ so all three can share it. Don't duplicate via inheritance."),
+    ])
+    blocks.append(callout_rich(
+        "💡", "gray_background",
+        _rt("Shared-service extraction timing: ", bold=True),
+        _rt("do NOT extract a shared content_generation service on day one. Let BlogAgent ship first. "
+            "Once the overlapping patterns with ContentAgent are obvious from real code, extract the shared parts. "
+            "Premature abstraction forces guesses about the shape."),
+    ))
+    blocks.append(callout_rich(
+        "⚠️", "yellow_background",
+        _rt("SocialAgent caveat: ", bold=True),
+        _rt("starting as one agent with platform as a mode (IG/FB, LinkedIn, GBP). "
+            "These platforms have genuinely different voices — if calibration starts fighting itself "
+            "(LinkedIn output drifting toward IG tone or vice versa), that's the signal to split into "
+            "platform-specific agents. Watch for it, don't pre-split."),
+    ))
 
     # Layer 5
     blocks.append(h2("Layer 5 — Orchestrators"))
@@ -382,6 +430,14 @@ def build_blocks() -> list[dict]:
         bullet_rich(
             _rt("Per-client Slack channels. ", bold=True),
             _rt("Alerts route to the client's channel (e.g. #crown), not a generic #agency-pipeline."),
+        ),
+        bullet_rich(
+            _rt("Flags are pull, not push. ", bold=True),
+            _rt("Flags live in the Notion Flags DB. Rex answers \"what's open for X?\" on demand; "
+                "the morning briefing covers proactive awareness. Do NOT build Slack posts, daily digests, "
+                "or other push notifications for routine (non-urgent) flags — they create noise without value. "
+                "Exception: 🚨 URGENT EMAIL alerts (keyword-triggered, inbound-only, deduped) and similar "
+                "genuinely time-sensitive signals. Everything else is pull."),
         ),
     ])
 
@@ -504,7 +560,16 @@ async def append_remaining_blocks(notion: NotionClient, page_id: str, blocks: li
         )
 
 
-async def main():
+async def archive_page(notion: NotionClient, page_id: str) -> None:
+    """Move the existing page to trash (Notion's 'archive') so we can create a fresh one."""
+    await notion._client.request(
+        path=f"pages/{page_id}",
+        method="PATCH",
+        body={"in_trash": True},
+    )
+
+
+async def main(refresh: bool = False):
     if not WORKSPACE_ROOT:
         print("ERROR: NOTION_WORKSPACE_ROOT_PAGE_ID not set.")
         sys.exit(1)
@@ -516,9 +581,15 @@ async def main():
 
     existing = await find_existing_page(notion)
     if existing:
-        print(f"Existing page found: {existing}")
-        print("⚠ Not overwriting. Archive the old page manually in Notion first, then re-run.")
-        return
+        if refresh:
+            print(f"Existing page found: {existing}")
+            print("  Archiving old page...")
+            await archive_page(notion, existing)
+            print("  ✓ Archived.")
+        else:
+            print(f"Existing page found: {existing}")
+            print("⚠ Not overwriting. Re-run with --refresh to archive + create new.")
+            return
 
     page_id = await create_page(notion, blocks)
     print(f"✓ Created page: {page_id}")
@@ -533,4 +604,11 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Archive the existing page (if found) and create a fresh one",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(refresh=args.refresh))

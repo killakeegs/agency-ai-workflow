@@ -1,6 +1,6 @@
 # System Architecture
 
-**Last updated: 2026-04-22** (synced to Notion mirror at `notion.so/34af7f45333e813ea775f8792305bbc1`)
+**Last updated: 2026-04-22** (synced to Notion mirror at `notion.so/34af7f45333e813ea775f8792305bbc1`; Style Reference wiring + content-agent scope rule + flags pull-model added same day)
 
 This document describes the agency workflow system as a layered architecture. Read this when you need to:
 - Understand where a new piece of functionality should live
@@ -147,7 +147,7 @@ Examples:
 | File | Purpose | Consumed by |
 |---|---|---|
 | `email_enrichment.py` | Thread synthesis, dedup, Client Log writing, profile enrichment, flag writing | `email_monitor.py`, `enrich_from_emails.py` |
-| `style_reference.py` | Feedback-loop service. Agents log approved/rejected outputs; future runs pull recent examples for per-client voice continuity | *Not yet wired into agents* (planned) |
+| `style_reference.py` | Feedback-loop service. Agents log approved/rejected outputs to a Style Reference DB; future runs pull recent examples to prime per-client voice | **Active:** ContentAgent primes from it (auto-sweep on Content DB approvals); BlogAgent primes from it (auto-sweep on Blog Posts DB approvals). Not yet consumed by SocialAgent or future SEO agents. |
 | `gemini_meeting.py` | Parses Gemini meeting docs (extracts title, date, timezone, attendee emails, completion marker) | `gemini_meeting_processor.py` |
 
 **Also service-like (ambient across modules):**
@@ -207,6 +207,28 @@ These come from `CLAUDE.md`:
 - The new capability writes to an existing agent's DB
 - It's a natural mode/flag on the existing agent's `run()` method
 - Example: ImageGenerationAgent has `mode="brand"` vs `mode="page"` — same agent, different output types
+
+### Content-generating agents — scope rule
+
+**ContentAgent, BlogAgent, and SocialAgent are siblings, not modes of one agent.**
+
+The single ContentAgent generates **website copy only** (Sitemap → Page Content DB). It does NOT handle blog posts, social posts, GBP posts, or email copy. Those are separate agents because:
+
+- **Voice is fundamentally different** — website speaks as the practice ("We help families…"); blog speaks as the individual clinician first-person ("I've worked with hundreds of kids…"); social is platform-punchy. Merging into one system prompt degrades all three outputs.
+- **Approval gates differ** — blog has medical reviewer attribution (YMYL E-E-A-T); social has none; website has sitemap/content approval cycles.
+- **Cadence differs** — website is one-time per project; blog is quarterly batches; social is weekly/monthly.
+- **Publishing targets differ** — website → Webflow static pages; blog → Webflow CMS collection; social → IG/FB/LinkedIn/GBP APIs.
+- **Style Reference signals collide if merged** — feedback on blog-style copy would train website voice incorrectly. Per-agent scoping prevents this.
+
+**Guardrails:**
+1. Don't add blog or social generation to ContentAgent as a mode. If that impulse comes up, push back.
+2. BlogAgent and SocialAgent are **siblings** — they share `BaseAgent`, not `ContentAgent`. No parent/child inheritance between content agents.
+3. **One primary DB per agent.** Page Content, Blog Posts, Social Posts are three DBs → three agents.
+4. When cross-cutting logic emerges (brand voice loading, SEO rules, structural-sections rule, Notion block formatting), extract to `src/services/` so all three can share it. Don't duplicate via inheritance.
+
+**Shared-service extraction timing:** do NOT extract a shared `content_generation` service on day one. Let BlogAgent ship first. Once the overlapping patterns with ContentAgent are obvious from real code, extract the shared parts. Premature abstraction forces guesses about the shape.
+
+**SocialAgent caveat:** starting as one agent with platform as a mode (IG/FB, LinkedIn, GBP). IG/FB, LinkedIn, and GBP have genuinely different voices — if calibration starts fighting itself (LinkedIn output drifting toward IG tone or vice versa), that's the signal to split into platform-specific agents. Watch for it, don't pre-split.
 
 ---
 
@@ -276,7 +298,7 @@ Dev only. Never the production entry point.
 | **SEO** | ❌ 0 agents | 📋 7 agents per Notion plan | 8 open questions in Andrea review |
 | **Blog** | ❌ 0 agents | 📋 BlogAgent | Webflow blog template + post volume defaults |
 | **Social** | ❌ 0 agents | 📋 SocialAgent | Per-client voice calibration wiring |
-| **Email Enrichment** | ✅ Service + Railway cron | None needed | — |
+| **Email Enrichment** | ✅ Service + Railway cron + Flags DB writer (pull model, not push) | None needed | — |
 | **Meeting Ops** | ✅ Gemini-first pipeline + Rex tool (swapped from Notion AI 2026-04-22) | None critical | — |
 | **Care Plan** | ✅ Monthly report cron | Possibly: alerting on score drops | — |
 | **Onboarding** | ✅ 1 agent + 4 scripts | Minor: split into provision/register/notify | None — only when re-run failures become painful |
@@ -333,6 +355,9 @@ Blockers, open actions, wins, scope changes — all flagged into one DB with a l
 
 ### Per-client Slack channels
 Every major client has their own Slack channel (`#crown`, `#twinriverberries`, etc.). Alerts route to the client's channel, not a generic #agency-pipeline.
+
+### Flags are pull, not push
+Flags live in the Notion Flags DB as the source of truth. **Rex answers "what's open for X?" on demand**, and the morning briefing covers proactive awareness. Do NOT add Slack posts, daily digests, or other push notifications for routine (non-urgent) flags — they mirror ordinary back-and-forth into Slack and create noise without value. Keegan ended up closing most push-notified flags as not-actionable. Exceptions: `🚨 URGENT EMAIL` alerts (keyword-triggered, inbound-only, deduped per thread) and similar genuinely time-sensitive signals (site down, angry escalation, client can't access something). Everything else is pull.
 
 ---
 
