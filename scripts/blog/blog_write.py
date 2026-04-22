@@ -34,6 +34,7 @@ from config.clients import CLIENTS
 from src.config import settings
 from src.integrations.notion import NotionClient
 from src.integrations.business_profile import load_business_profile
+from src.services.style_reference import format_examples_for_prompt, get_recent_examples
 
 # ── Notion helpers ─────────────────────────────────────────────────────────────
 
@@ -332,6 +333,7 @@ def _build_write_prompt(
     notes: str,
     website_url: str,
     business_profile: str = "",
+    style_reference_block: str = "",
 ) -> str:
     title       = idea["title"]
     keyword     = idea["target_keyword"]
@@ -384,8 +386,17 @@ BUSINESS PROFILE (deep knowledge about {business} — reference accurately, neve
 
 """
 
+    style_ref_prompt_block = ""
+    if style_reference_block:
+        style_ref_prompt_block = f"""
+PRIOR APPROVED EXAMPLES — the team has approved these blog posts for {business} before. Match the voice, tone, and editorial decisions shown in the WHY reasons. These reflect how this author actually sounds in published work, and supersede generic defaults from the Style Brief alone.
+
+{style_reference_block}
+
+"""
+
     return f"""Write a full blog post for {business}.
-{profile_block}TITLE (use verbatim as H1): {title}
+{profile_block}{style_ref_prompt_block}TITLE (use verbatim as H1): {title}
 
 TARGET KEYWORD: {keyword}
 (Use naturally throughout — lead paragraph and 2–3 H2 sections. Not stuffed.)
@@ -524,6 +535,28 @@ async def run(client_key: str, notes: str = "") -> None:
     else:
         print("  (no Business Profile page — continuing without it)\n")
 
+    # Load Style Reference examples once — recent team-approved blog posts for
+    # this client. BlogAgent primes from these so per-client voice compounds
+    # across posts instead of drifting back to the generic Style Brief each run.
+    style_reference_block = ""
+    style_reference_db_id = cfg.get("style_reference_db_id") or ""
+    if style_reference_db_id:
+        try:
+            examples = await get_recent_examples(
+                notion=notion,
+                style_reference_db_id=style_reference_db_id,
+                agent="BlogAgent",
+                asset_type="Blog Post",
+                limit=5,
+            )
+            formatted = format_examples_for_prompt(examples)
+            print(f"Style Reference — loaded {len(examples)} prior example(s)\n")
+            style_reference_block = formatted
+        except Exception as e:
+            print(f"  ⚠ Could not load Style Reference: {e}\n")
+    else:
+        print("Style Reference — no DB configured for this client; writing from Style Brief only\n")
+
     website_url = brand.get("website_url", "").rstrip("/")
 
     for i, idea in enumerate(ideas, 1):
@@ -534,6 +567,7 @@ async def run(client_key: str, notes: str = "") -> None:
         prompt = _build_write_prompt(
             idea, brand, style_brief, notes, website_url,
             business_profile=business_profile,
+            style_reference_block=style_reference_block,
         )
 
         response = ai_client.messages.create(
