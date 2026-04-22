@@ -773,6 +773,20 @@ def clients_db_schema() -> dict:
             }
         },
         "Vertical": {"rich_text": {}},
+        # SEO branching directive — read by SEO scripts to decide volume
+        # thresholds, keyword filters, competitor scope, Map Pack vs
+        # organic emphasis. Distinct from Client Info → Business Type
+        # (which drives agent prompt context); these usually align but can
+        # legitimately diverge (e.g. telehealth = National biz + Hybrid SEO).
+        "SEO Mode": {
+            "select": {
+                "options": [
+                    {"name": "Local",    "color": "blue"},
+                    {"name": "National", "color": "purple"},
+                    {"name": "Hybrid",   "color": "orange"},
+                ]
+            }
+        },
         "Pipeline Stage": {"rich_text": {}},
         "Monthly Retainer": {"number": {}},
         "Primary Contact": {"rich_text": {}},

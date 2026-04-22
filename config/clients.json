@@ -46,7 +46,8 @@
     "email": "amanda@summittherapytx.com",
     "primary_contact_email": "amanda@summittherapytx.com",
     "slack_channel": "#summittherapy",
-    "meeting_prep_db_id": "34af7f45-333e-8147-8498-e245cd1df092"
+    "meeting_prep_db_id": "34af7f45-333e-8147-8498-e245cd1df092",
+    "seo_mode": "local"
   },
   "cielo_treatment_center": {
     "client_id": "cielo_treatment_center",
@@ -144,7 +145,8 @@
     "email": "jessica@anotherchancerehab.com",
     "primary_contact_email": "jessica@anotherchancerehab.com",
     "slack_channel": "#anotherchance",
-    "meeting_prep_db_id": "34af7f45-333e-8178-8914-e5de026d6923"
+    "meeting_prep_db_id": "34af7f45-333e-8178-8914-e5de026d6923",
+    "seo_mode": "local"
   },
   "lotus_recovery": {
     "client_id": "lotus_recovery",
@@ -187,7 +189,8 @@
     "primary_contact_email": "shane@lotusrecoverysc.com",
     "primary_contact": "Shane Brunson",
     "slack_channel": "#lotus-recovery",
-    "meeting_prep_db_id": "34af7f45-333e-8189-a604-dbbc1eca27d6"
+    "meeting_prep_db_id": "34af7f45-333e-8189-a604-dbbc1eca27d6",
+    "seo_mode": "local"
   },
   "atlas_addiction_treatment_center": {
     "client_id": "atlas_addiction_treatment_center",
@@ -230,7 +233,8 @@
     "primary_contact_email": "david@atlastreatmentcenter.com",
     "primary_contact": "David Soulier",
     "slack_channel": "#atlasaddiction",
-    "meeting_prep_db_id": "34af7f45-333e-81fb-91ff-da0686b140aa"
+    "meeting_prep_db_id": "34af7f45-333e-81fb-91ff-da0686b140aa",
+    "seo_mode": "local"
   },
   "arc_network": {
     "client_id": "arc_network",
@@ -272,7 +276,8 @@
     "email": "info@projectsoar.us",
     "primary_contact_email": "info@projectsoar.us",
     "primary_contact": "Michael Aulbach",
-    "meeting_prep_db_id": "34af7f45-333e-816a-b2ff-fd5d755d23bd"
+    "meeting_prep_db_id": "34af7f45-333e-816a-b2ff-fd5d755d23bd",
+    "seo_mode": "local"
   },
   "dmab_law": {
     "client_id": "dmab_law",
@@ -313,7 +318,8 @@
     "primary_contact_email": "bwashington@dmablaw.com",
     "primary_contact": "Brandon Washington",
     "slack_channel": "#dmab-law-firm",
-    "meeting_prep_db_id": "34af7f45-333e-8188-b21b-da34824034ad"
+    "meeting_prep_db_id": "34af7f45-333e-8188-b21b-da34824034ad",
+    "seo_mode": "local"
   },
   "bloom_recovery": {
     "client_id": "bloom_recovery",
@@ -355,7 +361,8 @@
     "email": "eric@bloomhouserecovery.com",
     "primary_contact_email": "eric@bloomhouserecovery.com",
     "primary_contact": "Eric Bornstein",
-    "meeting_prep_db_id": "34af7f45-333e-812c-a185-d64c0edbbd57"
+    "meeting_prep_db_id": "34af7f45-333e-812c-a185-d64c0edbbd57",
+    "seo_mode": "local"
   },
   "freedom_recovery": {
     "client_id": "freedom_recovery",
@@ -398,7 +405,8 @@
     "primary_contact_email": "justin@freedomrecoveryid.com",
     "primary_contact": "Justin (Owner)",
     "slack_channel": "#freedom-recovery",
-    "meeting_prep_db_id": "34af7f45-333e-81db-8136-dabcebaa4d33"
+    "meeting_prep_db_id": "34af7f45-333e-81db-8136-dabcebaa4d33",
+    "seo_mode": "local"
   },
   "nonno_wellness_center": {
     "client_id": "nonno_wellness_center",
@@ -441,7 +449,8 @@
     "primary_contact_email": "jon@nonnorecovery.com",
     "primary_contact": "Jonathon Neily",
     "slack_channel": "#nonno-wellness-center",
-    "meeting_prep_db_id": "34af7f45-333e-81f6-87f9-c3cca4bab099"
+    "meeting_prep_db_id": "34af7f45-333e-81f6-87f9-c3cca4bab099",
+    "seo_mode": "local"
   },
   "parkwood_clinic": {
     "client_id": "parkwood_clinic",
@@ -483,7 +492,8 @@
     "email": "info@parkwoodclinic.com",
     "primary_contact_email": "info@parkwoodclinic.com",
     "slack_channel": "#parkwood-clinic",
-    "meeting_prep_db_id": "34af7f45-333e-8141-8fc2-ff9fd758e2d6"
+    "meeting_prep_db_id": "34af7f45-333e-8141-8fc2-ff9fd758e2d6",
+    "seo_mode": "local"
   },
   "pdx_plumber": {
     "client_id": "pdx_plumber",
@@ -523,7 +533,8 @@
     "email": "nolan@pdxplumber.com",
     "primary_contact_email": "nolan@pdxplumber.com",
     "slack_channel": "#pdxplumber",
-    "meeting_prep_db_id": "34af7f45-333e-8138-8b7d-fa25579a0c94"
+    "meeting_prep_db_id": "34af7f45-333e-8138-8b7d-fa25579a0c94",
+    "seo_mode": "local"
   },
   "nw_recovery_homes": {
     "client_id": "nw_recovery_homes",
@@ -564,7 +575,8 @@
     "migration_source": "google_drive",
     "email": "shawn@nwrecoveryhomes.com",
     "primary_contact_email": "shawn@nwrecoveryhomes.com",
-    "meeting_prep_db_id": "34af7f45-333e-8126-9c33-c452a6e28ed5"
+    "meeting_prep_db_id": "34af7f45-333e-8126-9c33-c452a6e28ed5",
+    "seo_mode": "local"
   },
   "evolving_health": {
     "client_id": "evolving_health",
@@ -605,7 +617,8 @@
     "migration_source": "google_drive",
     "email": "info@evolvinghealth.ca",
     "primary_contact_email": "info@evolvinghealth.ca",
-    "meeting_prep_db_id": "34af7f45-333e-81d6-97e0-f9f133a86b1c"
+    "meeting_prep_db_id": "34af7f45-333e-81d6-97e0-f9f133a86b1c",
+    "seo_mode": "local"
   },
   "resilient_solutions": {
     "client_id": "resilient_solutions",
@@ -647,7 +660,8 @@
     "email": "resilientreturn@gmail.com",
     "primary_contact_email": "resilientreturn@gmail.com",
     "slack_channel": "#resilientsolutions",
-    "meeting_prep_db_id": "34af7f45-333e-810f-b028-ee5512caaf92"
+    "meeting_prep_db_id": "34af7f45-333e-810f-b028-ee5512caaf92",
+    "seo_mode": "national"
   },
   "rose_city_detox": {
     "client_id": "rose_city_detox",
@@ -689,7 +703,8 @@
     "email": "billy@rosecitydetox.com",
     "primary_contact_email": "billy@rosecitydetox.com",
     "slack_channel": "#rose-city-detox",
-    "meeting_prep_db_id": "34af7f45-333e-814b-8d52-efcca956c797"
+    "meeting_prep_db_id": "34af7f45-333e-814b-8d52-efcca956c797",
+    "seo_mode": "local"
   },
   "skycloud_health": {
     "client_id": "skycloud_health",
@@ -731,7 +746,8 @@
     "email": "mjacobs@skycloudhealth.com",
     "primary_contact_email": "mjacobs@skycloudhealth.com",
     "slack_channel": "#skycloudmentalhealth",
-    "meeting_prep_db_id": "34af7f45-333e-8162-a752-e3746f96a644"
+    "meeting_prep_db_id": "34af7f45-333e-8162-a752-e3746f96a644",
+    "seo_mode": "local"
   },
   "team_recovery": {
     "client_id": "team_recovery",
@@ -772,7 +788,8 @@
     "migration_source": "google_drive",
     "email": "tristan@teamrecovery.io",
     "primary_contact_email": "tristan@teamrecovery.io",
-    "meeting_prep_db_id": "34af7f45-333e-8141-b902-ddb2b3ea0b92"
+    "meeting_prep_db_id": "34af7f45-333e-8141-b902-ddb2b3ea0b92",
+    "seo_mode": "national"
   },
   "the_manor": {
     "client_id": "the_manor",
@@ -814,7 +831,8 @@
     "email": "abbyM@windroserecovery.com",
     "primary_contact_email": "abbyM@windroserecovery.com",
     "slack_channel": "#the-manor",
-    "meeting_prep_db_id": "34af7f45-333e-81cd-8594-eabe16132989"
+    "meeting_prep_db_id": "34af7f45-333e-81cd-8594-eabe16132989",
+    "seo_mode": "local"
   },
   "tru_living_recovery": {
     "client_id": "tru_living_recovery",
@@ -856,7 +874,8 @@
     "email": "francisco@trulivingrecovery.com",
     "primary_contact_email": "francisco@trulivingrecovery.com",
     "slack_channel": "#tru-living",
-    "meeting_prep_db_id": "34af7f45-333e-81d4-a663-fd6e829038d6"
+    "meeting_prep_db_id": "34af7f45-333e-81d4-a663-fd6e829038d6",
+    "seo_mode": "local"
   },
   "twin_river_berries": {
     "client_id": "twin_river_berries",
@@ -896,7 +915,8 @@
     "email": "ben@trberries.com",
     "primary_contact_email": "ben@trberries.com",
     "slack_channel": "#twin-river-berries",
-    "meeting_prep_db_id": "34af7f45-333e-8116-8e2e-f23bcd2fdc68"
+    "meeting_prep_db_id": "34af7f45-333e-8116-8e2e-f23bcd2fdc68",
+    "seo_mode": "local"
   },
   "wellness_works_management_partners": {
     "client_id": "wellness_works_management_partners",
@@ -936,7 +956,8 @@
     "email": "brandon@wellnessworksmp.com",
     "primary_contact_email": "brandon@wellnessworksmp.com",
     "slack_channel": "#wellnessworksmanagementpartners",
-    "meeting_prep_db_id": "34af7f45-333e-81c6-8cad-fdac8e7401af"
+    "meeting_prep_db_id": "34af7f45-333e-81c6-8cad-fdac8e7401af",
+    "seo_mode": "national"
   },
   "wellwell": {
     "client_id": "wellwell",
@@ -976,7 +997,8 @@
     "clickup_review_list_id": "901816474807",
     "migration_source": "google_drive",
     "slack_channel": "#wellwell",
-    "meeting_prep_db_id": "34af7f45-333e-8188-8d1c-d20cee93406c"
+    "meeting_prep_db_id": "34af7f45-333e-8188-8d1c-d20cee93406c",
+    "seo_mode": "hybrid"
   },
   "rxmedia": {
     "client_id": "rxmedia",
@@ -1017,7 +1039,8 @@
     "migration_source": "google_drive",
     "internal": true,
     "email": "",
-    "primary_contact_email": ""
+    "primary_contact_email": "",
+    "seo_mode": "national"
   },
   "crown_behavioral_health": {
     "client_id": "crown_behavioral_health",
@@ -1064,6 +1087,7 @@
     "primary_contact_email": "savannah@purelifebehavioralhealth.com",
     "primary_contact": "Savannah Fyfe",
     "slack_channel": "#the-crown",
-    "meeting_prep_db_id": "34af7f45-333e-813a-9dc1-e3cb35da6319"
+    "meeting_prep_db_id": "34af7f45-333e-813a-9dc1-e3cb35da6319",
+    "seo_mode": "local"
   }
 }
