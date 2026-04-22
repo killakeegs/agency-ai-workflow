@@ -1,6 +1,6 @@
 # System Architecture
 
-**Last updated: 2026-04-22**
+**Last updated: 2026-04-22** (synced to Notion mirror at `notion.so/34af7f45333e813ea775f8792305bbc1`)
 
 This document describes the agency workflow system as a layered architecture. Read this when you need to:
 - Understand where a new piece of functionality should live
@@ -126,6 +126,7 @@ Examples:
 | `clickup.py` | ClickUp REST | Task create, workspace browse |
 | `gmail.py` | Gmail API | OAuth, search, fetch, thread summarize, noise filter |
 | `google_calendar.py` | Calendar API | Event lookup by time, attendee extraction |
+| `google_drive.py` | Drive API | List files in folder, fetch doc text (added with Gemini meeting swap 2026-04-22) |
 | `business_profile.py` | Notion (page-block specific) | Loads + updates Business Profile page content |
 
 ### When to add a new integration
@@ -147,6 +148,7 @@ Examples:
 |---|---|---|
 | `email_enrichment.py` | Thread synthesis, dedup, Client Log writing, profile enrichment, flag writing | `email_monitor.py`, `enrich_from_emails.py` |
 | `style_reference.py` | Feedback-loop service. Agents log approved/rejected outputs; future runs pull recent examples for per-client voice continuity | *Not yet wired into agents* (planned) |
+| `gemini_meeting.py` | Parses Gemini meeting docs (extracts title, date, timezone, attendee emails, completion marker) | `gemini_meeting_processor.py` |
 
 **Also service-like (ambient across modules):**
 - `src/integrations/business_profile.py` has a `populate_from_meeting()` function that's really a service (has agency logic, calls Claude) — should eventually move to `src/services/business_profile.py`
@@ -217,7 +219,7 @@ These come from `CLAUDE.md`:
 | Cron | Schedule | Script | What it does |
 |---|---|---|---|
 | Email Monitor | `*/15 * * * *` | `scripts/enrichment/email_monitor.py` | Routes new emails to clients, writes Client Log, raises flags |
-| Meeting Processor | `*/5 * * * *` | `scripts/enrichment/meeting_processor.py` | Processes Notion AI transcripts into notes + Gmail draft + ClickUp tasks |
+| Gemini Meeting Processor | `*/5 * * * *` | `scripts/enrichment/gemini_meeting_processor.py` | Polls Drive for "Notes by Gemini" docs, writes Client Log, Gmail draft, ClickUp tasks (swapped in 2026-04-22 — replaces `meeting_processor.py` which stays in-tree only for shared helpers) |
 | Morning Briefing | `0 15 * * *` (7am PST) | `scripts/enrichment/morning_briefing.py` | Agency pulse + per-team-member overdue task DMs |
 | Meeting Prep | (per calendar lookup) | `scripts/enrichment/meeting_prep.py` | Generates prep docs for today's meetings |
 | Care Plan | `0 9 1 * *` (1st @ 4am CT) | `scripts/care/care_plan_report.py` | Monthly PageSpeed + care plan report per client |
@@ -275,7 +277,7 @@ Dev only. Never the production entry point.
 | **Blog** | ❌ 0 agents | 📋 BlogAgent | Webflow blog template + post volume defaults |
 | **Social** | ❌ 0 agents | 📋 SocialAgent | Per-client voice calibration wiring |
 | **Email Enrichment** | ✅ Service + Railway cron | None needed | — |
-| **Meeting Ops** | ✅ Railway cron + Rex tool | None critical | — |
+| **Meeting Ops** | ✅ Gemini-first pipeline + Rex tool (swapped from Notion AI 2026-04-22) | None critical | — |
 | **Care Plan** | ✅ Monthly report cron | Possibly: alerting on score drops | — |
 | **Onboarding** | ✅ 1 agent + 4 scripts | Minor: split into provision/register/notify | None — only when re-run failures become painful |
 | **Paid Ads** | ❌ Zero code | 📋 PaidAdsAgent | Scope not yet defined |
