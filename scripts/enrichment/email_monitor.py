@@ -346,16 +346,6 @@ async def _post_to_slack(text: str, channel: str = "") -> None:
         pass
 
 
-def _format_slack_alert(client_name: str, flags: list[dict]) -> str:
-    lines = [f"📧 *Email Monitor — {client_name}*"]
-    for f in flags:
-        ftype = f.get("type", "flag").upper()
-        desc = f.get("description", "")
-        date = f.get("source_date", "")
-        lines.append(f"  [{ftype}] ({date}) {desc}")
-    return "\n".join(lines)
-
-
 # Keyword-based urgency detection — fires even when Claude doesn't flag.
 # Kept intentionally strong. Words like "immediately" were dropped because
 # they appear constantly in polite business replies ("please respond
@@ -638,7 +628,6 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             total_enrichments += len(enrichments)
             print(f"    ✓ {len(enrichments)} enrichments → Business Profile")
 
-        created_flag_dicts: list[dict] = []
         if other_flags and FLAGS_DB_ID:
             created_flag_dicts = await write_flags_to_db(
                 notion, FLAGS_DB_ID, client_name, client_key, other_flags, source="Email",
@@ -660,14 +649,12 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             if latest:
                 await update_last_contact(notion, client_name, latest)
 
-        # Slack alert — only post flags that were actually NEW (post-dedup).
-        # Without this, Claude's re-emission of the same open actions every tick
-        # — with drifting wording — would spam Slack on every cron fire even
-        # though the Flags DB correctly deduped them.
-        if created_flag_dicts and SLACK_BOT_TOKEN:
-            client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
-            alert = _format_slack_alert(client_name, created_flag_dicts)
-            await _post_to_slack(alert, channel=client_channel)
+        # No Slack post for regular flags — they live in the Flags DB and Rex
+        # answers "what's open for X?" on demand. Push notifications for every
+        # new open_action just mirrored inbound/outbound email into Slack and
+        # added noise. Urgency alerts (inbound only, keyword-triggered, deduped)
+        # still fire earlier in this tick — that's the original "don't miss
+        # anything critical" use case.
 
     # Update state
     status = (
