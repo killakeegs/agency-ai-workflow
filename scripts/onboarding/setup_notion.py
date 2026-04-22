@@ -164,6 +164,39 @@ def client_log_schema() -> dict:
     }
 
 
+def meeting_prep_schema() -> dict:
+    """
+    Meeting Prep DB — one row per upcoming meeting with this client.
+    Auto-populated by scripts/enrichment/meeting_prep.py each morning.
+    Rows older than 90 days get Status=Archived by the daily cron.
+    """
+    return {
+        "Title": {"title": {}},
+        "Meeting Date": {"date": {}},
+        "Status": {
+            "select": {
+                "options": [
+                    {"name": "Upcoming",  "color": "blue"},
+                    {"name": "Completed", "color": "green"},
+                    {"name": "Archived",  "color": "gray"},
+                ]
+            }
+        },
+        "Meeting Type": {
+            "select": {
+                "options": [
+                    {"name": "Client Recurring", "color": "blue"},
+                    {"name": "Onboarding",       "color": "green"},
+                    {"name": "Sales",            "color": "purple"},
+                    {"name": "Other",            "color": "gray"},
+                ]
+            }
+        },
+        "Attendees":      {"rich_text": {}},
+        "Duration (min)": {"number": {}},
+    }
+
+
 def brand_guidelines_schema() -> dict:
     return {
         "Name": {"title": {}},
@@ -993,6 +1026,44 @@ async def setup_clients_db(dry_run: bool = False) -> str:
         return ""
 
 
+# ── Client page structure — 5 sections every client page uses ────────────────
+
+CLIENT_PAGE_INTRO_TEXT = (
+    "New to this client? Start with Business Profile (what the business is "
+    "and does) and Brand Guidelines (how we talk as them). Client Log is "
+    "the running timeline of every meeting, email, and decision."
+)
+
+CLIENT_PAGE_SECTIONS = [
+    "Client Information / Rules",
+    "Website",
+    "SEO",
+    "Content",
+    "Care Plan",
+]
+
+
+def _intro_callout_block() -> dict:
+    return {
+        "object": "block",
+        "type": "callout",
+        "callout": {
+            "rich_text": [{"type": "text", "text": {"content": CLIENT_PAGE_INTRO_TEXT}}],
+            "icon": {"type": "emoji", "emoji": "📘"},
+        },
+    }
+
+
+def _section_heading_block(title: str) -> dict:
+    return {
+        "object": "block",
+        "type": "heading_2",
+        "heading_2": {
+            "rich_text": [{"type": "text", "text": {"content": title}}],
+        },
+    }
+
+
 async def setup_client(
     client_name: str,
     contact_email: str = "",
@@ -1003,18 +1074,17 @@ async def setup_client(
     """
     Provision a new client in Notion.
 
-    Creates:
-      1. Client page under workspace root
-      2. Base databases: Client Info, Client Log, Brand Guidelines, Care Plan
-      3. Business Profile page (universal + vertical-specific sections)
-      4. Service-specific databases based on `services` list
+    Produces a structured page with 5 sections — Client Information / Rules,
+    Website, SEO, Content, Care Plan — each preceded by a Heading 2, plus an
+    intro callout at the top. Items are created in the order they should
+    appear on the page (Notion has no block-reorder API).
 
     Args:
         client_name: Business name
         contact_email: Primary contact email
         dry_run: Preview without creating anything
         services: List of active services (e.g. ["website_build", "care_plan"])
-        verticals: List of industry verticals (e.g. ["speech_pathology", "occupational_therapy"])
+        verticals: List of industry verticals (e.g. ["speech_pathology"])
     """
     services  = services  or ["website_build", "care_plan"]
     verticals = verticals or []
@@ -1026,6 +1096,11 @@ async def setup_client(
 
     notion = NotionClient(settings.notion_api_key)
 
+    # Client name prefix for DB titles (first word of client name).
+    # "Cielo — Client Log" instead of "Client Log" (x20) once agents see
+    # 20+ clients' databases.
+    db_prefix = client_name.split()[0] if client_name else "Client"
+
     # ── Create client page ────────────────────────────────────────────────────
     # Parent under the Clients container if configured — otherwise falls back
     # to workspace root. Keeps all clients nested together in Notion sidebar.
@@ -1036,149 +1111,145 @@ async def setup_client(
     parent_label = "Clients container" if settings.notion_clients_container_page_id else "workspace root"
     print(f"\nCreating client page under {parent_label}...")
 
-    if not dry_run:
-        client_page_id = await notion.create_page(
-            parent_page_id=client_parent_id,
-            title=client_name,
-        )
-        print(f"  ✓ Client page: {client_page_id}")
-    else:
+    if dry_run:
         client_page_id = "DRY_RUN_PAGE_ID"
         print(f"  [DRY RUN] Would create client page under {client_parent_id}")
+        section_count = len(UNIVERSAL_SECTIONS)
+        for v in verticals:
+            section_count += len(VERTICAL_SECTIONS.get(v, []))
+        print(f"\n[DRY RUN] Would build page with 5 sections + intro callout")
+        print(f"  Universal Business Profile: {len(UNIVERSAL_SECTIONS)} sections")
+        for v in verticals:
+            v_sections = VERTICAL_SECTIONS.get(v, [])
+            print(f"  {v}: {len(v_sections)} vertical-specific sections")
+        return {
+            "client_page_id": "",
+            "business_profile_id": "",
+            "databases": {},
+        }
+
+    client_page_id = await notion.create_page(
+        parent_page_id=client_parent_id,
+        title=client_name,
+    )
+    print(f"  ✓ Client page: {client_page_id}")
 
     databases: dict[str, str] = {}  # name → database_id
 
-    # ── Pass 1: Create databases ──────────────────────────────────────────────
-    # Base databases (always created)
-    base_dbs = [
-        ("Client Info",       client_info_schema()),
-        ("Client Log",        client_log_schema()),
-        ("Brand Guidelines",  brand_guidelines_schema()),
-        ("Care Plan",         care_plan_schema()),
-    ]
-
-    # Service-specific databases
-    service_dbs: list[tuple[str, dict]] = []
-    if "website_build" in services:
-        service_dbs += [
-            ("Sitemap",      sitemap_schema()),
-            ("Page Content", content_schema()),
-            ("Images",       images_schema()),
-        ]
-    if "seo" in services:
-        service_dbs += [
-            ("Competitors", competitors_schema()),
-            ("Keywords",    keywords_schema()),
-        ]
-    # Blog, Social, GBP databases are auto-created on first run by their scripts
-    # — not pre-created here. This keeps the client page clean.
-
-    all_dbs = base_dbs + service_dbs
-
-    # Client name prefix for DB titles (first word of client name).
-    # This makes DBs readable at scale when agents have access to 20+ clients'
-    # databases — "Cielo — Client Log" instead of "Client Log" (x20).
-    db_prefix = client_name.split()[0] if client_name else "Client"
-
-    print(f"\nPass 1: Creating {len(all_dbs)} databases (prefix: '{db_prefix} — ')...")
-    for db_name, schema in all_dbs:
-        titled_name = f"{db_prefix} — {db_name}"
-        if not dry_run:
-            db_id = await notion.create_database(
-                parent_page_id=client_page_id,
-                title=titled_name,
-                properties_schema=schema,
-            )
-            # Keep the base name as the lookup key so downstream code works
-            databases[db_name] = db_id
-            print(f"  ✓ {titled_name}: {db_id}")
-        else:
-            print(f"  [DRY RUN] Would create: {titled_name}")
-
-    # ── Pass 2: Add relation properties ───────────────────────────────────────
-    if not dry_run:
-        print("\nPass 2: Adding relation properties...")
-
-        # Client Log → Client Info
-        await notion.update_database(
-            database_id=databases["Client Log"],
-            properties_schema={
-                "Client": {
-                    "relation": {
-                        "database_id": databases["Client Info"],
-                        "single_property": {},
-                    }
-                }
-            },
-        )
-        print("  ✓ Client Log → Client Info relation added")
-    else:
-        print("\n[DRY RUN] Would add relation properties in Pass 2")
-
-    # ── Create initial Client Info entry ──────────────────────────────────────
-    if not dry_run:
-        print("\nCreating initial Client Info entry...")
-        entry_props = {
-            "Name": notion.title_property(client_name),
-        }
-        if contact_email:
-            entry_props["Email"] = {"email": contact_email}
-        if verticals:
-            entry_props["Vertical"] = notion.text_property(", ".join(verticals))
-
-        entry_id = await notion.create_database_entry(
-            database_id=databases["Client Info"],
-            properties=entry_props,
-        )
-        print(f"  ✓ Client Info entry: {entry_id}")
-
-    # ── Create Business Profile page ──────────────────────────────────────────
-    business_profile_id = ""
-    if not dry_run:
-        print("\nCreating Business Profile page...")
-        business_profile_id = await notion.create_page(
+    async def _create_db(db_name: str, schema: dict) -> str:
+        """Create a prefixed database under the client page."""
+        titled = f"{db_prefix} — {db_name}"
+        db_id = await notion.create_database(
             parent_page_id=client_page_id,
-            title=f"{client_name} — Business Profile",
+            title=titled,
+            properties_schema=schema,
         )
+        databases[db_name] = db_id
+        print(f"    ✓ {titled}")
+        return db_id
 
-        profile_blocks = _build_business_profile_blocks(client_name, verticals)
-        # Notion API limits to 100 blocks per append — batch if needed
-        for i in range(0, len(profile_blocks), 100):
-            batch = profile_blocks[i:i+100]
-            await notion.append_blocks(business_profile_id, batch)
+    # ── Section 1: Intro callout + "Client Information / Rules" ─────────────
+    print("\nBuilding page sections...")
+    await notion.append_blocks(client_page_id, [
+        _intro_callout_block(),
+        _section_heading_block("Client Information / Rules"),
+    ])
+    print("  ✓ Intro callout + 'Client Information / Rules' heading")
 
-        section_count = len(UNIVERSAL_SECTIONS)
-        for v in verticals:
-            section_count += len(VERTICAL_SECTIONS.get(v, []))
-        print(f"  ✓ Business Profile: {business_profile_id} ({section_count} sections)")
-    else:
-        section_count = len(UNIVERSAL_SECTIONS)
-        for v in verticals:
-            section_count += len(VERTICAL_SECTIONS.get(v, []))
-        print(f"\n[DRY RUN] Would create Business Profile page with {section_count} sections:")
-        print(f"  Universal: {len(UNIVERSAL_SECTIONS)} sections")
-        for v in verticals:
-            v_sections = VERTICAL_SECTIONS.get(v, [])
-            print(f"  {v}: {len(v_sections)} sections")
+    # Business Profile page comes first (it's the foundation)
+    print("\n  Creating Business Profile page...")
+    business_profile_id = await notion.create_page(
+        parent_page_id=client_page_id,
+        title=f"{client_name} — Business Profile",
+    )
+    profile_blocks = _build_business_profile_blocks(client_name, verticals)
+    # Notion API limits to 100 blocks per append — batch if needed
+    for i in range(0, len(profile_blocks), 100):
+        await notion.append_blocks(business_profile_id, profile_blocks[i:i+100])
+    section_count = len(UNIVERSAL_SECTIONS)
+    for v in verticals:
+        section_count += len(VERTICAL_SECTIONS.get(v, []))
+    print(f"  ✓ Business Profile ({section_count} sections): {business_profile_id}")
 
-    # ── Print summary ─────────────────────────────────────────────────────────
+    # Base DBs in the Client Information / Rules section
+    print("\n  Creating base databases...")
+    await _create_db("Client Info",      client_info_schema())
+    await _create_db("Client Log",       client_log_schema())
+    await _create_db("Meeting Prep",     meeting_prep_schema())
+    await _create_db("Brand Guidelines", brand_guidelines_schema())
+
+    # ── Section 2: Website ───────────────────────────────────────────────────
+    await notion.append_blocks(client_page_id, [_section_heading_block("Website")])
+    print("  ✓ 'Website' heading")
+    if "website_build" in services:
+        await _create_db("Sitemap",      sitemap_schema())
+        await _create_db("Page Content", content_schema())
+        await _create_db("Images",       images_schema())
+
+    # ── Section 3: SEO ───────────────────────────────────────────────────────
+    await notion.append_blocks(client_page_id, [_section_heading_block("SEO")])
+    print("  ✓ 'SEO' heading")
+    if "seo" in services:
+        await _create_db("Keywords",    keywords_schema())
+        await _create_db("Competitors", competitors_schema())
+        # SEO Metrics DB is created later by `make seo-activate`, not at onboarding
+
+    # ── Section 4: Content ───────────────────────────────────────────────────
+    # Blog/Social/GBP DBs are auto-created on first run by their scripts — not here.
+    # Heading is still added so the section is visible and ready to fill.
+    await notion.append_blocks(client_page_id, [_section_heading_block("Content")])
+    print("  ✓ 'Content' heading")
+
+    # ── Section 5: Care Plan ─────────────────────────────────────────────────
+    await notion.append_blocks(client_page_id, [_section_heading_block("Care Plan")])
+    print("  ✓ 'Care Plan' heading")
+    await _create_db("Care Plan", care_plan_schema())
+
+    # ── Relations pass (DBs must exist first) ────────────────────────────────
+    print("\nAdding relation properties...")
+    await notion.update_database(
+        database_id=databases["Client Log"],
+        properties_schema={
+            "Client": {
+                "relation": {
+                    "database_id": databases["Client Info"],
+                    "single_property": {},
+                }
+            }
+        },
+    )
+    print("  ✓ Client Log → Client Info")
+
+    # ── Initial Client Info entry ────────────────────────────────────────────
+    print("\nCreating initial Client Info entry...")
+    entry_props: dict = {"Name": notion.title_property(client_name)}
+    if contact_email:
+        entry_props["Email"] = {"email": contact_email}
+    if verticals:
+        entry_props["Vertical"] = notion.text_property(", ".join(verticals))
+    entry_id = await notion.create_database_entry(
+        database_id=databases["Client Info"],
+        properties=entry_props,
+    )
+    print(f"  ✓ Client Info entry: {entry_id}")
+
+    # ── Print summary ────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("SETUP COMPLETE" if not dry_run else "DRY RUN COMPLETE")
+    print("SETUP COMPLETE")
     print("=" * 60)
-    if not dry_run:
-        print(f"\nClient page ID: {client_page_id}")
-        print(f"Business Profile: {business_profile_id}")
-        print(f"\nDatabase IDs:")
-        for name, db_id in databases.items():
-            print(f"  {name}: {db_id}")
-        print("\nNext steps:")
-        print("  1. Fill in the Business Profile page with client details")
-        print("  2. Run: make transcript / make sitemap / make content")
+    print(f"\nClient page ID: {client_page_id}")
+    print(f"Business Profile: {business_profile_id}")
+    print(f"\nDatabase IDs:")
+    for name, db_id in databases.items():
+        print(f"  {name}: {db_id}")
+    print("\nNext steps:")
+    print("  1. Fill in the Business Profile page with client details")
+    print("  2. Run: make transcript / make sitemap / make content")
 
     return {
-        "client_page_id": client_page_id if not dry_run else "",
+        "client_page_id": client_page_id,
         "business_profile_id": business_profile_id,
-        "databases": databases if not dry_run else {},
+        "databases": databases,
     }
 
 

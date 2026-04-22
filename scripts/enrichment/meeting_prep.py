@@ -453,24 +453,60 @@ async def run(dry: bool = False) -> list[dict]:
             blocks = build_sales_prep_blocks(title, time_str, attendees)
             prep_title = f"{title[:50]} — Prep — {dt.astimezone(gcal.PACIFIC_TZ).strftime('%Y-%m-%d')}"
 
+        # Figure out where this prep doc goes. Client meetings → per-client
+        # Meeting Prep DB. Everything else (sales/internal/unknown/external)
+        # falls back to the master Meeting Prep Docs page as before.
+        target_db_id = ""
+        if client_key and meeting_type in ("client_recurring", "onboarding"):
+            target_db_id = CLIENTS.get(client_key, {}).get("meeting_prep_db_id", "")
+            meeting_type_label = (
+                "Client Recurring" if meeting_type == "client_recurring" else "Onboarding"
+            )
+        elif meeting_type == "sales":
+            meeting_type_label = "Sales"
+        else:
+            meeting_type_label = "Other"
+
+        meeting_date_iso = dt.astimezone(gcal.PACIFIC_TZ).strftime("%Y-%m-%d")
+
         if dry:
-            print(f"    [DRY] would create: {prep_title}  ({len(blocks)} blocks)")
+            dest = f"DB {target_db_id}" if target_db_id else "master Meeting Prep page"
+            print(f"    [DRY] would create: {prep_title}  ({len(blocks)} blocks) → {dest}")
             prep_index.append({
                 "time": time_str, "original_title": title, "prep_title": prep_title,
                 "url": "(dry-run)", "type": meeting_type, "client": client_key,
             })
             continue
 
-        # Create Notion page under Meeting Prep Docs parent
+        # Create as DB entry if we have a per-client Meeting Prep DB,
+        # otherwise fall back to a sub-page under the master Meeting Prep
+        # Docs container (for sales/internal/unknown — no client DB target).
         try:
-            r = await notion._client.request(
-                path="pages", method="POST",
-                body={
-                    "parent": {"type": "page_id", "page_id": MEETING_PREP_PARENT_ID},
-                    "properties": {"title": {"title": [{"text": {"content": prep_title}}]}},
-                    "children": blocks[:100],  # Notion caps at 100 blocks per create
-                },
-            )
+            if target_db_id:
+                properties = {
+                    "Title":        {"title": [{"text": {"content": prep_title}}]},
+                    "Meeting Date": {"date": {"start": meeting_date_iso}},
+                    "Status":       {"select": {"name": "Upcoming"}},
+                    "Meeting Type": {"select": {"name": meeting_type_label}},
+                    "Attendees":    {"rich_text": [{"text": {"content": ", ".join(attendees)[:1900]}}]},
+                }
+                r = await notion._client.request(
+                    path="pages", method="POST",
+                    body={
+                        "parent": {"type": "database_id", "database_id": target_db_id},
+                        "properties": properties,
+                        "children": blocks[:100],  # Notion caps at 100 blocks per create
+                    },
+                )
+            else:
+                r = await notion._client.request(
+                    path="pages", method="POST",
+                    body={
+                        "parent": {"type": "page_id", "page_id": MEETING_PREP_PARENT_ID},
+                        "properties": {"title": {"title": [{"text": {"content": prep_title}}]}},
+                        "children": blocks[:100],  # Notion caps at 100 blocks per create
+                    },
+                )
             page_id = r["id"]
             url = f"https://notion.so/{page_id.replace('-', '')}"
             print(f"    ✓ Created: {url}")

@@ -412,6 +412,7 @@ class OnboardingAgent(BaseAgent):
             # ── Base DBs (always created) ────────────────────────────────────
             "client_info_db_id":         databases.get("Client Info", ""),
             "client_log_db_id":          databases.get("Client Log", ""),
+            "meeting_prep_db_id":        databases.get("Meeting Prep", ""),
             "brand_guidelines_db_id":    databases.get("Brand Guidelines", ""),
             "care_plan_db_id":           databases.get("Care Plan", ""),
             "business_profile_page_id":  setup_result.get("business_profile_id", ""),

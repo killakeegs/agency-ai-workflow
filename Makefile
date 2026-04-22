@@ -244,6 +244,24 @@ morning-briefing:
 	@$(PYTHON) scripts/enrichment/morning_briefing.py \
 		$(if $(DRY),--dry,)
 
+# Meeting Prep DBs — one per client, holds upcoming/recent prep docs
+#   make meeting-prep-setup        # Provision Meeting Prep DB for every client (idempotent)
+#   make meeting-prep-setup DRY=1  # Preview only
+#   make meeting-prep-setup CLIENT=summit_therapy  # Only one client
+#   make meeting-prep-archive      # Archive entries older than 90 days (daily cron)
+#   make meeting-prep-archive DRY=1 DAYS=60  # Preview with custom cutoff
+
+meeting-prep-setup:
+	@$(PYTHON) scripts/setup/add_meeting_prep_dbs.py \
+		$(if $(CLIENT),--client $(CLIENT),) \
+		$(if $(DRY),--dry,)
+
+meeting-prep-archive:
+	@$(PYTHON) scripts/enrichment/archive_meeting_prep.py \
+		$(if $(CLIENT),--client $(CLIENT),) \
+		$(if $(DAYS),--days $(DAYS),) \
+		$(if $(DRY),--dry,)
+
 # Real-time email monitor — one tick across all clients
 #   make email-monitor                  # Run one tick (checks since last run)
 #   make email-monitor LOOKBACK=120     # First run: check last 2 hours

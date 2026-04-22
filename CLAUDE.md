@@ -86,18 +86,42 @@ Instead of Relume wireframes → custom Webflow builds, the agency maintains pre
 
 - **Clients DB** — master database, one row per client. Status, services, vertical, retainer value, account manager. Agency command center. Created once via `--setup-clients-db`.
 
-### Per Client (restructured Apr 2026)
+### Per Client (restructured Apr 2026 — section layout Apr 2026)
 
-Each client has a master page under the workspace root with base databases + a Business Profile page + service-specific databases.
+Each client has a master page under the Clients container. The page is organized into **5 fixed sections** so the team can navigate at a glance:
+
+```
+[📘 intro callout]
+## Client Information / Rules
+  - Business Profile (page)
+  - Client Info (DB)
+  - Client Log (DB)
+  - Meeting Prep (DB)
+  - Brand Guidelines (DB)
+  - Blog Voice & Author Setup (page — content clients)
+  - Style Reference (DB — SEO/content clients)
+  - Client Brief (page — onboarding artifact)
+## Website
+  - Sitemap, Page Content, Images (DBs — website_build clients)
+## SEO
+  - Keywords, Competitors, SEO Metrics (DBs — seo clients)
+## Content
+  - Blog Posts, Social Posts, GBP Posts (auto-created by their scripts)
+## Care Plan
+  - Care Plan (DB)
+```
+
+Empty sections stay visible — shows which services aren't active yet.
 
 **Three layers of client knowledge:**
 1. **Client Info DB** — our relationship with them (pipeline, contacts, services, template, Figma links)
 2. **Brand Guidelines DB** — how we communicate as them (voice, colors, fonts, photography style)
 3. **Business Profile page** — deep understanding of their business (not a DB — rich Notion page with 12 universal sections + vertical-specific sections)
 
-**Always created (4 databases + 1 page):**
+**Always created (5 databases + 1 page):**
 - **Client Info** — pipeline stage, contacts, services, vertical, template, Figma links, account manager, monthly retainer
 - **Client Log** — single chronological timeline of every interaction (meetings, emails, calls). Replaces Meeting Notes + Action Items. Rex writes here.
+- **Meeting Prep** — one row per scheduled meeting. Auto-populated by morning briefing (`meeting_prep.py`), auto-archived after 90 days by `archive_meeting_prep.py`.
 - **Brand Guidelines** — colors, fonts, tone descriptors, photography style, blog voice, reviewer info
 - **Care Plan** — monthly PageSpeed reports, ADA widget status, privacy/terms
 - **Business Profile** (page) — 12 universal sections + vertical-specific sections. Grows over time as Rex processes meetings.
@@ -115,6 +139,10 @@ Each client has a master page under the workspace root with base databases + a B
 - **Keywords** — keyword research (SEO clients)
 
 **Removed (Apr 2026):** Mood Board DB, Wireframes DB, High-Fidelity Design DB, Action Items DB. Mood board replaced by template model. Wireframes/Hi-Fi replaced by Figma link fields on Client Info. Action items replaced by ClickUp (single task system).
+
+**Meeting Prep DB — background:** Before Apr 2026, meeting prep docs were created as a flat pile of sub-pages under a single "Meeting Prep Docs" master page. That became unnavigable at ~25 clients. Now each client gets their own Meeting Prep DB on their page (like Client Log). Non-client meetings (sales, internal) still land under the master Meeting Prep Docs page as sub-pages.
+
+**Notion API constraint — block reorder:** Notion's public API doesn't expose block reordering. `setup_client()` creates blocks/DBs in the correct final order so new clients are born structured. For the 25 existing clients, the structure is applied by pasting the prompt in `docs/notion_ai_client_restructure_prompt.md` into Notion AI on each client page (Notion AI *can* reorder blocks inside the UI).
 
 ### Business Profile — Vertical Templates
 
@@ -396,6 +424,13 @@ make enrich-emails MAX=30       # Tighter token budget (default 60 threads)
 # Meeting processor (automated or manual)
 make meeting-processor          # Process all unprocessed Notion AI transcripts
 make meeting-processor CLIENT=pdx_plumber  # Process only for one client
+
+# Meeting Prep DBs (per-client)
+make meeting-prep-setup         # Provision Meeting Prep DB for every client (idempotent)
+make meeting-prep-setup DRY=1   # Preview only
+make meeting-prep-setup CLIENT=summit_therapy
+make meeting-prep-archive       # Archive entries older than 90 days (daily cron)
+make meeting-prep-archive DRY=1 DAYS=60
 
 # Real-time monitors (Railway cron — also runnable locally)
 make email-monitor              # One tick: check Gmail for all clients since last run
