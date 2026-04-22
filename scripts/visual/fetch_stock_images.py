@@ -36,7 +36,7 @@ from pathlib import Path
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config.clients import CLIENTS
 from src.config import settings
@@ -505,7 +505,7 @@ async def main(
     client_name = cfg.get("name", client_key)
     notion = NotionClient(settings.notion_api_key)
 
-    out_dir = Path(__file__).parent.parent / "output" / client_key
+    out_dir = Path(__file__).parent.parent.parent / "output" / client_key
     out_dir.mkdir(parents=True, exist_ok=True)
 
     selections_path = out_dir / "selections.json"
