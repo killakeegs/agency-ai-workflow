@@ -326,22 +326,31 @@ def _callout(text: str, emoji: str = "📝") -> dict:
 
 
 def _page_blocks(page: dict) -> list[dict]:
-    """Build rich Notion blocks for a fully generated page's copy."""
+    """Build rich Notion blocks for a fully generated page's copy.
+
+    Team-only metadata (SEO summary, internal notes) is wrapped in Notion
+    callout blocks so site renderers can unambiguously distinguish it from
+    user-facing content. Anything structured as H2/H3/paragraph is fair game
+    for rendering on the public site.
+    """
     blocks: list[dict] = []
 
-    # ── SEO Summary ──────────────────────────────────────────────────────────
-    blocks.append(_h("── SEO ──", 2))
+    # ── SEO Summary (team reference — callout, not user-facing) ─────────────
     tt = page.get("title_tag", "")
     md = page.get("meta_description", "")
     tt_flag = " ⚠ OVER 60" if len(tt) > 60 else ""
     md_flag = " ⚠ OVER 155" if len(md) > 155 else (" ⚠ UNDER 120" if len(md) < 120 else "")
-    blocks.append(_bullet(f"Title Tag ({len(tt)} chars{tt_flag}): {tt}"))
-    blocks.append(_bullet(f"Meta Description ({len(md)} chars{md_flag}): {md}"))
-    blocks.append(_bullet(f"H1: {page.get('h1', '')}"))
     kw = ", ".join(page.get("seo_keywords", []))
+    seo_lines = [
+        "SEO Summary (team reference — not user-facing)",
+        "",
+        f"Title Tag ({len(tt)} chars{tt_flag}): {tt}",
+        f"Meta Description ({len(md)} chars{md_flag}): {md}",
+        f"H1: {page.get('h1', '')}",
+    ]
     if kw:
-        blocks.append(_bullet(f"Keywords: {kw}"))
-    blocks.append(_divider())
+        seo_lines.append(f"Keywords: {kw}")
+    blocks.append(_callout("\n".join(seo_lines), "🔍"))
 
     # ── Hero ─────────────────────────────────────────────────────────────────
     hero = page.get("hero", {})
@@ -380,17 +389,19 @@ def _page_blocks(page: dict) -> list[dict]:
     # ── FAQs ─────────────────────────────────────────────────────────────────
     faqs = page.get("faqs", [])
     if faqs:
-        blocks.append(_h("── FAQs (SEO Schema Markup) ──", 2))
+        blocks.append(_h("── FAQs ──", 2))
         for faq in faqs:
             blocks.append(_h(faq.get("question", ""), 3))
             blocks.append(_p(faq.get("answer", "")))
         blocks.append(_divider())
 
-    # ── Internal notes ────────────────────────────────────────────────────────
+    # ── Internal notes (team-only — callout, not user-facing) ───────────────
     notes = page.get("internal_notes", "")
     if notes:
-        blocks.append(_h("── Internal Notes ──", 2))
-        blocks.append(_p(notes))
+        blocks.append(_callout(
+            f"Internal Notes (team-only — not user-facing)\n\n{notes}",
+            "🛠️",
+        ))
 
     return blocks
 
