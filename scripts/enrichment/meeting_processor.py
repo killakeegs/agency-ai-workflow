@@ -582,9 +582,9 @@ async def _process_one(
     flag_dicts = _parsed_to_flags(parsed, meeting_date_str, transcript_page_id=page_id)
     if flag_dicts and FLAGS_DB_ID:
         try:
-            created_flags = await write_flags_to_db(
+            created_flags = len(await write_flags_to_db(
                 notion, FLAGS_DB_ID, client_name, client_key, flag_dicts, source="Meeting",
-            )
+            ))
             print(f"  ✓ {created_flags} flags → Flags DB (skipped {len(flag_dicts) - created_flags} dupes)")
         except Exception as e:
             print(f"  ⚠ Flags DB write failed: {e}")

@@ -243,9 +243,9 @@ async def run(client_key: str, days: int, dry_run: bool, max_threads: int) -> No
         print("  ⚠ No business_profile_page_id — skipping profile append")
 
     if other_flags and FLAGS_DB_ID:
-        created_flags = await write_flags_to_db(
+        created_flags = len(await write_flags_to_db(
             notion, FLAGS_DB_ID, client_name, client_key, other_flags, source="Email",
-        )
+        ))
         print(f"  ✓ {created_flags} flags → Flags DB (skipped {len(other_flags) - created_flags} dupes)")
     elif other_flags:
         print("  ⚠ NOTION_FLAGS_DB_ID not set — skipping Flags DB writes")

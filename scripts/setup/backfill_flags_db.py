@@ -122,9 +122,9 @@ async def run(commit: bool) -> None:
             print(f"  ... +{len(unique) - 10} more")
 
         if commit:
-            created = await write_flags_to_db(
+            created = len(await write_flags_to_db(
                 notion, FLAGS_DB_ID, client_name, client_key, unique, source="Email",
-            )
+            ))
             total_created += created
             print(f"  → {created} created, {len(unique) - created} skipped (dupe)")
 

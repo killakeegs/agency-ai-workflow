@@ -513,15 +513,17 @@ async def write_flags_to_db(
     client_key: str,
     flags: list[dict],
     source: str = "Email",
-) -> int:
-    """Write non-rule_set flags to the workspace Flags DB. Returns count created.
+) -> list[dict]:
+    """Write non-rule_set flags to the workspace Flags DB. Returns the flag dicts
+    that were actually created (post-dedup). Callers that only need the count can
+    use len() on the result.
 
     Dedups against existing Open/In Progress flags for the same client by description.
     rule_set flags are skipped here (they flow to Brand Guidelines via apply_rule_set_flags).
     """
     actionable = [f for f in flags if f.get("type") != "rule_set"]
     if not actionable or not flags_db_id:
-        return 0
+        return []
 
     existing_flags = await load_open_flags(notion, flags_db_id, client_key)
     existing_exact = {f["description"].strip().lower()[:200] for f in existing_flags}
@@ -534,7 +536,7 @@ async def write_flags_to_db(
         tid = f.get("thread_id") or ""
         if tid:
             existing_by_thread.setdefault(tid, []).append(kw)
-    created = 0
+    created: list[dict] = []
 
     for f in actionable:
         description = (f.get("description") or "").strip()
@@ -579,7 +581,7 @@ async def write_flags_to_db(
                 path="pages", method="POST",
                 body={"parent": {"database_id": flags_db_id}, "properties": props},
             )
-            created += 1
+            created.append(f)
             existing_exact.add(key)
             kw = _keyword_set(description)
             existing_keywords_global.append(kw)

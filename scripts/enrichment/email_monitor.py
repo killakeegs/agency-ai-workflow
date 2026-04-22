@@ -555,6 +555,10 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             tid = thread.get("thread_id", "")
             if tid and tid in alerted_threads:
                 continue
+            # Don't alert on our own outbound — keywords like "broken" in a
+            # recap email we just sent shouldn't page us about the client.
+            if thread.get("direction") == "outbound":
+                continue
             matched = _detect_urgency(thread.get("subject", ""), thread.get("body", ""))
             if matched and SLACK_BOT_TOKEN:
                 alert = _format_urgent_alert(client_name, thread, matched)
@@ -634,11 +638,13 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             total_enrichments += len(enrichments)
             print(f"    ✓ {len(enrichments)} enrichments → Business Profile")
 
+        created_flag_dicts: list[dict] = []
         if other_flags and FLAGS_DB_ID:
-            created_flags = await write_flags_to_db(
+            created_flag_dicts = await write_flags_to_db(
                 notion, FLAGS_DB_ID, client_name, client_key, other_flags, source="Email",
             )
-            print(f"    ✓ {created_flags} flags → Flags DB (skipped {len(other_flags) - created_flags} dupes)")
+            print(f"    ✓ {len(created_flag_dicts)} flags → Flags DB "
+                  f"(skipped {len(other_flags) - len(created_flag_dicts)} dupes)")
 
         if rule_flags and brand_db_id:
             applied = await apply_rule_set_flags(notion, brand_db_id, rule_flags)
@@ -654,10 +660,13 @@ async def tick(lookback_minutes: int = 15, dry_run_auto_close: bool = False) -> 
             if latest:
                 await update_last_contact(notion, client_name, latest)
 
-        # Slack alert for flags — posted to the client's dedicated channel
-        if flags and SLACK_BOT_TOKEN:
+        # Slack alert — only post flags that were actually NEW (post-dedup).
+        # Without this, Claude's re-emission of the same open actions every tick
+        # — with drifting wording — would spam Slack on every cron fire even
+        # though the Flags DB correctly deduped them.
+        if created_flag_dicts and SLACK_BOT_TOKEN:
             client_channel = cfg.get("slack_channel", "") or SLACK_CHANNEL
-            alert = _format_slack_alert(client_name, flags)
+            alert = _format_slack_alert(client_name, created_flag_dicts)
             await _post_to_slack(alert, channel=client_channel)
 
     # Update state
