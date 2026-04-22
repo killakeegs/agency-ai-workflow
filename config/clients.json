@@ -92,7 +92,16 @@
     "style_reference_db_id": "34af7f45-333e-81ed-9738-d321d3833b2f",
     "gsc_site_url": "https://www.cielotreatmentcenter.com/",
     "ga4_property_id": "356641770",
-    "meeting_prep_db_id": "34af7f45-333e-81a5-81eb-e3d3a86dfe79"
+    "meeting_prep_db_id": "34af7f45-333e-81a5-81eb-e3d3a86dfe79",
+    "canonical_address": "1805 NE Sandy Blvd, Portland, OR 97232",
+    "canonical_phone": "503-647-6132",
+    "tracking_phone_directories": [
+      "recovery.com",
+      "startyourrecovery.com",
+      "psychologytoday.com",
+      "zocdoc.com"
+    ],
+    "battle_plan_page_id": "34af7f45-333e-813e-949d-e273453aca92"
   },
   "another_chance": {
     "client_id": "another_chance",

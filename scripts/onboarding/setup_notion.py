@@ -524,6 +524,19 @@ def keywords_schema() -> dict:
                 ]
             }
         },
+        # Gap Type — what action this keyword requires:
+        # Create = we don't rank or don't have a page for it
+        # Optimize = we have a page but rank poorly; improve content + schema
+        # Defend = we rank well; hold position against competitor moves
+        "Gap Type": {
+            "select": {
+                "options": [
+                    {"name": "Create",   "color": "red"},
+                    {"name": "Optimize", "color": "yellow"},
+                    {"name": "Defend",   "color": "green"},
+                ]
+            }
+        },
         "Type": {
             "select": {
                 "options": [
