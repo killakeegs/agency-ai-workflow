@@ -65,17 +65,60 @@ def _same_host(a: str, b: str) -> bool:
         return False
 
 
+def _img_filename_stem(src: str) -> str:
+    """Extract a human-ish stem from an image src URL. Strips CDN path,
+    file extension, Webflow srcset suffixes like '-p-500', and leading
+    hash-like identifiers. Returns '' if the filename is non-informative
+    (e.g. pure hex hash, 'logo-1', etc).
+
+    Examples:
+      'https://cdn.../679bca_bcbs.png'   → 'bcbs'
+      '/assets/aetna-logo-p-500.png'      → 'aetna-logo'
+      '/img/7f8a9c3d-2.webp'              → ''   (no meaningful stem)
+    """
+    name = src.rsplit("/", 1)[-1]
+    name = re.sub(r"\.(png|svg|jpg|jpeg|webp|gif|ico)(\?.*)?$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"-p-\d+$", "", name)           # Webflow srcset suffix
+    name = re.sub(r"^[0-9a-f]{6,}_", "", name)    # leading hash identifier
+    name = name.strip("-_")
+    # Skip if remaining stem is just digits or noise
+    if not name or re.fullmatch(r"[0-9a-f\-_]{2,}", name):
+        return ""
+    return name.replace("_", " ").replace("-", " ")
+
+
 def _clean_html_to_text(html: str) -> str:
-    """Strip scripts/styles/nav/footer, collapse whitespace, return readable text."""
+    """Strip scripts/styles/nav/footer, preserve image filename hints where
+    meaningful, collapse whitespace, return readable text.
+
+    Why preserve image filenames: healthcare sites render insurance
+    provider logos, accreditation badges, and partner marks as images
+    (sometimes without alt text). Filenames often carry the signal —
+    "bcbs.png", "aetna-logo.png", "carf-accredited.svg". Claude can
+    use these as hints rather than inferring from absence.
+    """
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript", "svg", "iframe", "form"]):
         tag.decompose()
-    # Nav and footer are usually duplicated on every page — keep only the first.
-    # Strip all for simplicity; the main content usually carries the facts.
     for tag in soup(["nav", "footer", "header"]):
         tag.decompose()
+
+    # Replace each <img> with a text marker carrying alt + filename stem,
+    # but only if either is informative. Trashes unmarked decorative imagery.
+    for img in soup.find_all("img"):
+        alt = (img.get("alt") or "").strip()
+        stem = _img_filename_stem(img.get("src") or "")
+        marker_parts: list[str] = []
+        if alt:
+            marker_parts.append(alt)
+        if stem and stem.lower() not in alt.lower():
+            marker_parts.append(stem)
+        if marker_parts:
+            img.replace_with(f" [image: {' / '.join(marker_parts)}] ")
+        else:
+            img.decompose()
+
     text = soup.get_text(separator="\n")
-    # Collapse 3+ newlines and tabs
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()

@@ -64,19 +64,44 @@ The Business Profile has H2 section headings that act as buckets. Your job: read
 the website content, then for each section, return the facts (if any) that belong
 under it.
 
-Rules:
-- Include ONLY facts explicitly stated on the website. Never infer or embellish.
-- Each fact is one concise sentence or short paragraph. No filler.
-- Deduplicate — if two pages say the same thing, keep it once.
-- If a section has no facts from the site, omit it from output.
-- Capture negative statements explicitly ("offers PHP and IOP but NOT residential").
-- Respect the existing facts already on the page — do NOT re-emit a fact that is
-  already captured verbatim or substantively (we're adding to the profile, not
-  duplicating it).
-- Attribute source URL when helpful ("(from /services/detox)"), not required.
+CRITICAL RULES — READ CAREFULLY:
 
-Section name in your output must match one of the provided headings exactly —
-case and punctuation. Return ONLY a JSON object with this shape:
+1. Include ONLY facts EXPLICITLY STATED on the website. Never infer, never
+   extrapolate, never embellish.
+
+2. NEVER NEGATE BASED ON ABSENCE. If a topic isn't mentioned on the page,
+   DO NOT write the opposite as a fact.
+   - WRONG: insurance isn't discussed, so you write "does not accept insurance"
+   - WRONG: residential isn't mentioned, so you write "does not offer residential"
+   - RIGHT: omit the fact entirely — we only state what the site actually says
+   Only write a negative statement ("does NOT offer X") if the site EXPLICITLY
+   denies offering it.
+
+3. Image-based content: the scraper injects [image: name] markers when pages
+   contain logos/badges (e.g. "We are now in-network with [image: bcbs]").
+   Treat these as PARTIAL signals, not definitive facts. For insurance logos
+   specifically: list what you see as a tentative fact prefixed with
+   "Site homepage shows in-network logo for: <provider>" — the team will
+   verify. Do NOT extrapolate a full insurance panel from one logo.
+
+4. If pages CONTRADICT each other (e.g. one page says PHP + IOP, another
+   mentions residential), emit the fact from the more authoritative source
+   (Services / Levels of Care page > homepage boilerplate) and append
+   "(potential site inconsistency — other pages suggest otherwise)".
+
+5. Each fact is one concise sentence or short paragraph. No filler.
+
+6. Deduplicate — if two pages say the same thing, keep it once.
+
+7. If a section has no facts from the site, omit it from output entirely.
+
+8. Respect the existing facts already on the page — do NOT re-emit a fact
+   that is already captured verbatim or substantively.
+
+9. Section name in your output must match one of the provided headings
+   exactly — case and punctuation.
+
+Return ONLY a JSON object with this shape:
 
 {
   "sections": {
