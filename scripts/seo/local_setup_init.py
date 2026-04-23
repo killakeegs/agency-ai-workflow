@@ -62,40 +62,58 @@ TIER_2_HEALTHCARE = [
 ]
 
 # Vertical-specific directories — Tier 3
-TIER_3_BY_VERTICAL: dict[str, list[tuple[str, str]]] = {
+# Each entry: (display_text, url, cost_tier)
+# cost_tier: "free" / "freemium" / "paid" — paid directories require client
+# spend approval before claiming (per Andrea 2026-04-23).
+TIER_3_BY_VERTICAL: dict[str, list[tuple[str, str, str]]] = {
     "addiction_treatment": [
-        ("Claim Psychology Today profile", "https://www.psychologytoday.com"),
-        ("Register with SAMHSA Treatment Locator", "https://findtreatment.samhsa.gov"),
-        ("Claim Recovery.com listing", "https://recovery.com"),
-        ("Claim Rehab.com listing", "https://www.rehab.com"),
+        ("[$ PAID] Claim Psychology Today profile — ~$29-39/mo per clinician. REQUIRES CLIENT APPROVAL on monthly spend before claiming.", "https://www.psychologytoday.com", "paid"),
+        ("[FREE] Register with SAMHSA Treatment Locator", "https://findtreatment.samhsa.gov", "free"),
+        ("[FREEMIUM] Claim Recovery.com listing — free basic; premium tier paid (client approval if upgrading)", "https://recovery.com", "freemium"),
+        ("[FREEMIUM] Claim Rehab.com listing — free basic; premium tier paid", "https://www.rehab.com", "freemium"),
     ],
     "speech_pathology": [
-        ("Claim ASHA ProFind profile", "https://www.asha.org/profind"),
+        ("[FREE] Claim ASHA ProFind profile (requires ASHA membership)", "https://www.asha.org/profind", "free"),
     ],
     "occupational_therapy": [
-        ("Claim AOTA Find an OT profile", "https://www.aota.org"),
+        ("[FREE] Claim AOTA Find an OT profile (requires AOTA membership)", "https://www.aota.org", "free"),
     ],
     "physical_therapy": [
-        ("Claim APTA Find a PT profile", "https://aptaapps.apta.org/APTAPTDirectory"),
-        ("Claim PTandMe profile", "https://ptandme.com"),
+        ("[FREE] Claim APTA Find a PT profile (requires APTA membership)", "https://aptaapps.apta.org/APTAPTDirectory", "free"),
+        ("[FREEMIUM] Claim PTandMe profile", "https://ptandme.com", "freemium"),
     ],
     "mental_health": [
-        ("Claim Psychology Today profile", "https://www.psychologytoday.com"),
-        ("Claim GoodTherapy profile", "https://www.goodtherapy.org"),
-        ("Claim TherapyDen profile", "https://www.therapyden.com"),
-        ("Claim Inclusive Therapists profile", "https://www.inclusivetherapists.com"),
+        ("[$ PAID] Claim Psychology Today profile — ~$29-39/mo per clinician. REQUIRES CLIENT APPROVAL on monthly spend.", "https://www.psychologytoday.com", "paid"),
+        ("[$ PAID] Claim GoodTherapy profile — paid tier ~$30+/mo. REQUIRES CLIENT APPROVAL if pursuing.", "https://www.goodtherapy.org", "paid"),
+        ("[FREE] Claim TherapyDen profile", "https://www.therapyden.com", "free"),
+        ("[FREE] Claim Inclusive Therapists profile", "https://www.inclusivetherapists.com", "free"),
     ],
     "dermatology": [
-        ("Claim AAD Find a Dermatologist profile", "https://find-a-derm.aad.org"),
-        ("Claim RealSelf profile", "https://www.realself.com"),
+        ("[FREE] Claim AAD Find a Dermatologist profile (requires AAD membership)", "https://find-a-derm.aad.org", "free"),
+        ("[FREEMIUM] Claim RealSelf profile — free basic; paid premium for featured placement", "https://www.realself.com", "freemium"),
     ],
 }
 
+# Tier 4 — Search Atlas's 5 data aggregators. One-tool path via Search Atlas's
+# citation/aggregator push; each aggregator still gets its own checkbox so
+# the team can verify propagation per destination.
+# 5 aggregators per Search Atlas config (2026-04-23):
 TIER_4_AGGREGATORS = [
-    ("Submit NAP to Data Axle (Infogroup) — free, feeds hundreds of small directories", "https://www.data-axle.com"),
-    ("Submit NAP to Localeze (Neustar)", "https://www.neustarlocaleze.biz"),
-    ("Claim Foursquare listing — feeds Apple Maps + Uber + others", "https://foursquare.com"),
+    ("Push NAP to Data Axle (Infogroup) — foundational aggregator feeding hundreds of smaller directories", "https://www.data-axle.com"),
+    ("Push NAP to Neustar / Localeze — feeds Apple Maps, Garmin, TomTom", "https://www.neustarlocaleze.biz"),
+    ("Push NAP to YP Network (Yellow Pages) — still crawled by Google", "https://adsolutions.yp.com"),
+    ("Push NAP to GPS Network — feeds GPS / navigation providers", ""),
+    ("Push NAP to Foursquare — feeds Apple Maps, Uber, Snap, Bing, Samsung", "https://foursquare.com"),
 ]
+
+TIER_4_PREAMBLE = (
+    "Primary path — one action via Search Atlas: use the citation aggregator "
+    "push tool to submit NAP to all 5 aggregators below in a single run. "
+    "Propagation to downstream directories takes 4-8 weeks. Still tick each "
+    "aggregator checkbox below after submission to confirm the push landed. "
+    "Manual fallback: claim each aggregator individually via the linked URLs "
+    "if Search Atlas isn't being used for this client."
+)
 
 TIER_5_FOUNDATION = [
     ("Run NAP audit — verify Name/Address/Phone consistent across every claimed profile (BrightLocal scan or manual)",
@@ -220,19 +238,30 @@ def compose_checklist_blocks(cfg: dict) -> list[dict]:
         for text, url in TIER_2_HEALTHCARE:
             blocks.append(_todo(text, url))
 
-    # Tier 3 — per-vertical
-    vertical_items: list[tuple[str, str]] = []
+    # Tier 3 — per-vertical. New tuple shape: (text, url, cost_tier).
+    # Paid items get a callout so the team knows not to claim without client
+    # spend approval.
+    vertical_items: list[tuple[str, str, str]] = []
     seen_titles: set[str] = set()
     for v in verticals:
-        for text, url in TIER_3_BY_VERTICAL.get(v, []):
+        for text, url, cost in TIER_3_BY_VERTICAL.get(v, []):
             if text in seen_titles:
                 continue
             seen_titles.add(text)
-            vertical_items.append((text, url))
+            vertical_items.append((text, url, cost))
     if vertical_items:
         vertical_label = ", ".join(v.replace("_", " ") for v in verticals)
         blocks.append(_heading(f"Tier 3 — Vertical-specific ({vertical_label})", level=2))
-        for text, url in vertical_items:
+        # Flag if any paid items present
+        has_paid = any(cost == "paid" for _, _, cost in vertical_items)
+        if has_paid:
+            blocks.append(_callout(
+                "Some Tier 3 directories are paid subscriptions. Do NOT claim paid "
+                "listings without client approval on the monthly spend. Items tagged "
+                "[$ PAID] require explicit sign-off.",
+                emoji="💰",
+            ))
+        for text, url, _cost in vertical_items:
             blocks.append(_todo(text, url))
     else:
         blocks.append(_heading("Tier 3 — Vertical-specific", level=2))
@@ -242,8 +271,11 @@ def compose_checklist_blocks(cfg: dict) -> list[dict]:
             f"scripts/seo/local_setup_init.py when onboarding a new vertical.)"
         ))
 
-    # Tier 4 — always (aggregators apply to everyone)
-    blocks.append(_heading("Tier 4 — Data aggregators (free, feed the long tail)", level=2))
+    # Tier 4 — always (aggregators apply to everyone). Primary path via
+    # Search Atlas aggregator push; individual checkboxes below so the team
+    # can verify each propagation target.
+    blocks.append(_heading("Tier 4 — Data aggregators (push to all 5 via Search Atlas)", level=2))
+    blocks.append(_paragraph(TIER_4_PREAMBLE))
     for text, url in TIER_4_AGGREGATORS:
         blocks.append(_todo(text, url))
 
@@ -291,7 +323,15 @@ async def resolve_client_root(notion: NotionClient, cfg: dict) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main(client_key: str, dry_run: bool) -> None:
+async def _archive_page(notion: NotionClient, page_id: str) -> None:
+    """Soft-delete a page via Notion PATCH. Archive = moved to trash, restorable."""
+    try:
+        await notion._client.pages.update(page_id=page_id, archived=True)
+    except Exception as e:
+        print(f"  ⚠ couldn't archive old page {page_id}: {e}")
+
+
+async def main(client_key: str, dry_run: bool, force: bool) -> None:
     from config.clients import CLIENTS
     cfg = CLIENTS.get(client_key)
     if not cfg:
@@ -299,15 +339,22 @@ async def main(client_key: str, dry_run: bool) -> None:
         sys.exit(1)
 
     existing = cfg.get("local_setup_checklist_page_id")
-    if existing:
+    if existing and not force:
         print(f"Local Setup Checklist already exists for {cfg.get('name', client_key)}: {existing}")
-        print("Delete the page in Notion + clear local_setup_checklist_page_id in clients.json to regenerate.")
+        print("Re-run with FORCE=1 to archive the old page + regenerate with the latest template.")
         return
 
     notion = NotionClient(settings.notion_api_key)
     print(f"\n── Local Setup Checklist init {'[DRY RUN]' if dry_run else ''} ──")
     print(f"  Client: {cfg.get('name', client_key)}")
     print(f"  Verticals: {cfg.get('vertical', [])}")
+    if existing and force:
+        print(f"  Force mode: will archive existing page {existing}")
+
+    # Archive old page first (if force mode + existing)
+    if existing and force and not dry_run:
+        await _archive_page(notion, existing)
+        print(f"  ✓ archived old page")
 
     # Resolve root page
     root_page_id = await resolve_client_root(notion, cfg)
@@ -363,5 +410,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Local SEO Setup Checklist page for a client")
     parser.add_argument("--client", required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force",   action="store_true",
+                        help="archive existing checklist page + regenerate from latest template")
     args = parser.parse_args()
-    asyncio.run(main(client_key=args.client, dry_run=args.dry_run))
+    asyncio.run(main(client_key=args.client, dry_run=args.dry_run, force=args.force))

@@ -179,9 +179,11 @@ style-reference-init:
 # Generate the Local SEO Setup Checklist page for a client (GBP + citations +
 # vertical-specific directories + NAP canonicals + foundation). Gate for agent
 # activation: rank monitor only produces meaningful data once Tier 1 is done.
+# FORCE=1 archives the existing page + regenerates with the latest template.
 local-setup-init:
 	@$(PYTHON) scripts/seo/local_setup_init.py --client $(CLIENT) \
-	  $(if $(DRY),--dry-run,)
+	  $(if $(DRY),--dry-run,) \
+	  $(if $(FORCE),--force,)
 
 # Rank monitor — Target/Ranking/Won lifecycle for approved keywords.
 # Polls top-100 SERP per keyword, auto-transitions Status, logs rank history,
