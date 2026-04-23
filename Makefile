@@ -296,6 +296,16 @@ email-monitor:
 email-monitor-setup:
 	@$(PYTHON) scripts/enrichment/email_monitor.py --setup
 
+# Calendar watch — DMs teammates when they're added to a new meeting
+#   make calendar-watch          # One tick (respects quiet hours)
+#   make calendar-watch DRY=1    # Preview only, no DMs or state writes
+#   make calendar-watch FORCE=1  # Ignore quiet hours
+
+calendar-watch:
+	@$(PYTHON) scripts/enrichment/calendar_watch.py \
+		$(if $(DRY),--dry,) \
+		$(if $(FORCE),--force,)
+
 # ── Approval flow ─────────────────────────────────────────────────────────────
 
 advance:
