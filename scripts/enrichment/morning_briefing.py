@@ -44,7 +44,7 @@ CLICKUP_WORKSPACE_ID = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
 # Team: email → ClickUp user ID. Slack ID is looked up fresh each run.
 TEAM = {
     "keegan@rxmedia.io":      {"name": "Keegan",  "clickup_id": 3852174},
-    "content@rxmedia.io":     {"name": "Henna",   "clickup_id": 5847731},
+    "content@rxmedia.io":     {"name": "Henna",   "clickup_id": 5847731, "blocker_nudge": True},
     "systems@rxmedia.io":     {"name": "Justin",  "clickup_id": 54703919},
     "karla@rxmedia.io":       {"name": "Karla",   "clickup_id": 107627361},
     "accounting@rxmedia.io":  {"name": "Mari",    "clickup_id": 95680055},
@@ -283,6 +283,7 @@ def _personal_briefing(
     overdue_tasks: list[dict],
     flags_data: dict | None,
     show_pulse: bool = False,
+    blocker_nudge_count: int = 0,
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
     lines = [f"🌅 *Good Morning {name} — {today}*", ""]
@@ -319,6 +320,16 @@ def _personal_briefing(
         lines.append("*🚨 Needs Attention*")
         for item in needs_attention:
             lines.append(f"• {item}")
+        lines.append("")
+
+    # 2b. Blocker nudge — lightweight one-liner for teammates who should sweep
+    # blockers without seeing the full details (e.g. Henna reviewing client logs).
+    if blocker_nudge_count:
+        plural = "s" if blocker_nudge_count != 1 else ""
+        lines.append(
+            f"🚧 *{blocker_nudge_count} active blocker{plural}* — please review "
+            f"the client logs to make sure there's nothing pressing."
+        )
         lines.append("")
 
     # 3. Pulse — compact stats (shown to Keegan only)
@@ -425,17 +436,31 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
             slack_id = slack_ids.get(email, "")
 
             overdue_tasks = grouped.get(clickup_id, [])
-            # Keegan sees agency flags + meetings + pulse; others see only their overdue
+            # Keegan sees agency flags + pulse; everyone sees the meetings they're invited to.
             is_keegan = email == "keegan@rxmedia.io"
             flags_for_user = flags_data if is_keegan else None
-            meetings_for_user = meeting_prep_index if is_keegan else []
+            meetings_for_user = [
+                m for m in meeting_prep_index
+                if email.lower() in {a.lower() for a in m.get("attendees", [])}
+            ]
+
+            # Teammates tagged with blocker_nudge get a one-liner prompting them
+            # to sweep client logs — the full blocker list stays on Keegan's DM.
+            blocker_nudge_count = (
+                len(flags_data.get("blockers", []))
+                if info.get("blocker_nudge") and not is_keegan
+                else 0
+            )
 
             has_flags = flags_for_user and (flags_for_user["blockers"] or flags_for_user["open_actions"])
-            if not overdue_tasks and not has_flags and not meetings_for_user:
+            if not overdue_tasks and not has_flags and not meetings_for_user and not blocker_nudge_count:
                 print(f"  {name}: nothing to send")
                 continue
 
-            msg = _personal_briefing(name, meetings_for_user, overdue_tasks, flags_for_user, show_pulse=is_keegan)
+            msg = _personal_briefing(
+                name, meetings_for_user, overdue_tasks, flags_for_user,
+                show_pulse=is_keegan, blocker_nudge_count=blocker_nudge_count,
+            )
             print(f"\n  --- DM to {name} ---")
             print(msg)
 

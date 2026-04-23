@@ -408,6 +408,7 @@ async def run(dry: bool = False) -> list[dict]:
             prep_index.append({
                 "time": time_str, "original_title": title, "prep_title": title,
                 "url": "", "type": meeting_type, "host": host_domain,
+                "attendees": attendees,
             })
             continue
 
@@ -475,6 +476,7 @@ async def run(dry: bool = False) -> list[dict]:
             prep_index.append({
                 "time": time_str, "original_title": title, "prep_title": prep_title,
                 "url": "(dry-run)", "type": meeting_type, "client": client_key,
+                "attendees": attendees,
             })
             continue
 
@@ -513,6 +515,7 @@ async def run(dry: bool = False) -> list[dict]:
             prep_index.append({
                 "time": time_str, "original_title": title, "prep_title": prep_title,
                 "url": url, "type": meeting_type, "client": client_key,
+                "attendees": attendees,
             })
         except Exception as e:
             print(f"    ⚠ Failed to create: {e}")
