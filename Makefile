@@ -185,6 +185,31 @@ local-setup-init:
 	  $(if $(DRY),--dry-run,) \
 	  $(if $(FORCE),--force,)
 
+# Pass A — long-tail keyword expansion. Takes team-approved seeds (Priority=High +
+# Status=Target) from the client's Keywords DB, uses DataForSEO for expansion,
+# Claude evaluates strategic fit, writes proposals as Priority=Medium / Status=Proposed.
+expand-longtail:
+	@$(PYTHON) scripts/seo/expand_longtail.py --client $(CLIENT) \
+	  $(if $(PER_SEED),--per-seed $(PER_SEED),) \
+	  $(if $(MIN_VOL),--min-volume $(MIN_VOL),) \
+	  $(if $(DRY),--dry-run,)
+
+# Auto-discover competitors from priority keyword SERPs. Writes Status=Proposed
+# candidates (net-new domains) and Status=Partner for any sister RxMedia client
+# domains that appear in the SERPs.
+discover-competitors:
+	@$(PYTHON) scripts/seo/discover_competitors.py --client $(CLIENT) \
+	  $(if $(MIN_APP),--min-appearances $(MIN_APP),) \
+	  $(if $(DRY),--dry-run,)
+
+# V3 enrichment — fills empty fields on Status ∈ {Proposed, Active} competitors
+# (GBP via Places API, referring domains, schema detection, Claude competitive
+# angle). Preserves any fields the team has already edited.
+enrich-competitors:
+	@$(PYTHON) scripts/seo/enrich_competitors.py --client $(CLIENT) \
+	  $(if $(LIMIT),--limit $(LIMIT),) \
+	  $(if $(DRY),--dry-run,)
+
 # Rank monitor — Target/Ranking/Won lifecycle for approved keywords.
 # Polls top-100 SERP per keyword, auto-transitions Status, logs rank history,
 # posts win/anomaly/first-appearance flags to the client's Slack channel.
