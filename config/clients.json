@@ -179,7 +179,7 @@
     "images_db_id": "343f7f45-333e-816c-ad64-e720bb2c9eab",
     "competitors_db_id": "343f7f45-333e-8130-8f04-c78abf89aae0",
     "keywords_db_id": "343f7f45-333e-8140-86d4-ea47885b3458",
-    "seo_metrics_db_id": "",
+    "seo_metrics_db_id": "34bf7f45-333e-811b-ab78-fb2b8da8573b",
     "gbp_posts_db_id": "",
     "blog_posts_db_id": "",
     "social_posts_db_id": "",
@@ -191,7 +191,20 @@
     "primary_contact": "Shane Brunson",
     "slack_channel": "#lotus-recovery",
     "meeting_prep_db_id": "34af7f45-333e-8189-a604-dbbc1eca27d6",
-    "seo_mode": "local"
+    "seo_mode": "local",
+    "canonical_address": "940 E Ashby Rd., Quinby, SC 29506",
+    "canonical_phone": "843-306-9340",
+    "gsc_site_url": "https://www.lotusrecoverysc.com/",
+    "ga4_property_id": "478602206",
+    "tracking_phone_directories": [
+      "recovery.com",
+      "startyourrecovery.com",
+      "psychologytoday.com",
+      "zocdoc.com"
+    ],
+    "battle_plan_page_id": "34bf7f45-333e-8109-858e-dc87dabc3cc5",
+    "style_reference_db_id": "34bf7f45-333e-8179-9700-c6b48874d443",
+    "local_setup_checklist_page_id": "34bf7f45-333e-8162-85ce-eab965f40ed3"
   },
   "atlas_addiction_treatment_center": {
     "client_id": "atlas_addiction_treatment_center",
