@@ -39,16 +39,21 @@ DATAFORSEO_BASE    = "https://api.dataforseo.com/v3"
 LOCATION_CODE_US   = 2840     # USA — priority keywords already carry their geo modifier
 LANGUAGE_CODE      = "en"
 
-DEFAULT_PER_SEED   = 10       # per cluster; ideas only — strategic fit decides final selection
+DEFAULT_PER_SEED   = 10       # ideas per seed pulled from DataForSEO
 DEFAULT_MIN_VOLUME = 0        # LOCAL SEO: volume is informational, not a gate
 DEFAULT_MIN_KEYWORD_WORDS = 3 # genuine long-tail starts at 3 words
+MAX_WRITES_PER_SEED = 5       # after Claude scoring, cap output per seed
 
 # Module-level client context — initialized by _init_ctx() at main() start.
 CTX: dict = {
-    "client_key": "",
-    "client_name": "",
-    "positioning": "",
-    "seeds": [],         # list of {keyword, cluster} from client's Keywords DB (Priority=High, Status=Target)
+    "client_key":     "",
+    "client_name":    "",
+    "positioning":    "",
+    "seo_mode":       "local",
+    "verticals":      [],      # list of vertical keys from clients.json
+    "state_allowlist": set(),  # {state abbrev(s) in which client operates}
+    "brand_roots":    [],      # competitor brand roots to filter out branded queries
+    "seeds":          [],      # [{keyword, cluster}] from client's Keywords DB (Priority=High, Status=Target)
 }
 
 # Junk / off-topic filters — terms that almost always indicate the seed
@@ -56,9 +61,66 @@ CTX: dict = {
 EXCLUDE_SUBSTRINGS = [
     "salary", "jobs", "career", "license", "certification", "near me hiring",
     "degree", "school", "course", "training program",
-    "free", "cheap",  # typically not a market agency clients compete on
+    "free", "cheap",
     "veteran only",
 ]
+
+# ── Per-vertical modifier blocklist ──────────────────────────────────────────
+# "rehab" means five different things medically. For each vertical we serve,
+# list the modifier tokens that specifically flip "rehab" to a different
+# medical vertical. A candidate keyword containing any of these phrases gets
+# dropped pre-Claude.
+VERTICAL_MISMATCH_TOKENS: dict[str, list[str]] = {
+    "addiction_treatment": [
+        "cardiac", "cardio", "heart",
+        "pediatric", "pediatrics",
+        "physical rehab", "physical therapy", "pt rehab",
+        "wildlife", "animal", "bird", "horse", "vet ", "veterinary",
+        "pulmonary",
+        "orthopedic", "ortho rehab", "knee rehab", "hip rehab",
+        "shoulder rehab", "ankle rehab", "joint rehab", "back rehab",
+        "stroke", "neurological", "neuro rehab", "brain injury",
+        "vocational", "speech therapy", "occupational therapy",
+        "geriatric", "elderly rehab",
+        "dental rehab",
+        "inpatient rehabilitation hospital",
+        "acute rehabilitation",
+        "skilled nursing",
+        "spinal rehab", "spine rehab",
+    ],
+    # other verticals: add blocklists as they're onboarded
+}
+
+# ── US geography for state-allowlist filter ──────────────────────────────────
+US_STATES: dict[str, str] = {
+    "alabama":"AL","alaska":"AK","arizona":"AZ","arkansas":"AR","california":"CA",
+    "colorado":"CO","connecticut":"CT","delaware":"DE","florida":"FL","georgia":"GA",
+    "hawaii":"HI","idaho":"ID","illinois":"IL","indiana":"IN","iowa":"IA",
+    "kansas":"KS","kentucky":"KY","louisiana":"LA","maine":"ME","maryland":"MD",
+    "massachusetts":"MA","michigan":"MI","minnesota":"MN","mississippi":"MS","missouri":"MO",
+    "montana":"MT","nebraska":"NE","nevada":"NV","new hampshire":"NH","new jersey":"NJ",
+    "new mexico":"NM","new york":"NY","north carolina":"NC","north dakota":"ND","ohio":"OH",
+    "oklahoma":"OK","oregon":"OR","pennsylvania":"PA","rhode island":"RI","south carolina":"SC",
+    "south dakota":"SD","tennessee":"TN","texas":"TX","utah":"UT","vermont":"VT",
+    "virginia":"VA","washington":"WA","west virginia":"WV","wisconsin":"WI","wyoming":"WY",
+}
+
+# Major metros → state abbrev. If metro appears in a keyword AND its state is
+# not in the client's allowlist AND the keyword doesn't also name an allowed
+# state, the keyword is out-of-market.
+MAJOR_METROS_TO_STATE: dict[str, str] = {
+    "new york city":"NY","nyc":"NY","manhattan":"NY","brooklyn":"NY","bronx":"NY","queens":"NY",
+    "los angeles":"CA","san francisco":"CA","san diego":"CA","orange county":"CA","sacramento":"CA","san jose":"CA",
+    "chicago":"IL","philadelphia":"PA","pittsburgh":"PA","boston":"MA",
+    "miami":"FL","orlando":"FL","tampa":"FL","jacksonville":"FL","fort lauderdale":"FL",
+    "atlanta":"GA","dallas":"TX","houston":"TX","austin":"TX","san antonio":"TX","fort worth":"TX",
+    "phoenix":"AZ","tucson":"AZ","denver":"CO",
+    "seattle":"WA","portland":"OR","las vegas":"NV","detroit":"MI","minneapolis":"MN",
+    "baltimore":"MD","cleveland":"OH","cincinnati":"OH","indianapolis":"IN",
+    "st. louis":"MO","st louis":"MO","kansas city":"MO","milwaukee":"WI","nashville":"TN",
+    "memphis":"TN","louisville":"KY","oklahoma city":"OK","tulsa":"OK",
+    "salt lake city":"UT","albuquerque":"NM","honolulu":"HI",
+}
 
 
 # ── DataForSEO auth ───────────────────────────────────────────────────────────
@@ -194,36 +256,176 @@ def existing_keyword_set() -> set[str]:
     return {row["keyword"].strip().lower() for row in CTX["seeds"]}
 
 
+# Brand roots — generic tokens dropped when deriving a competitor's distinctive name.
+_BRAND_GENERIC_STOP: set[str] = {
+    "the","a","an","and","of","&","at","in","for","on","to","by","with",
+    "recovery","rehab","rehabilitation","rehabs","center","centers","centre",
+    "health","hospital","hospitals","treatment","medical","clinic","clinics",
+    "group","services","inc","llc","co","company","corp","home","homes",
+    "sc","nc","va","ga","fl","ny","ca","tx","pa","tn","ky","al","ms","wv",
+    "north","south","east","west","american","america","national","usa","us",
+    "llc.","inc.",
+}
+
+
+def _brand_root(name: str) -> str:
+    """Heuristic: take the first 1–2 distinctive tokens from a competitor name.
+    'Encompass Health Rehabilitation Hospital' → 'encompass'
+    'Sea Grove Recovery' → 'sea grove'
+    'Recovery Centers of America' → 'america' (fallback — pathological case)"""
+    tokens = name.lower().replace(",", " ").replace("-", " ").replace("'", "").split()
+    root: list[str] = []
+    for t in tokens:
+        t = t.strip(".,:")
+        if not t:
+            continue
+        if t in _BRAND_GENERIC_STOP:
+            if root:
+                break
+            continue
+        root.append(t)
+        if len(root) >= 2:
+            break
+    return " ".join(root).strip()
+
+
+async def _load_competitor_brand_roots(
+    notion: NotionClient, competitors_db_id: str,
+) -> list[str]:
+    """Load Status ∈ {Active, Proposed} competitor names, reduce to brand roots."""
+    if not competitors_db_id:
+        return []
+    try:
+        entries = await notion.query_database(database_id=competitors_db_id)
+    except Exception as exc:
+        print(f"  ⚠ could not load competitors for branded-query filter: {exc}")
+        return []
+    roots: set[str] = set()
+    for e in entries:
+        props = e["properties"]
+        status_sel = (props.get("Status") or {}).get("select")
+        status = status_sel.get("name", "") if status_sel else ""
+        if status not in ("Active", "Proposed", ""):  # include unstated status
+            continue
+        name_items = props.get("Competitor Name", {}).get("title", []) or []
+        name = "".join(p.get("text", {}).get("content", "") for p in name_items).strip()
+        if not name:
+            continue
+        root = _brand_root(name)
+        if len(root) >= 4:  # avoid 2-letter generic roots
+            roots.add(root)
+    return sorted(roots)
+
+
+# State abbrevs that collide with common English words — only match these via
+# their full state name, never the 2-letter code.
+_AMBIGUOUS_STATE_ABBREVS: set[str] = {"ME", "IN", "OR", "OK", "HI", "LA", "AL"}
+
+
+def _has_geo_outside_allowlist(keyword: str, state_allowlist: set[str]) -> bool:
+    """Return True if the keyword names a US state or major metro whose state
+    is NOT in the client's allowlist. Clients with an empty allowlist (national
+    SEO mode) get no geo filtering."""
+    if not state_allowlist:
+        return False
+    kw = " " + keyword.lower().replace(",", " ") + " "
+
+    # Full state name mentions
+    allowed_state_mentioned = False
+    for state_name, state_abbr in US_STATES.items():
+        if f" {state_name} " in kw:
+            if state_abbr in state_allowlist:
+                allowed_state_mentioned = True
+            else:
+                return True
+        # State abbrev as standalone token — skip abbrevs that are common words
+        if state_abbr in _AMBIGUOUS_STATE_ABBREVS:
+            continue
+        if f" {state_abbr.lower()} " in kw:
+            if state_abbr in state_allowlist:
+                allowed_state_mentioned = True
+            else:
+                return True
+
+    # Major metros — only if no in-allowlist state is already present
+    if allowed_state_mentioned:
+        return False
+    for metro, metro_state in MAJOR_METROS_TO_STATE.items():
+        if f" {metro} " in kw and metro_state not in state_allowlist:
+            return True
+    return False
+
+
+def _is_branded_competitor_query(keyword: str, brand_roots: list[str]) -> bool:
+    """True if the keyword contains a competitor's brand root as a substring."""
+    kw = " " + keyword.lower() + " "
+    for root in brand_roots:
+        if f" {root} " in kw or kw.startswith(root + " ") or kw.endswith(" " + root):
+            return True
+    return False
+
+
+def _has_vertical_mismatch(keyword: str, verticals: list[str]) -> bool:
+    """True if keyword contains any modifier that flips 'rehab' (or similar
+    ambiguous stems) into a medical vertical the client doesn't serve."""
+    kw = keyword.lower()
+    for v in verticals:
+        for token in VERTICAL_MISMATCH_TOKENS.get(v, []):
+            if token in kw:
+                return True
+    return False
+
+
 def filter_candidates(
     candidates: list[dict],
     min_volume: int,
     min_words: int,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, int]]:
     """
-    Strip obvious junk (dedup against team-approved set, word count,
-    exclusion substrings, optional volume gate). LOCAL SEO DEFAULT:
-    min_volume=0 — volume is informational, strategic fit decides
-    selection (local long-tail philosophy).
+    Strip obvious junk + apply per-client intelligence:
+      - dedup against team-approved seed set
+      - minimum word count
+      - junk-substring blocklist (jobs / salary / certification / etc)
+      - per-vertical mismatch tokens (cardiac/pediatric/wildlife rehab, etc)
+      - geography allowlist (states/metros outside client's market → drop)
+      - branded-competitor substring check (keyword containing competitor brand → drop)
+      - optional volume gate (off by default for local SEO)
+
+    Returns (cleaned_list, drop_counts). drop_counts is a diagnostic dict of
+    how many candidates were dropped by each reason, logged before Claude.
     """
     existing = existing_keyword_set()
     seed_map = seed_to_cluster_map()
+    state_allowlist = CTX["state_allowlist"]
+    brand_roots     = CTX["brand_roots"]
+    verticals       = CTX["verticals"]
 
     cleaned: list[dict] = []
     seen: set[str] = set()
+    drops = {
+        "dup": 0, "word_count": 0, "volume": 0, "junk_substr": 0,
+        "vertical_mismatch": 0, "geo_out_of_market": 0, "branded_competitor": 0,
+    }
     for c in candidates:
         kw = c["keyword"]
         if kw in existing or kw in seen:
-            continue
+            drops["dup"] += 1; continue
         if len(kw.split()) < min_words:
-            continue
+            drops["word_count"] += 1; continue
         if min_volume > 0 and c.get("volume", 0) < min_volume:
-            continue
+            drops["volume"] += 1; continue
         if any(bad in kw for bad in EXCLUDE_SUBSTRINGS):
-            continue
+            drops["junk_substr"] += 1; continue
+        if _has_vertical_mismatch(kw, verticals):
+            drops["vertical_mismatch"] += 1; continue
+        if _has_geo_outside_allowlist(kw, state_allowlist):
+            drops["geo_out_of_market"] += 1; continue
+        if _is_branded_competitor_query(kw, brand_roots):
+            drops["branded_competitor"] += 1; continue
         c["cluster"] = seed_map.get(c["seed"].lower(), "Other")
         seen.add(kw)
         cleaned.append(c)
-    return cleaned
+    return cleaned, drops
 
 
 # ── Claude strategic-fit evaluation ───────────────────────────────────────────
@@ -331,11 +533,34 @@ def _select(name: str) -> dict:
     return {"select": {"name": name}} if name else {"select": None}
 
 
+def _apply_per_seed_cap(candidates: list[dict], cap: int) -> list[dict]:
+    """After Claude scoring, keep at most `cap` candidates per seed, ranked
+    by (fit desc, volume desc). Caps runaway output on high-yield seeds."""
+    by_seed: dict[str, list[dict]] = {}
+    for c in candidates:
+        by_seed.setdefault(c["seed"], []).append(c)
+    kept: list[dict] = []
+    for seed, rows in by_seed.items():
+        rows.sort(key=lambda r: (-r.get("fit", 0), -(r.get("volume") or 0)))
+        kept.extend(rows[:cap])
+    return kept
+
+
 async def write_candidates_to_notion(
     candidates: list[dict],
     keywords_db_id: str,
     dry_run: bool,
-) -> int:
+) -> tuple[int, int]:
+    """
+    Writes only fit ∈ {2, 3}. fit=1 (weak) is dropped entirely — Claude has
+    marked the candidate off-strategy, so the team shouldn't have to sift it.
+
+    Priority mapping (drives the seed pool for the next Pass A run):
+      fit=3 (strong)  → Priority=Medium  (team promotes to High to pursue)
+      fit=2 (neutral) → Priority=Low
+
+    Returns (written, dropped_weak).
+    """
     notion = NotionClient(settings.notion_api_key)
 
     entries = await notion.query_database(database_id=keywords_db_id)
@@ -347,23 +572,28 @@ async def write_candidates_to_notion(
         )
 
     written = 0
+    dropped_weak = 0
     for c in candidates:
+        fit = c.get("fit", 2)
+        if fit <= 1:
+            dropped_weak += 1
+            continue
         if c["keyword"] in existing_titles:
             print(f"  ↳ skip (exists): {c['keyword']}")
             continue
-        fit = c.get("fit", 2)
         reason = c.get("reason", "")
-        fit_label = {3: "STRONG", 2: "NEUTRAL", 1: "WEAK"}.get(fit, "NEUTRAL")
+        fit_label = {3: "STRONG", 2: "NEUTRAL"}.get(fit, "NEUTRAL")
+        priority = "Medium" if fit == 3 else "Low"
         vol = c.get("volume", 0)
         vol_str = str(vol) if vol > 0 else "unknown (local long-tail)"
         notes = (
-            f"Pass A — long-tail expansion 2026-04-22. "
+            f"Pass A long-tail expansion. "
             f"Seed: '{c['seed']}'. Volume: {vol_str}. Competition: {c.get('competition', '')}. "
             f"CPC: ${c.get('cpc', 0)}. Strategic fit: {fit_label}. Reason: {reason} "
-            f"Promote to Priority=High to pursue."
+            f"Promote to Priority=High + Status=Target to pursue."
         )
         if dry_run:
-            print(f"  [DRY] fit={fit} vol={vol:>5} {c['keyword']:55s} — {reason[:60]}")
+            print(f"  [DRY] fit={fit} pri={priority:<6} vol={vol:>5} {c['keyword']:55s} — {reason[:60]}")
             written += 1
             continue
         await notion.create_database_entry(
@@ -374,15 +604,15 @@ async def write_candidates_to_notion(
                 "Monthly Search Volume":  _rt(vol_str),
                 "Our Position":           _rt("-"),
                 "Competitor Positions":   _rt(f"(long-tail expansion of seed: {c['seed']})"),
-                "Priority":               _select("Medium"),
+                "Priority":               _select(priority),
                 "Gap Type":               _select("Create"),
                 "Status":                 _select("Proposed"),
                 "Notes":                  _rt(notes),
             },
         )
-        print(f"  ✓ fit={fit} vol={vol:>5} {c['keyword']:55s} — {reason[:60]}")
+        print(f"  ✓ fit={fit} pri={priority:<6} vol={vol:>5} {c['keyword']:55s} — {reason[:60]}")
         written += 1
-    return written
+    return written, dropped_weak
 
 
 # ── Client context init ──────────────────────────────────────────────────────
@@ -408,27 +638,59 @@ async def _load_seeds_from_notion(notion: NotionClient, keywords_db_id: str) -> 
     return out
 
 
+def _derive_state_allowlist(cfg: dict) -> set[str]:
+    """For local + hybrid clients, return the set of state abbrevs the client
+    operates in (parsed from canonical_address). For national clients, return
+    an empty set — no geo filtering.
+
+    Supports multi-state clients via an explicit 'market_states' list in the
+    client config (e.g. ["SC","NC"] for a border client). Falls back to
+    canonical_address parsing if not provided.
+    """
+    seo_mode = (cfg.get("seo_mode") or "local").lower()
+    if seo_mode == "national":
+        return set()
+
+    explicit = cfg.get("market_states") or []
+    if isinstance(explicit, str):
+        explicit = [explicit]
+    if explicit:
+        return {s.upper() for s in explicit if s}
+
+    # Parse state from canonical_address (e.g. "940 E Ashby Rd., Quinby, SC 29506")
+    addr = (cfg.get("canonical_address") or "").upper()
+    for _, abbr in US_STATES.items():
+        # Match " SC " or ", SC " before a zip
+        if f" {abbr} " in f" {addr} " or f",{abbr} " in addr or f", {abbr} " in addr:
+            return {abbr}
+    return set()
+
+
 def _init_ctx_from_cfg(client_key: str, cfg: dict) -> None:
-    """Populate CTX with client_name and positioning from cfg. Seeds are loaded
-    separately from Notion because the async context is needed for that."""
+    """Populate CTX with client_name, positioning, verticals, and state allowlist.
+    Seeds + brand_roots are loaded async from Notion and set later in main()."""
     verticals = cfg.get("vertical") or []
     if isinstance(verticals, str):
         verticals = [verticals]
     vertical_str = ", ".join(verticals) if verticals else "unspecified"
 
     address = cfg.get("canonical_address", "")
+    seo_mode = (cfg.get("seo_mode") or "local").lower()
     positioning = (
-        f"{cfg.get('name', client_key)} — local SEO client.\n"
+        f"{cfg.get('name', client_key)} — {seo_mode} SEO client.\n"
         f"Vertical: {vertical_str}.\n"
         f"Address / market: {address or 'unspecified'}.\n"
-        f"SEO mode: {cfg.get('seo_mode', 'local')}.\n"
+        f"SEO mode: {seo_mode}.\n"
         f"(For richer positioning context, see the client's Business Profile page "
         f"in Notion. This summary is derived from clients.json metadata only.)"
     )
 
-    CTX["client_key"]  = client_key
-    CTX["client_name"] = cfg.get("name", client_key)
-    CTX["positioning"] = positioning
+    CTX["client_key"]      = client_key
+    CTX["client_name"]     = cfg.get("name", client_key)
+    CTX["positioning"]     = positioning
+    CTX["seo_mode"]        = seo_mode
+    CTX["verticals"]       = verticals
+    CTX["state_allowlist"] = _derive_state_allowlist(cfg)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -446,7 +708,7 @@ async def main(client_key: str, per_seed: int, min_volume: int, min_words: int, 
         sys.exit(1)
 
     _init_ctx_from_cfg(client_key, cfg)
-    seo_mode = cfg.get("seo_mode", "local")
+    competitors_db_id = cfg.get("competitors_db_id", "")
 
     notion = NotionClient(settings.notion_api_key)
 
@@ -455,31 +717,45 @@ async def main(client_key: str, per_seed: int, min_volume: int, min_words: int, 
     CTX["seeds"] = seed_rows
     seeds = [row["keyword"] for row in seed_rows]
 
+    # Load competitor brand roots for branded-query filtering
+    CTX["brand_roots"] = await _load_competitor_brand_roots(notion, competitors_db_id)
+
     print(f"\n── Pass A — Long-tail expansion for {CTX['client_name']} {'[DRY RUN]' if dry_run else ''} ──")
-    print(f"  seo_mode={seo_mode} | seeds={len(seeds)} | per-seed={per_seed} | min-volume={min_volume} | min-words={min_words}\n")
+    print(
+        f"  seo_mode={CTX['seo_mode']} | seeds={len(seeds)} | per-seed={per_seed} | "
+        f"min-vol={min_volume} | min-words={min_words} | cap/seed={MAX_WRITES_PER_SEED}"
+    )
+    print(
+        f"  verticals={CTX['verticals'] or '-'} | "
+        f"state_allowlist={sorted(CTX['state_allowlist']) or 'national (no geo filter)'} | "
+        f"competitor brands blocked={len(CTX['brand_roots'])}"
+    )
+    print()
 
     if not seeds:
         print("No Priority=High + Status=Target keywords in Keywords DB. Approve seeds first.")
         return
 
-    print("[1/4] Fetching related keywords from DataForSEO...")
+    print("[1/5] Fetching related keywords from DataForSEO...")
     candidates = await fetch_related_keywords(seeds, per_seed)
     print(f"  → {len(candidates)} raw candidates\n")
 
-    print("[2/4] Filtering (dedup, word count, exclusion substrings)...")
-    filtered = filter_candidates(candidates, min_volume=min_volume, min_words=min_words)
-    print(f"  → {len(filtered)} candidates after filters\n")
+    print("[2/5] Deterministic filters (dedup, vertical mismatch, geo, branded competitors)...")
+    filtered, drops = filter_candidates(candidates, min_volume=min_volume, min_words=min_words)
+    print(f"  → kept {len(filtered)} | dropped: " + ", ".join(
+        f"{k}={v}" for k, v in drops.items() if v
+    ) + "\n")
 
     if not filtered:
         print("No candidates passed filters.")
         return
 
-    print(f"[3/4] Strategic fit evaluation (Claude) against {CTX['client_name']}'s positioning...")
+    print(f"[3/5] Strategic fit evaluation (Claude) against {CTX['client_name']}'s positioning...")
     await evaluate_strategic_fit(filtered)
-    strong = sum(1 for c in filtered if c.get("fit") == 3)
+    strong  = sum(1 for c in filtered if c.get("fit") == 3)
     neutral = sum(1 for c in filtered if c.get("fit") == 2)
-    weak = sum(1 for c in filtered if c.get("fit") == 1)
-    print(f"  → fit: strong={strong}, neutral={neutral}, weak={weak}\n")
+    weak    = sum(1 for c in filtered if c.get("fit") == 1)
+    print(f"  → fit: strong={strong}, neutral={neutral}, weak={weak} (weak will be dropped)\n")
 
     by_cluster: dict[str, dict[str, int]] = {}
     for c in filtered:
@@ -492,17 +768,23 @@ async def main(client_key: str, per_seed: int, min_volume: int, min_words: int, 
         print(f"    {counts['strong']:>3} / {counts['total']:>3}  {cluster}")
     print()
 
-    filtered.sort(key=lambda c: (-c.get("fit", 0), -(c.get("volume") or 0)))
+    print(f"[4/5] Per-seed cap (max {MAX_WRITES_PER_SEED} per seed, ranked by fit × volume)...")
+    capped = _apply_per_seed_cap(filtered, cap=MAX_WRITES_PER_SEED)
+    print(f"  → {len(capped)} candidates after cap\n")
 
-    print(f"[4/4] Writing to {CTX['client_name']}'s Keywords DB (Priority=Medium, Status=Proposed)...")
-    written = await write_candidates_to_notion(filtered, keywords_db_id, dry_run)
+    capped.sort(key=lambda c: (-c.get("fit", 0), -(c.get("volume") or 0)))
+
+    print(f"[5/5] Writing to {CTX['client_name']}'s Keywords DB (fit=3 → Medium, fit=2 → Low, fit=1 dropped)...")
+    written, dropped_weak = await write_candidates_to_notion(capped, keywords_db_id, dry_run)
 
     print(f"\n── Summary ──")
-    print(f"  Candidates written: {written}")
-    print(f"  Strong fit (=3): {strong} — recommended for team to promote to Priority=High first")
-    print(f"  Neutral (=2): {neutral} — cluster-relevant but generic/saturated; case-by-case")
-    print(f"  Weak (=1): {weak} — off-strategy; review to confirm skip")
-    print(f"  Filter Keywords DB → Status=Proposed in Notion to review.")
+    print(f"  Raw candidates:       {len(candidates)}")
+    print(f"  After det. filters:   {len(filtered)}")
+    print(f"  After per-seed cap:   {len(capped)}")
+    print(f"  Dropped (weak fit):   {dropped_weak}")
+    print(f"  Written:              {written}")
+    print(f"  Filter Keywords DB → Status=Proposed to review. Promote strong fits to")
+    print(f"  Priority=High + Status=Target to use them as seeds in the next Pass A.")
 
 
 if __name__ == "__main__":
