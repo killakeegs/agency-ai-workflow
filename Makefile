@@ -176,6 +176,14 @@ seo-activate:
 style-reference-init:
 	@$(PYTHON) scripts/seo/style_reference_init.py --client $(CLIENT)
 
+# Daily rank monitor — Target/Ranking/Won lifecycle for approved keywords.
+# Polls top-100 SERP per keyword, auto-transitions Status, logs rank history,
+# flags wins (break into top 3) and anomalies (drop >5 positions).
+rank-monitor:
+	@$(PYTHON) scripts/seo/rank_monitor.py --client $(CLIENT) \
+	  $(if $(LOC),--location-code $(LOC),) \
+	  $(if $(DRY),--dry-run,)
+
 # Sweep Content DB + Blog Posts DB → Style Reference (agent feedback loop)
 # Default: sweep all eligible clients, both DBs.
 #   CLIENT=x            — scope to one client

@@ -578,6 +578,14 @@ def keywords_schema() -> dict:
         },
         "Target Page":       {"rich_text": {}},  # which page should rank for this
         "Location Modifier": {"rich_text": {}},  # e.g. "Portland OR", "NE Portland"
+        # Written by the rank monitor on every run. Current Rank = latest
+        # position across top-100 (null / 999 = not ranking). Last Checked
+        # = date of the most recent SERP query. Rank History = newline-
+        # delimited chronological log of rank snapshots (last ~30 entries)
+        # used by monthly reports and anomaly detection.
+        "Current Rank":      {"number": {}},
+        "Last Checked":      {"date": {}},
+        "Rank History":      {"rich_text": {}},
         # Approval lifecycle. System-generated proposals always land as
         # Proposed; team reviews and flips to Target for approved keywords
         # or Dismissed for off-strategy. Downstream agents only read Target
