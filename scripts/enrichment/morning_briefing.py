@@ -44,7 +44,12 @@ CLICKUP_WORKSPACE_ID = os.environ.get("CLICKUP_WORKSPACE_ID", "").strip()
 # Team: email → ClickUp user ID. Slack ID is looked up fresh each run.
 TEAM = {
     "keegan@rxmedia.io":      {"name": "Keegan",  "clickup_id": 3852174},
-    "content@rxmedia.io":     {"name": "Henna",   "clickup_id": 5847731, "blocker_nudge": True},
+    # Henna has two Slack accounts in the workspace — the rxmedia.io one is
+    # a stale ghost (last-updated Sep 2025, presence=away). Her live account
+    # is her personal gmail. Calendar invites still use content@ so that
+    # stays as the TEAM key; slack_email routes DMs to the right account.
+    "content@rxmedia.io":     {"name": "Henna",   "clickup_id": 5847731, "blocker_nudge": True,
+                               "slack_email": "hennageronimo94@gmail.com"},
     "systems@rxmedia.io":     {"name": "Justin",  "clickup_id": 54703919},
     "karla@rxmedia.io":       {"name": "Karla",   "clickup_id": 107627361},
     "accounting@rxmedia.io":  {"name": "Mari",    "clickup_id": 95680055},
@@ -55,7 +60,20 @@ TEAM = {
 # ── Slack helpers ──────────────────────────────────────────────────────────────
 
 async def _lookup_slack_ids(http: httpx.AsyncClient) -> dict[str, str]:
-    """email → slack user ID for everyone in TEAM."""
+    """TEAM key (email) → slack user ID. Respects per-teammate slack_email override.
+
+    The TEAM dict is keyed by the email used for calendar attendee matching
+    (Google Calendar invites). Slack accounts don't always share that email —
+    e.g. a teammate with a stale rxmedia.io account in Slack but an active
+    personal gmail one. `slack_email` lets a teammate route DMs to a different
+    account than their calendar-invite email without breaking attendee filters.
+    """
+    # Build reverse map: slack-lookup-email → TEAM key
+    slack_to_team: dict[str, str] = {}
+    for team_key, info in TEAM.items():
+        lookup_email = (info.get("slack_email") or team_key).lower()
+        slack_to_team[lookup_email] = team_key
+
     ids: dict[str, str] = {}
     cursor = None
     while True:
@@ -72,8 +90,8 @@ async def _lookup_slack_ids(http: httpx.AsyncClient) -> dict[str, str]:
             break
         for u in data.get("members", []):
             email = (u.get("profile", {}).get("email") or "").lower()
-            if email in TEAM:
-                ids[email] = u.get("id", "")
+            if email in slack_to_team and not u.get("deleted"):
+                ids[slack_to_team[email]] = u.get("id", "")
         cursor = data.get("response_metadata", {}).get("next_cursor", "")
         if not cursor:
             break
