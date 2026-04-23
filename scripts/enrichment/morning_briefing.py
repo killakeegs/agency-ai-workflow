@@ -259,7 +259,6 @@ async def _fetch_flagged_profiles(notion: NotionClient) -> dict:
 def _agency_pulse(
     total_overdue: int,
     flags_data: dict,
-    enriched_clients: set[str],
     total_meetings_today: int,
 ) -> str:
     today = datetime.now().strftime("%A, %b %d")
@@ -275,11 +274,6 @@ def _agency_pulse(
     if blockers:
         lines.append(f"• 🚨 *{len(blockers)}* active blockers — see client logs")
     lines.append(f"• *{len(open_actions)}* open action items (past 7 days)")
-    if enriched_clients:
-        active_list = ", ".join(sorted(list(enriched_clients))[:6])
-        if len(enriched_clients) > 6:
-            active_list += f" +{len(enriched_clients) - 6}"
-        lines.append(f"• Active clients: {active_list}")
     return "\n".join(lines)
 
 
@@ -405,13 +399,11 @@ async def run(dry_run: bool = False, only_email: str = "", skip_channel: bool = 
         # 3. Notion flags
         print("\n  Scanning Notion Business Profiles for recent flags...")
         flags_data = await _fetch_flagged_profiles(notion)
-        all_clients_with_flags = {c for c, _ in flags_data["blockers"]} | {c for c, _ in flags_data["open_actions"]}
         print(f"  Flags: {flags_data['total_before_dedupe']} raw → {flags_data['total_after_dedupe']} after dedupe")
         print(f"         {len(flags_data['blockers'])} blockers, {len(flags_data['open_actions'])} open actions")
 
         # 4. Agency pulse → #general
-        enriched_clients = all_clients_with_flags
-        pulse = _agency_pulse(len(tasks), flags_data, enriched_clients, len(meeting_prep_index))
+        pulse = _agency_pulse(len(tasks), flags_data, len(meeting_prep_index))
         print("\n--- AGENCY PULSE (→ #general) ---")
         print(pulse)
         if not dry_run and not skip_channel:
