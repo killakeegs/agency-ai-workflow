@@ -437,13 +437,18 @@ def competitors_schema() -> dict:
         "Website":         {"url": {}},
         # Approval lifecycle. Auto-discovered competitors (from SERP aggregation
         # on our priority keywords) land as Proposed; team reviews and flips
-        # to Active for real competitors or Dismissed for false positives.
-        # Downstream agents only read Active (never Proposed).
+        # to Active for real competitors, Dismissed for false positives, or
+        # Partner for another RxMedia client showing up in the SERPs (same
+        # vertical sibling — e.g. Atlas for Cielo. Complementary service
+        # model, referral relationship, potential cross-link opportunity).
+        # Downstream agents only read Active (never Proposed / Dismissed /
+        # Partner).
         "Status": {
             "select": {
                 "options": [
                     {"name": "Proposed",  "color": "blue"},
                     {"name": "Active",    "color": "green"},
+                    {"name": "Partner",   "color": "purple"},
                     {"name": "Dismissed", "color": "red"},
                 ]
             }
@@ -464,6 +469,9 @@ def competitors_schema() -> dict:
         "Review Rating":              {"number": {}},
         "Review Velocity":            {"rich_text": {}},  # e.g. "< 5/month", "1/week"
         "Professional Quality Images":{"checkbox": {}},   # manually checked by team
+        # Auto-populated by Places API on local competitors: primary category,
+        # address, phone, hours, photo count, current business status.
+        "GBP Details":                {"rich_text": {}},
         # ── SERP performance ──────────────────────────────────────────────────
         "Keyword Count":   {"number": {}},
         "Avg Position":    {"number": {}},
@@ -475,6 +483,10 @@ def competitors_schema() -> dict:
         "Local Backlinks":    {"rich_text": {}},  # notes on local/civic links
         "Industry Links":     {"rich_text": {}},  # notes on industry links
         "Link Gap Notes":     {"rich_text": {}},  # gap analysis narrative
+        # Auto-populated during enrichment: top ~20 referring domains, tagged
+        # by type (news / .gov / .edu / industry / general) so the team can
+        # quickly scan for local-civic backlinks worth pursuing.
+        "Top Backlinks":      {"rich_text": {}},
         # ── GBP detail (manual) ───────────────────────────────────────────────
         "Reviews Last 30 Days":  {"number": {}},   # manual — count from GBP
         "Last Photo Added":      {"rich_text": {}}, # e.g. "1 year ago", "2 months ago"
@@ -484,6 +496,9 @@ def competitors_schema() -> dict:
         # ── Organic page analysis ─────────────────────────────────────────────
         "Top Ranking Page":  {"url": {}},
         "Target Cluster":    {"rich_text": {}},
+        # Scannable summary of which priority keywords they outrank us for,
+        # e.g. "#3 'drug rehab Portland Oregon' • #5 'alcohol rehab ...'"
+        "Competing Keywords": {"rich_text": {}},
         "Content Depth": {
             "select": {
                 "options": [
