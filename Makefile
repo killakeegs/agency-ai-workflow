@@ -176,11 +176,18 @@ seo-activate:
 style-reference-init:
 	@$(PYTHON) scripts/seo/style_reference_init.py --client $(CLIENT)
 
-# Daily rank monitor — Target/Ranking/Won lifecycle for approved keywords.
+# Rank monitor — Target/Ranking/Won lifecycle for approved keywords.
 # Polls top-100 SERP per keyword, auto-transitions Status, logs rank history,
-# flags wins (break into top 3) and anomalies (drop >5 positions).
+# posts win/anomaly/first-appearance flags to the client's Slack channel.
+# Local clients: weekly cadence (Mon 6am UTC via Railway cron) is the right default.
+#   make rank-monitor CLIENT=x         # one client
+#   make rank-monitor ALL=1             # all SEO-active clients (cron mode)
+#   make rank-monitor ALL=1 MODE=local  # filter by SEO Mode
+#   make rank-monitor CLIENT=x DRY=1    # preview, no Notion / Slack writes
 rank-monitor:
-	@$(PYTHON) scripts/seo/rank_monitor.py --client $(CLIENT) \
+	@$(PYTHON) scripts/seo/rank_monitor.py \
+	  $(if $(ALL),--all-clients,--client $(CLIENT)) \
+	  $(if $(MODE),--seo-mode $(MODE),) \
 	  $(if $(LOC),--location-code $(LOC),) \
 	  $(if $(DRY),--dry-run,)
 

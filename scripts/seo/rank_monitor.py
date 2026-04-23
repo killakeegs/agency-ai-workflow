@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -43,6 +44,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.config import settings
 from src.integrations.notion import NotionClient
+
+
+# ── Slack posting (mirrors the pattern in meeting_processor/email_monitor) ───
+
+# Pydantic-settings loads .env into the settings object; os.environ won't
+# see it unless load_dotenv has been called separately. Use settings.
+def _slack_token() -> str:
+    tok = getattr(settings, "slack_bot_token", "") or os.getenv("SLACK_BOT_TOKEN", "")
+    return (tok or "").strip()
+
+
+async def post_slack(channel: str, text: str) -> None:
+    """Fire-and-forget Slack post. Silent on missing token or delivery failure
+    so rank monitoring never fails because Slack is unreachable."""
+    token = _slack_token()
+    if not token or not channel:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            await http.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"channel": channel, "text": text},
+            )
+    except Exception:
+        pass
 
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
@@ -231,6 +258,45 @@ def resolve_location_code(cfg: dict, override: str = "") -> tuple[int, str]:
     return (2840, "USA (default; keywords carry geo modifier)")
 
 
+async def run_all_clients(dry_run: bool, seo_mode_filter: str = "") -> None:
+    """
+    Iterate every client with SEO service enabled + a Keywords DB provisioned.
+    Optionally filter by SEO Mode (local / hybrid / national) so different
+    cron cadences can target different segments of the roster.
+    """
+    from config.clients import CLIENTS
+    eligible: list[str] = []
+    for key, cfg in CLIENTS.items():
+        services = cfg.get("services") or {}
+        seo_on = services.get("seo") if isinstance(services, dict) else ("seo" in services)
+        has_kw = bool(cfg.get("keywords_db_id"))
+        mode = (cfg.get("seo_mode") or "").lower()
+        if not seo_on or not has_kw:
+            continue
+        if seo_mode_filter and mode != seo_mode_filter.lower():
+            continue
+        eligible.append(key)
+
+    print(f"\n── Rank monitor — all clients {'[DRY RUN]' if dry_run else ''} ──")
+    print(f"  Filter: seo_mode={seo_mode_filter or 'any'}")
+    print(f"  Eligible: {len(eligible)} client(s)")
+
+    if not eligible:
+        print("  Nothing to do.")
+        return
+
+    for key in eligible:
+        try:
+            await run(key, dry_run=dry_run, location_override="")
+        except SystemExit:
+            # run() calls sys.exit on missing config — skip + continue
+            print(f"  ⚠ Skipped {key} due to config gap")
+            continue
+        except Exception as e:
+            print(f"  ⚠ {key} failed: {e}")
+            continue
+
+
 async def run(client_key: str, dry_run: bool, location_override: str) -> None:
     from config.clients import CLIENTS
     cfg = CLIENTS.get(client_key)
@@ -249,12 +315,23 @@ async def run(client_key: str, dry_run: bool, location_override: str) -> None:
         sys.exit(1)
 
     location_code, location_label = resolve_location_code(cfg, location_override)
+    client_name = cfg.get("name", client_key)
+    slack_channel = cfg.get("slack_channel", "")
 
     notion = NotionClient(settings.notion_api_key)
 
     print(f"\n── Rank monitor {'[DRY RUN]' if dry_run else ''} ──")
-    print(f"  Client: {cfg.get('name', client_key)} ({client_domain})")
+    print(f"  Client: {client_name} ({client_domain})")
     print(f"  Location: {location_label}")
+    slack_ready = bool(_slack_token() and slack_channel)
+    if slack_ready and not dry_run:
+        print(f"  Slack: events → {slack_channel}")
+    elif dry_run:
+        print(f"  Slack: suppressed (dry-run)")
+    elif not slack_channel:
+        print(f"  Slack: no slack_channel configured — flags will print to console only")
+    elif not _slack_token():
+        print(f"  Slack: SLACK_BOT_TOKEN not set — flags will print to console only")
 
     print("\n[1/3] Self-heal Keywords DB (rank fields)...")
     await ensure_rank_fields(notion, keywords_db_id, dry_run)
@@ -376,18 +453,58 @@ async def run(client_key: str, dry_run: bool, location_override: str) -> None:
         for kw, old, new, delta in summary["anomaly_flags"]:
             print(f"    #{int(old)} → #{new} (dropped {delta})  '{kw}'")
 
+    # ── Slack post — one message per run if anything worth surfacing ────────
+    # Batched per-run (not per-event) so the channel isn't spammed. If nothing
+    # noteworthy happened, stay silent.
+    if not dry_run and slack_ready:
+        slack_blocks: list[str] = []
+        if summary["win_flags"]:
+            lines = [f"🏆 *WINS* — broke into top 3 on priority keywords:"]
+            for kw, old, new in summary["win_flags"]:
+                old_s = f"#{int(old)}" if old else "unranked"
+                lines.append(f"  • {old_s} → *#{new}*  _{kw}_")
+            slack_blocks.append("\n".join(lines))
+        if summary["first_flags"]:
+            lines = [f"✨ *First top-100 appearances:*"]
+            for kw, rank in summary["first_flags"]:
+                lines.append(f"  • *#{rank}*  _{kw}_")
+            slack_blocks.append("\n".join(lines))
+        if summary["anomaly_flags"]:
+            lines = [f"⚠️ *Rank drops* (>5 positions) — worth investigating:"]
+            for kw, old, new, delta in summary["anomaly_flags"]:
+                lines.append(f"  • #{int(old)} → #{new}  (dropped {delta})  _{kw}_")
+            slack_blocks.append("\n".join(lines))
+
+        if slack_blocks:
+            header = (
+                f"📊 *{client_name}* — rank monitor "
+                f"({summary['won']} in top 3 · {summary['ranking']} ranking · "
+                f"{summary['not_ranking']} not in top 100)"
+            )
+            body = "\n\n".join([header] + slack_blocks)
+            await post_slack(slack_channel, body)
+            print(f"\n📨 Posted to Slack: {slack_channel}")
+        else:
+            print(f"\n(Nothing noteworthy to post to Slack — no wins, anomalies, or first appearances this run)")
+
     if dry_run:
         print(f"\n[DRY] No Notion writes performed.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Daily rank monitor — Target/Ranking/Won lifecycle")
-    parser.add_argument("--client", required=True, help="client_key (e.g. cielo_treatment_center)")
-    parser.add_argument("--location-code", default="", help="DataForSEO location code (default 2840 USA)")
+    parser = argparse.ArgumentParser(description="Rank monitor — Target/Ranking/Won lifecycle")
+    parser.add_argument("--client", help="client_key (e.g. cielo_treatment_center)")
+    parser.add_argument("--all-clients", action="store_true",
+                        help="iterate all SEO-active clients (cron mode)")
+    parser.add_argument("--seo-mode", default="",
+                        help="filter --all-clients by SEO Mode (local / hybrid / national)")
+    parser.add_argument("--location-code", default="",
+                        help="DataForSEO location code (default 2840 USA)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run(
-        client_key=args.client,
-        dry_run=args.dry_run,
-        location_override=args.location_code,
-    ))
+    if args.all_clients:
+        asyncio.run(run_all_clients(dry_run=args.dry_run, seo_mode_filter=args.seo_mode))
+    elif args.client:
+        asyncio.run(run(client_key=args.client, dry_run=args.dry_run, location_override=args.location_code))
+    else:
+        parser.error("either --client CLIENT_KEY or --all-clients is required")
