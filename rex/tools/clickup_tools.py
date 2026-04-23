@@ -30,6 +30,26 @@ def _clickup_creds() -> tuple[str, str]:
     return workspace_id, api_key
 
 
+def _iso_date_to_ms(iso: str) -> int | None:
+    """Convert a 'YYYY-MM-DD' string to a ClickUp-safe ms epoch timestamp.
+
+    Anchors at 12:00 UTC on the given day so the date displays correctly
+    across common North American timezones regardless of ClickUp's
+    per-user display rendering. LLMs are unreliable at producing precise
+    13-digit ms integers directly — this helper is why tool schemas
+    accept the string form (`due_date`) over the ms form (`due_date_ms`).
+    Returns None if the string can't be parsed.
+    """
+    if not iso:
+        return None
+    try:
+        d = datetime.datetime.strptime(iso.strip(), "%Y-%m-%d")
+    except ValueError:
+        return None
+    anchored = d.replace(hour=12, minute=0, second=0, tzinfo=datetime.timezone.utc)
+    return int(anchored.timestamp() * 1000)
+
+
 async def execute_clickup_tool(name: str, tool_input: dict) -> str:
     """Dispatch a ClickUp tool call and return a formatted result string."""
 
@@ -152,13 +172,17 @@ async def execute_clickup_tool(name: str, tool_input: dict) -> str:
     elif name == "create_clickup_task":
         list_id      = tool_input["list_id"]
         task_name    = tool_input["name"]
-        due_date_ms  = tool_input.get("due_date_ms")
+        # Prefer the ISO string form — LLMs are unreliable at generating
+        # 13-digit ms timestamps. Fall back to the raw ms if provided.
+        due_iso      = tool_input.get("due_date", "")
+        due_date_ms  = _iso_date_to_ms(due_iso) if due_iso else tool_input.get("due_date_ms")
         assignee_ids = tool_input.get("assignee_ids", [])
         description  = tool_input.get("description", "")
 
         body: dict = {"name": task_name}
         if due_date_ms:
             body["due_date"] = due_date_ms
+            body["due_date_time"] = False
         if assignee_ids:
             body["assignees"] = assignee_ids
         if description:
@@ -185,9 +209,22 @@ async def execute_clickup_tool(name: str, tool_input: dict) -> str:
             body["name"] = tool_input["name"]
         if "description" in tool_input:
             body["description"] = tool_input["description"]
-        if "due_date_ms" in tool_input:
+        # Prefer ISO string form for dates; ms fallback for backward compat.
+        due_iso = tool_input.get("due_date")
+        if due_iso:
+            ms = _iso_date_to_ms(due_iso)
+            if ms:
+                body["due_date"] = ms
+                body["due_date_time"] = False
+        elif "due_date_ms" in tool_input:
             body["due_date"] = tool_input["due_date_ms"]
-        if "start_date_ms" in tool_input:
+        start_iso = tool_input.get("start_date")
+        if start_iso:
+            ms = _iso_date_to_ms(start_iso)
+            if ms:
+                body["start_date"] = ms
+                body["start_date_time"] = False
+        elif "start_date_ms" in tool_input:
             body["start_date"] = tool_input["start_date_ms"]
         if "priority" in tool_input:
             body["priority"] = tool_input["priority"]
@@ -198,7 +235,7 @@ async def execute_clickup_tool(name: str, tool_input: dict) -> str:
             }
 
         if not body:
-            return "Nothing to update — provide at least one field (status, name, due_date_ms, priority, etc.)"
+            return "Nothing to update — provide at least one field (status, name, due_date, priority, etc.)"
 
         async with httpx.AsyncClient() as http:
             r = await http.put(

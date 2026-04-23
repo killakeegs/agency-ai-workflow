@@ -184,8 +184,14 @@ Use these when get_clickup_members fails or as a quick reference:
 ━━ CREATING CLICKUP TASKS ━━
 When asked to create a task, you need exactly three things before proceeding:
 1. Which space and list (use list_clickup_workspace to find the list ID)
-2. Due date (ask if not provided — convert to ms timestamp before calling create_clickup_task)
+2. Due date (ask if not provided)
 3. Who to assign it to (use get_clickup_members to find their user ID)
+
+ALWAYS pass the due date as a plain `due_date` string in YYYY-MM-DD form
+(e.g. "2026-04-23"). Never attempt to compute the Unix millisecond timestamp
+yourself — the server does that conversion. If the user gives a relative
+date like "next Friday" or "end of week", resolve it against Today's date
+(shown above) and pass the resulting YYYY-MM-DD string.
 
 If any of the three are missing, ask for them before creating anything. Once you have all three, confirm back what you're about to create, then call create_clickup_task.
 
@@ -221,7 +227,11 @@ When asked "what's flagged for X" or "what do I need to handle": call list_flags
 • Reply directly and confidently"""
 
 
-SYSTEM_PROMPT = _build_system_prompt()
+# Note: Rex rebuilds the system prompt per request (inside ask_rex) so
+# the "Today's date is ..." line reflects the current day. Previously this
+# was computed once at module import, which pinned the date to whenever
+# the Railway container last booted — a long-running Rex could be many
+# days stale, confusing date math for due dates and relative references.
 
 
 # ── Tool schemas ──────────────────────────────────────────────────────────────
@@ -301,13 +311,13 @@ TOOLS = [
     },
     {
         "name": "create_clickup_task",
-        "description": "Create a new task in ClickUp. Requires list_id, task name, due date (as millisecond timestamp), and assignee user IDs. Always confirm all three with the user before calling this tool.",
+        "description": "Create a new task in ClickUp. Requires list_id, task name, due date (as YYYY-MM-DD string), and assignee user IDs. Always confirm all three with the user before calling this tool.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "list_id": {"type": "string", "description": "The ClickUp list ID to create the task in"},
                 "name": {"type": "string", "description": "The task name"},
-                "due_date_ms": {"type": "integer", "description": "Due date as a Unix timestamp in milliseconds"},
+                "due_date": {"type": "string", "description": "Due date as YYYY-MM-DD (e.g. '2026-04-23'). Server converts to a ClickUp-safe timestamp. Do NOT attempt to produce a Unix ms integer yourself."},
                 "assignee_ids": {
                     "type": "array",
                     "items": {"type": "integer"},
@@ -334,8 +344,8 @@ TOOLS = [
                 "status": {"type": "string", "description": "New status (e.g. 'complete', 'in progress', 'waiting on client')"},
                 "name": {"type": "string", "description": "Rename the task"},
                 "description": {"type": "string", "description": "Update task description"},
-                "due_date_ms": {"type": "integer", "description": "New due date as Unix timestamp in milliseconds"},
-                "start_date_ms": {"type": "integer", "description": "New start date as Unix timestamp in milliseconds"},
+                "due_date": {"type": "string", "description": "New due date as YYYY-MM-DD (e.g. '2026-04-23'). Server converts to a ClickUp-safe timestamp. Do NOT compute a Unix ms integer."},
+                "start_date": {"type": "string", "description": "New start date as YYYY-MM-DD. Server converts."},
                 "priority": {"type": "integer", "description": "1=urgent, 2=high, 3=normal, 4=low"},
                 "assignees_add": {"type": "array", "items": {"type": "integer"}, "description": "ClickUp user IDs to add as assignees"},
                 "assignees_remove": {"type": "array", "items": {"type": "integer"}, "description": "ClickUp user IDs to remove from assignees"},
@@ -525,11 +535,14 @@ async def _execute_tool(name: str, tool_input: dict) -> str:
 # ── Claude tool-use loop ──────────────────────────────────────────────────────
 
 async def ask_rex(messages: list[dict]) -> str:
+    # Rebuild each request so "Today's date" stays current in long-running
+    # Railway processes. Cheap (pure string build) — not worth caching.
+    system_prompt = _build_system_prompt()
     for _ in range(8):  # max 8 rounds (more for multi-turn task creation)
         response = await claude.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1000,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=TOOLS,
             messages=messages,
         )
