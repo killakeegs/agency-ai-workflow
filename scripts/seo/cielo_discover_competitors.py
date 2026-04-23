@@ -228,6 +228,10 @@ def aggregate_and_filter(
         # Sub-domains of excluded domains
         if any(d.endswith("." + ex) for ex in EXCLUDE_DOMAINS):
             continue
+        # TLD exclusion — .gov, .edu, .mil are never competing treatment centers.
+        # (Added 2026-04-22 after Andrea flagged oregon.gov in the first run.)
+        if d.endswith(".gov") or d.endswith(".edu") or d.endswith(".mil"):
+            continue
 
         entry = by_domain[d]
         entry["keywords"].append(row["keyword"])
