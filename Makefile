@@ -176,6 +176,13 @@ seo-activate:
 style-reference-init:
 	@$(PYTHON) scripts/seo/style_reference_init.py --client $(CLIENT)
 
+# Generate the Local SEO Setup Checklist page for a client (GBP + citations +
+# vertical-specific directories + NAP canonicals + foundation). Gate for agent
+# activation: rank monitor only produces meaningful data once Tier 1 is done.
+local-setup-init:
+	@$(PYTHON) scripts/seo/local_setup_init.py --client $(CLIENT) \
+	  $(if $(DRY),--dry-run,)
+
 # Rank monitor — Target/Ranking/Won lifecycle for approved keywords.
 # Polls top-100 SERP per keyword, auto-transitions Status, logs rank history,
 # posts win/anomaly/first-appearance flags to the client's Slack channel.
