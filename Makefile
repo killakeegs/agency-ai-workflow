@@ -277,6 +277,18 @@ enrich-emails:
 		$(if $(MAX),--max-threads $(MAX),) \
 		$(if $(DRY),--dry-run,)
 
+# Populate a client's Business Profile from their public website, then
+# flag any required section still empty against the per-vertical checklist.
+# Safe to re-run — Claude dedups against existing facts, flags DB dedups
+# against prior gap entries.
+#   make populate-business-profile CLIENT=lotus_recovery
+#   make populate-business-profile CLIENT=lotus_recovery DRY=1
+
+populate-business-profile:
+	@$(PYTHON) scripts/enrichment/populate_business_profile.py \
+		--client $(CLIENT) \
+		$(if $(DRY),--dry-run,)
+
 # Meeting processor — processes Notion AI transcripts into Client Log + ClickUp + email
 #   make meeting-processor                    # Process all unprocessed transcripts
 #   make meeting-processor CLIENT=pdx_plumber # Process only for one client
