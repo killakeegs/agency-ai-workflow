@@ -185,7 +185,18 @@ local-setup-init:
 	  $(if $(DRY),--dry-run,) \
 	  $(if $(FORCE),--force,)
 
-# Pass A — long-tail keyword expansion. Takes team-approved seeds (Priority=High +
+# Step 1 — discover-keywords. Generates the foundational keyword pool from the
+# client's Business Profile + taxonomy, covering service × substance × population
+# × insurance × duration × terminology combinations. Prerequisite:
+# `make populate-business-profile CLIENT=x` should have been run first so BP
+# has real content for Claude to work from. Output lands at Priority=Medium /
+# Status=Proposed for team review; promoted seeds then feed expand-longtail.
+discover-keywords:
+	@$(PYTHON) scripts/seo/discover_keywords.py --client $(CLIENT) \
+	  $(if $(TARGET),--target $(TARGET),) \
+	  $(if $(DRY),--dry-run,)
+
+# Step 2 — long-tail keyword expansion. Takes team-approved seeds (Priority=High +
 # Status=Target) from the client's Keywords DB, uses DataForSEO for expansion,
 # Claude evaluates strategic fit, writes proposals as Priority=Medium / Status=Proposed.
 expand-longtail:
