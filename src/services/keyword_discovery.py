@@ -348,6 +348,7 @@ async def discover_keywords(
     cfg: dict,
     target_count: int = DEFAULT_TARGET_CANDIDATES,
     dry_run: bool = False,
+    force: bool = False,
 ) -> dict:
     client_key = cfg.get("client_id") or cfg.get("client_key") or ""
     keywords_db_id    = cfg.get("keywords_db_id", "")
@@ -358,6 +359,27 @@ async def discover_keywords(
 
     if not keywords_db_id:
         return {"status": "skipped", "reason": "no keywords_db_id"}
+
+    # Readiness gate — refuse to run on a Blocked client unless force=True.
+    # Prevents wasting Claude / DataForSEO cycles on an under-populated client.
+    from src.services.client_readiness import run_readiness_check
+    notion_preflight = NotionClient(settings.notion_api_key)
+    report = await run_readiness_check(notion_preflight, cfg, client_key)
+    if report["status"] == "blocked" and not force:
+        blocked_list = [f"{g['source']} / {g['field']}" for g in report["blocked"]]
+        return {
+            "status": "blocked",
+            "reason": f"Client readiness is BLOCKED ({len(blocked_list)} required "
+                      f"fields empty). Run `make check-client-readiness CLIENT="
+                      f"{client_key}` to see full gap report. Use FORCE=1 to "
+                      f"bypass (not recommended — output quality will suffer).",
+            "blocked": blocked_list,
+        }
+    if report["status"] == "partial":
+        print(f"\n⚠ Readiness is PARTIAL ({len(report['partial'])} gaps) — "
+              f"proceeding with warning. Output quality may be affected by "
+              f"thin client context. See `make check-client-readiness CLIENT="
+              f"{client_key}` for details.\n")
 
     # 1. Initialize CTX used by expand_longtail's shared filter/fit utilities
     CTX["client_key"]      = client_key

@@ -185,6 +185,17 @@ local-setup-init:
 	  $(if $(DRY),--dry-run,) \
 	  $(if $(FORCE),--force,)
 
+# Unified client-readiness check across Clients DB + clients.json +
+# Client Info DB + Brand Guidelines DB + Business Profile.
+# Reports READY / PARTIAL / BLOCKED + writes consolidated 🚨 callout on the
+# client's BP page + logs Flags DB entries per gap. Safe to re-run.
+#   make check-client-readiness CLIENT=lotus_recovery
+#   make check-client-readiness CLIENT=lotus_recovery DRY=1
+check-client-readiness:
+	@$(PYTHON) scripts/admin/check_client_readiness.py --client $(CLIENT) \
+	  $(if $(DRY),--dry-run,) \
+	  $(if $(QUIET),--quiet,)
+
 # Step 1 — discover-keywords. Generates the foundational keyword pool from the
 # client's Business Profile + taxonomy, covering service × substance × population
 # × insurance × duration × terminology combinations. Prerequisite:
@@ -194,7 +205,8 @@ local-setup-init:
 discover-keywords:
 	@$(PYTHON) scripts/seo/discover_keywords.py --client $(CLIENT) \
 	  $(if $(TARGET),--target $(TARGET),) \
-	  $(if $(DRY),--dry-run,)
+	  $(if $(DRY),--dry-run,) \
+	  $(if $(FORCE),--force,)
 
 # Step 2 — long-tail keyword expansion. Takes team-approved seeds (Priority=High +
 # Status=Target) from the client's Keywords DB, uses DataForSEO for expansion,

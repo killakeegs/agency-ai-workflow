@@ -34,17 +34,24 @@ from src.services.keyword_discovery import (
 )
 
 
-async def main(client_key: str, target_count: int, dry_run: bool) -> None:
+async def main(client_key: str, target_count: int, dry_run: bool, force: bool) -> None:
     from config.clients import CLIENTS
     cfg = CLIENTS.get(client_key)
     if not cfg:
         print(f"✗ Client '{client_key}' not found in registry")
         sys.exit(1)
 
-    result = await discover_keywords(cfg, target_count=target_count, dry_run=dry_run)
+    result = await discover_keywords(
+        cfg, target_count=target_count, dry_run=dry_run, force=force,
+    )
     if result.get("status") == "skipped":
         print(f"Skipped: {result.get('reason')}")
         sys.exit(1)
+    if result.get("status") == "blocked":
+        print(f"\n🚨 BLOCKED: {result.get('reason')}")
+        for item in result.get("blocked", [])[:10]:
+            print(f"   • {item}")
+        sys.exit(3)
     if result.get("status") == "failed":
         print(f"Failed: {result.get('reason')}")
         sys.exit(2)
@@ -60,9 +67,12 @@ if __name__ == "__main__":
                         help=f"approximate candidate count (default {DEFAULT_TARGET_CANDIDATES})")
     parser.add_argument("--dry-run", action="store_true",
                         help="preview without writing to Notion")
+    parser.add_argument("--force", action="store_true",
+                        help="bypass readiness gate (not recommended)")
     args = parser.parse_args()
     asyncio.run(main(
         client_key=args.client,
         target_count=args.target,
         dry_run=args.dry_run,
+        force=args.force,
     ))
