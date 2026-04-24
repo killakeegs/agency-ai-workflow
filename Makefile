@@ -196,6 +196,15 @@ check-client-readiness:
 	  $(if $(DRY),--dry-run,) \
 	  $(if $(QUIET),--quiet,)
 
+# Interactive gap-fill — walks through each open readiness gap one by one,
+# asks a contextual question (Claude-generated), and writes the answer
+# directly to the correct Notion location. Designed for team members — no
+# developer context required. Safe to quit mid-session; resumes from wherever
+# gaps still exist on next run.
+#   make fill-client-gaps CLIENT=lotus_recovery
+fill-client-gaps:
+	@$(PYTHON) scripts/admin/fill_client_gaps.py --client $(CLIENT)
+
 # Step 1 — discover-keywords. Generates the foundational keyword pool from the
 # client's Business Profile + taxonomy, covering service × substance × population
 # × insurance × duration × terminology combinations. Prerequisite:
